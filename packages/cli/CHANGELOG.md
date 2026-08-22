@@ -1,5 +1,11 @@
 # @nanoom/cli
 
+## 0.1.6
+
+### Patch Changes
+
+- [#19](https://github.com/XionWCFM/nanoom/pull/19) [`09604a9`](https://github.com/XionWCFM/nanoom/commit/09604a98beb84db5f9ad5b6162a88b4ba133f177) Thanks [@XionWCFM](https://github.com/XionWCFM)! - Sign and verify GitHub Release archives with keyless Sigstore bundles.
+
 ## 0.1.5
 
 ### Patch Changes
