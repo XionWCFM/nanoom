@@ -132,7 +132,7 @@ jobs:
     needs: publish-assets
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: release-*
           merge-multiple: true
@@ -158,7 +158,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: build-binaries
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: release-*
           merge-multiple: true
