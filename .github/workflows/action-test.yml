@@ -96,7 +96,7 @@ jobs:
     env:
       NANOOM_LOCAL_BINARY: ${{ github.workspace }}/target/release/nanoom
       PULL_REQUEST_BASE_REF: main
-      PULL_REQUEST_HEAD_REF: main
+      PULL_REQUEST_HEAD_REF: feature
     steps:
       - uses: actions/checkout@v4
         with:
