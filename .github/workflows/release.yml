@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -97,6 +98,16 @@ jobs:
           $hash = (Get-FileHash "${{ matrix.artifact }}" -Algorithm SHA256).Hash.ToLower()
           "$hash  ${{ matrix.artifact }}" | Out-File "${{ matrix.artifact }}.sha256" -Encoding ascii
 
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3.7.0
+
+      - name: Sign release archive
+        env:
+          COSIGN_YES: "true"
+        run: |
+          cosign sign-blob "${{ matrix.artifact }}" \
+            --bundle "${{ matrix.artifact }}.sigstore.json"
+
       - name: Upload release asset
         uses: softprops/action-gh-release@v2
         with:
@@ -104,6 +115,7 @@ jobs:
           files: |
             ${{ matrix.artifact }}
             ${{ matrix.artifact }}.sha256
+            ${{ matrix.artifact }}.sigstore.json
 
       - name: Upload artifact for release smoke test
         uses: actions/upload-artifact@v4
@@ -112,6 +124,7 @@ jobs:
           path: |
             ${{ matrix.artifact }}
             ${{ matrix.artifact }}.sha256
+            ${{ matrix.artifact }}.sigstore.json
 
   verify-release:
     name: Verify release artifacts
@@ -124,8 +137,21 @@ jobs:
           pattern: release-*
           merge-multiple: true
           path: release-artifacts
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3.7.0
       - name: Verify archives, checksums, permissions, and executable payload
         run: bash scripts/release-smoke.sh release-artifacts
+      - name: Verify Sigstore bundles
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          for bundle in release-artifacts/*.sigstore.json; do
+            archive="${bundle%.sigstore.json}"
+            cosign verify-blob "$archive" \
+              --bundle "$bundle" \
+              --certificate-oidc-issuer-regexp 'https://token.actions.githubusercontent.com' \
+              --certificate-identity-regexp 'https://github.com/XionWCFM/nanoom/.github/workflows/release.yml@refs/tags/v.*'
+          done
 
   publish-npm:
     name: Publish @nanoom/cli to npm
