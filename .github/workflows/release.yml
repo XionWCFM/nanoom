@@ -150,7 +150,7 @@ jobs:
             cosign verify-blob "$archive" \
               --bundle "$bundle" \
               --certificate-oidc-issuer-regexp 'https://token.actions.githubusercontent.com' \
-              --certificate-identity-regexp 'https://github.com/XionWCFM/nanoom/.github/workflows/release.yml@refs/tags/v.*'
+              --certificate-identity-regexp 'https://github.com/XionWCFM/nanoom/.github/workflows/release.yml@refs/(tags/v.*|heads/main)'
           done
 
   publish-assets:
