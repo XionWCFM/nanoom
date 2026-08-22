@@ -152,3 +152,80 @@ jobs:
           cwd: .fixture
           jobs: build,test
           format: json
+
+  test-install-action-isolated:
+    name: Test nanoom-install in isolation
+    runs-on: ubuntu-latest
+    env:
+      NANOOM_LOCAL_BINARY: ${{ github.workspace }}/target/release/nanoom
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build local binary
+        run: cargo build --release
+      - name: Prepare fixture
+        run: bash .github/test-fixtures/setup-fixture.sh
+      - name: Install fixture dependencies
+        uses: ./.github/actions/nanoom-install
+        with:
+          version: local
+          cwd: .fixture
+          package-manager: npm
+      - name: Assert install output
+        run: test -d .fixture/node_modules
+
+  test-run-action-isolated:
+    name: Test nanoom-run in isolation
+    runs-on: ubuntu-latest
+    env:
+      NANOOM_LOCAL_BINARY: ${{ github.workspace }}/target/release/nanoom
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build local binary
+        run: cargo build --release
+      - name: Prepare fixture
+        run: bash .github/test-fixtures/setup-fixture.sh
+      - name: Install fixture dependencies
+        run: npm install --prefix .fixture --ignore-scripts
+      - name: Run fixture task
+        uses: ./.github/actions/nanoom-run
+        with:
+          version: local
+          cwd: .fixture
+          group: ci
+          task: test
+          runner: npm
+          all: 'true'
+
+  test-status-action-isolated:
+    name: Test nanoom-status in isolation
+    runs-on: ubuntu-latest
+    env:
+      NANOOM_LOCAL_BINARY: ${{ github.workspace }}/target/release/nanoom
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build local binary
+        run: cargo build --release
+      - name: Seed job outputs
+        run: |
+          echo 'build_result=success' >> "$GITHUB_OUTPUT"
+          echo 'test_result=success' >> "$GITHUB_OUTPUT"
+      - name: Aggregate seeded status
+        id: status
+        uses: ./.github/actions/nanoom-status
+        with:
+          version: local
+          jobs: build,test
+          format: json
+      - name: Assert status output
+        env:
+          OVERALL: ${{ steps.status.outputs.overall }}
+        run: test "$OVERALL" = success
