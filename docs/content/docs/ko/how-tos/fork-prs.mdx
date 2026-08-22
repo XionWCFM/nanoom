@@ -1,0 +1,84 @@
+---
+title: 포크 풀 리퀘스트에서 실행하기
+description: 포크에서 온 풀 리퀘스트에도 안전하게 영향 감지 돌리기
+---
+
+풀 리퀘스트가 포크에서 오면 nanoom은 병합 베이스를 **베이스 저장소가 아니라 포크의 헤드 저장소** 기준으로 풉니다. 이렇게 하면 신뢰할 수 없는 잡에 시크릿이 새는 걸 막으면서도 영향 감지는 여전히 작동합니다.
+
+## 작동 원리
+
+nanoom은 `GITHUB_HEAD_REPOSITORY`와 `GITHUB_REPOSITORY`를 읽습니다. 둘이 다르면:
+
+1. 포크의 헤드 저장소를 클론합니다.
+2. 포크의 브랜치와 베이스 브랜치 사이 병합 베이스를 계산합니다.
+3. 그 병합 베이스를 기준으로 감지를 돌립니다.
+
+시크릿이 필요 없습니다 — 포크는 퍼블릭이니까요. 일반 PR과 똑같은 잡이 돌되, 디프 베이스만 다릅니다.
+
+## 1단계. 감지 액션 그대로 쓰기
+
+`nanoom-affected` 액션이 포크 해결을 내부에서 처리합니다. 감지 잡은 그대로 두세요:
+
+```yaml
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      has-change: ${{ steps.detect.outputs.has-change }}
+      matrix: ${{ steps.detect.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: detect
+        uses: ./.github/actions/nanoom-affected
+        with:
+          group: ci
+```
+
+## 2단계. 포크 잡에서 시크릿 빼기 (중요)
+
+GitHub Actions는 **외부 기여자의 포크 PR로 트리거된 잡엔 시크릿을 넘기지 않습니다**. 이게 플랫폼 보호 장치입니다. 워크플로에서 `test`(또는 하류) 잡이 시크릿을 요구하지 않게 하세요:
+
+```yaml
+  test:
+    needs: [detect]
+    if: ${{ needs.detect.outputs.has-change == 'true' }}
+    # 시크릿 불필요 — 의존성은 퍼블릭 레지스트리에서 설치
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/nanoom-install
+      - uses: ./.github/actions/nanoom-run
+```
+
+테스트가 프라이빗 레지스트리 토큰을 쓰려면, 베이스 저장소의 **레포지토리 시크릿**에 넣고 `github.event.pull_request.head.repo.full_name == github.repository`일 때만 주입하세요. 아니면 포크에선 잡을 건너뛰게 하세요:
+
+```yaml
+  test:
+    if: ${{ needs.detect.outputs.has-change == 'true' && github.event.pull_request.head.repo.full_name == github.repository }}
+```
+
+## 3단계. 로컬에서 검증
+
+포크 PR을 로컬에서 시뮬레이션하세요:
+
+```bash
+# origin이 내 포크, upstream이 베이스 저장소라고 가정
+git fetch upstream main
+git fetch origin your-branch
+PULL_REQUEST_BASE_REF=main PULL_REQUEST_HEAD_REF=origin/your-branch \
+  GITHUB_HEAD_REPOSITORY=your-username/your-fork \
+  GITHUB_REPOSITORY=org/base-repo \
+  nanoom affected
+```
+
+## 자주 겪는 문제
+
+**"공통 조상 없음" 에러.** 포크가 리베이스했거나 히스토리를 잃었을 수 있습니다. 기여자에게 베이스 브랜치 최신으로 리베이스해 달라고 하세요.
+
+**잘못된 디프 베이스.** 체크아웃에 `fetch-depth: 0`을 줘야 전체 히스토리를 쓸 수 있습니다.
+
+## 관련 문서
+
+- [설정: globalDependencies](/ko/docs/reference/configuration#global-dependencies) — 포크에서도 록파일 변경은 전체를 트리거.
+- [CLI: nanoom affected](/ko/docs/reference/cli#nanoom-affected) — 쓰는 환경 변수들.

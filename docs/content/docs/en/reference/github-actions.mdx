@@ -1,0 +1,215 @@
+---
+title: GitHub Actions reference
+description: Composite actions — inputs, outputs, and usage examples
+---
+
+nanoom ships five composite actions in this repository. Reference them with local paths inside the nanoom repo (`./.github/actions/...`), or publish your fork and use `owner/repo/.github/actions/nanoom-affected@tag`.
+
+---
+
+## `nanoom-affected`
+
+Runs affected detection and emits a job matrix.
+
+### Usage
+
+```yaml
+- id: detect
+  uses: ./.github/actions/nanoom-affected
+  with:
+    group: ci # optional: emit matrix for one group only
+```
+
+### Inputs
+
+| Input | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `group` | string | No | — | Emit matrix for a single group (e.g. `ci`) |
+| `version` | string | No | `latest` | nanoom version to install (`latest` or `v0.1.0`) |
+
+### Outputs
+
+| Output | Type | Description |
+| --- | --- | --- |
+| `has-change` | string | `"true"` when at least one project is affected |
+| `matrix` | JSON | `{ "include": [...] }` ready for `strategy.matrix` |
+
+### What it does internally
+
+1. Installs nanoom binary (cached by version).
+2. Runs `nanoom affected --json` (or `--matrix <group>`) reading event env vars.
+2. Converts the JSON to a matrix capped by `concurrency`.
+3. Sets outputs `has-change` and `matrix`.
+
+---
+
+## `nanoom-run`
+
+Runs one `(project, task)` pair on the current runner.
+
+### Usage
+
+```yaml
+- uses: ./.github/actions/nanoom-run
+  with:
+    group: ci
+    task: ${{ matrix.task }}
+    filter: ${{ matrix.name }}
+    shard: ${{ matrix.shard }}
+```
+
+### Inputs
+
+| Input | Type | Required | Description |
+| --- | --- | --- | --- |
+| `group` | string | **Yes** | Group name from config |
+| `task` | string | **Yes** | Task name from the group's `tasks` |
+| `filter` | string | **Yes** | Project name to run (from `matrix.name`) |
+| `shard` | string | No | Shard index (from `matrix.shard`) |
+| `version` | string | No | `latest` — nanoom version to install |
+
+### What it does internally
+
+1. Installs nanoom.
+2. Runs `nanoom run <group> <task> --filter <filter> [--shard <shard>]`.
+3. Writes `<job>_result=success|failure` to `$GITHUB_OUTPUT` for the status gate.
+
+---
+
+## `nanoom-install`
+
+Installs dependencies for every discovered project (and optionally the root).
+
+### Usage
+
+```yaml
+- uses: ./.github/actions/nanoom-install
+  with:
+    package-manager: auto # auto | pnpm | yarn | npm
+    root-install: 'true'
+```
+
+### Inputs
+
+| Input | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `package-manager` | string | No | `auto` | `auto`, `pnpm`, `yarn`, or `npm` |
+| `root-install` | boolean | No | `false` | Also run install at repo root |
+| `version` | string | No | `latest` | nanoom version to install |
+
+### Detection (when `auto`)
+
+1. `pnpm-lock.yaml` → pnpm
+2. `yarn.lock` → yarn
+3. otherwise → npm
+
+---
+
+## `nanoom-status`
+
+Aggregates job results and fails if anything failed.
+
+### Usage
+
+```yaml
+- uses: ./.github/actions/nanoom-status
+  with:
+    jobs: test
+    format: markdown
+```
+
+### Inputs
+
+| Input | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `jobs` | string | **Yes** | — | Comma-separated job names (e.g. `test` or `build,test,e2e`) |
+| `format` | string | No | `text` | `text`, `json`, or `markdown` |
+| `version` | string | No | `latest` | nanoom version to install |
+
+### What it does
+
+1. Installs nanoom.
+2. Reads `$GITHUB_OUTPUT` for each listed job: `<job>_result=success|failure|cancelled|skipped`.
+3. Prints a summary table in the chosen format.
+4. **Exits 1 if any job reported `failure`** — use as the required status check.
+
+### Output formats
+
+**Text:**
+```
+test → success
+test → success
+test → failure
+```
+
+**Markdown:**
+```markdown
+| Job | Result |
+|-----|--------|
+| test | ✅ success |
+| test | ❌ failure |
+```
+
+**JSON:**
+```json
+{ "results": [ { "job": "test", "result": "failure" } ] }
+```
+
+---
+
+## `setup-nanoom`
+
+Downloads and caches the nanoom binary, adds it to `$PATH`.
+
+### Usage
+
+```yaml
+- uses: ./.github/actions/setup-nanoom
+  with:
+    version: latest
+```
+
+### Inputs
+
+| Input | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `version` | string | No | `latest` | Version to install (`latest` or `v0.1.0`) |
+
+### Use case
+
+Use this when you want to run raw `nanoom` commands in your own steps:
+
+```yaml
+- uses: ./.github/actions/setup-nanoom
+- run: nanoom affected --json
+- run: nanoom run ci test --filter @app/web
+```
+
+---
+
+## Matrix entry fields
+
+Every entry in the `include` array carries:
+
+| Field | Type | Present | Description |
+| --- | --- | --- | --- |
+| `name` | string | always | Project name |
+| `path` | string | always | Project path relative to repo root |
+| `task` | string | always | Task name to run |
+| `shard` | integer | when sharded | 1-based shard index |
+| `isolate` | string | when isolated | `"true"` — dedicated runner |
+
+---
+
+## Fork pull requests
+
+Detection resolves merge-base against the fork's head repository when `GITHUB_HEAD_REPOSITORY` differs from `GITHUB_REPOSITORY`. Keep secrets out of jobs that run for untrusted forks; nanoom itself needs none.
+
+---
+
+## Related
+
+- [How-to: PR checks](/en/docs/how-tos/pr-checks) — full workflow.
+- [How-to: Sharding](/en/docs/how-tos/sharding) — shard in Actions.
+- [How-to: Merge gate](/en/docs/how-tos/merge-gate) — status gate.
+- [CLI reference](/en/docs/reference/cli) — underlying flags.

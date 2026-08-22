@@ -1,0 +1,56 @@
+name: 'nanoom-status'
+description: 'Aggregate job results from GITHUB_OUTPUT and fail if any job failed'
+author: 'nanoom'
+
+inputs:
+  version:
+    description: 'nanoom version to install (defaults to latest)'
+    required: false
+    default: 'latest'
+  jobs:
+    description: 'Comma-separated list of job names to aggregate'
+    required: true
+  format:
+    description: 'Output format: text, json, markdown'
+    required: false
+    default: 'text'
+  cwd:
+    description: 'Monorepo working directory (relative to the checked-out repository)'
+    required: false
+    default: '.'
+
+outputs:
+  overall:
+    description: 'Overall status (success/failure)'
+    value: ${{ steps.status.outputs.overall }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install nanoom
+      uses: ./.github/actions/setup-nanoom
+      with:
+        version: ${{ inputs.version }}
+
+    - name: Aggregate status
+      id: status
+      shell: bash
+      env:
+        NANOOM_JOBS: ${{ inputs.jobs }}
+        NANOOM_FORMAT: ${{ inputs.format }}
+        NANOOM_CWD: ${{ inputs.cwd }}
+      run: |
+        set -uo pipefail
+
+        # nanoom exits non-zero when any job failed; capture instead of failing the step.
+        set +e
+        nanoom --cwd "$NANOOM_CWD" status "$NANOOM_JOBS" --format "$NANOOM_FORMAT"
+        EXIT_CODE=$?
+        set -e
+
+        if [ "$EXIT_CODE" -eq 0 ]; then
+          echo "overall=success" >> "$GITHUB_OUTPUT"
+        else
+          echo "overall=failure" >> "$GITHUB_OUTPUT"
+          exit "$EXIT_CODE"
+        fi

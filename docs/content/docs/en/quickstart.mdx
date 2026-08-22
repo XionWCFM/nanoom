@@ -1,0 +1,146 @@
+---
+title: Quickstart
+description: Build an affected-aware GitHub Actions pipeline in five steps
+---
+
+In this tutorial you connect nanoom to a JS/TS monorepo and end up with a pipeline that runs tests only for projects a pull request actually affects. The walkthrough assumes npm, yarn, or pnpm workspaces.
+
+## What you will achieve
+
+By the end of this tutorial you will have:
+
+- A `nanoom.config.json` describing one CI task group.
+- A local workflow to preview affected projects before pushing.
+- A GitHub Actions workflow with a dynamic matrix and a status gate.
+
+## Prerequisites
+
+- A monorepo with npm/yarn/pnpm workspaces (see [workspace discovery](/en/docs/reference/configuration#workspace-discovery) for supported layouts).
+- nanoom installed — follow [Installation](/en/docs/installation) if not.
+- Git history with at least one commit on `main`.
+
+## Step 1. Create the config
+
+Create `nanoom.config.json` at the repository root:
+
+```jsonc
+{
+  "$schema": "./nanoom.schema.json",
+  "group": {
+    "ci": {
+      "tasks": ["lint", "test", "build"],
+      "concurrency": 6
+    }
+  },
+  "globalDependencies": ["pnpm-lock.yaml", "tsconfig.base.json"]
+}
+```
+
+What each field does:
+
+- **`tasks`** — package.json scripts that this group may run.
+- **`concurrency`** — maximum number of matrix entries for the group. When more projects are affected, tasks are grouped onto shared jobs to fit.
+- **`globalDependencies`** — globs that, when changed, mark *every* project affected. Lockfiles and shared tsconfigs belong here.
+
+## Step 2. Preview locally
+
+Simulate a pull request against `main`:
+
+```bash
+# which projects would run?
+PULL_REQUEST_BASE_REF=main PULL_REQUEST_HEAD_REF=HEAD \
+  nanoom affected
+
+# run the test task on affected projects only
+nanoom run ci test
+```
+
+`run` detects your package manager from the lockfile and executes `pnpm test`, `yarn test`, or `npm test` in each project directory — in dependency order.
+
+## Step 3. Wire up GitHub Actions
+
+Create `.github/workflows/ci.yml`:
+
+```yaml
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      has-change: ${{ steps.detect.outputs.has-change }}
+      matrix: ${{ steps.detect.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history for reliable merge-base
+      - id: detect
+        uses: ./.github/actions/nanoom-affected
+
+  install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/nanoom-install
+        with:
+          root-install: 'true'
+
+  test:
+    needs: [detect, install]
+    if: ${{ needs.detect.outputs.has-change == 'true' }}
+    strategy:
+      matrix: ${{ fromJson(needs.detect.outputs.matrix) }}
+      fail-fast: false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/nanoom-run
+        with:
+          group: ci
+          task: ${{ matrix.task }}
+          filter: ${{ matrix.name }}
+          shard: ${{ matrix.shard }}
+
+  status:
+    needs: [test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/nanoom-status
+        with:
+          jobs: test
+```
+
+## Step 4. Verify the behavior
+
+Open a pull request and check the outcome against this table:
+
+| Your change | Expected result |
+| --- | --- |
+| README only | Zero test jobs; workflow passes |
+| Leaf library | Tests run for that library and every app linking it |
+| Lockfile | Everything runs |
+
+## FAQ
+
+### Nothing is detected when I test locally
+
+`affected` compares against a merge-base. Make sure your branch shares history with the ref you pass (`git fetch origin main` first), and that you set both `PULL_REQUEST_BASE_REF` and `PULL_REQUEST_HEAD_REF`.
+
+### The matrix is empty in Actions but works locally
+
+The `detect` job needs full git history. Keep `fetch-depth: 0` on checkout, otherwise the merge-base cannot be computed.
+
+### How do I split a slow test suite across runners?
+
+Add a shard rule for that project — see [Split slow suites with sharding](/en/docs/how-tos/sharding).
+
+## Next steps
+
+- Skip jobs for fork PRs safely: [Run on fork pull requests](/en/docs/how-tos/fork-prs)
+- Block merges when any job fails: [Gate merges with a status check](/en/docs/how-tos/merge-gate)
+- Every config field explained: [Configuration reference](/en/docs/reference/configuration)

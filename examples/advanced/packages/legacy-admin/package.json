@@ -1,0 +1,8 @@
+{
+  "name": "@adv/legacy-admin",
+  "version": "0.9.0",
+  "private": true,
+  "scripts": {
+    "test": "node scripts/test.js"
+  }
+}

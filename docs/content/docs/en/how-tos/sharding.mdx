@@ -1,0 +1,111 @@
+---
+title: Split slow suites with sharding
+description: Break a large test suite into parallel shards that run on separate runners
+---
+
+Sharding splits one project's test task into N parallel jobs. Each job runs the same command with `NANOOM_SHARD_INDEX` / `NANOOM_SHARD_TOTAL` set; your test runner picks the right slice.
+
+## Prerequisites
+
+- A project with a slow test task (e.g. `test:e2e`) in a group.
+- Your test runner supports sharding: Jest `--shard`, Playwright `--shard`, Vitest `--shard`, etc.
+
+## 1. Configure the shard rule
+
+In `nanoom.config.json`, add a rule for the project:
+
+```jsonc
+{
+  "group": {
+    "ci": {
+      "tasks": ["lint", "test", "test:e2e"],
+      "concurrency": 12,
+      "rules": [
+        {
+          "name": "@app/web",
+          "shard": [{ "task": "test:e2e", "shard": 4 }]
+        }
+      ]
+    }
+  }
+}
+```
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `task` | string | The task name to shard (must be in the group's `tasks`) |
+| `shard` | integer | Number of shards (≥2) |
+
+This produces four matrix entries for `@app/web`, each carrying `"shard": 1..4`.
+
+## 2. Update the run step
+
+Pass the shard index and total to `nanoom run`:
+
+```yaml
+- uses: ./.github/actions/nanoom-run
+  with:
+    group: ci
+    task: ${{ matrix.task }}
+    filter: ${{ matrix.name }}
+    shard: ${{ matrix.shard }}
+```
+
+The action internally runs:
+
+```bash
+NANOOM_SHARD_INDEX=2 NANOOM_SHARD_TOTAL=4 nanoom run ci test:e2e --filter @app/web
+```
+
+## 3. Consume the env vars in your test command
+
+In `package.json`, read the env vars:
+
+```jsonc
+{
+  "scripts": {
+    "test:e2e": "playwright test --shard=$NANOOM_SHARD_INDEX/$NANOOM_SHARD_TOTAL"
+  }
+}
+```
+
+Or in a shell wrapper:
+
+```bash
+# test-e2e.sh
+playwright test --shard=$NANOOM_SHARD_INDEX/$NANOOM_SHARD_TOTAL
+```
+
+```jsonc
+{ "scripts": { "test:e2e": "./test-e2e.sh" } }
+```
+
+Supported runners:
+- **Jest**: `jest --shard=$NANOOM_SHARD_INDEX/$NANOOM_SHARD_TOTAL`
+- **Vitest**: `vitest --shard=$NANOOM_SHARD_INDEX/$NANOOM_SHARD_TOTAL`
+- **Playwright**: `playwright test --shard=$NANOOM_SHARD_INDEX/$NANOOM_SHARD_TOTAL`
+- **Cypress**: `cypress run --env shard=$NANOOM_SHARD_INDEX,totalShards=$NANOOM_SHARD_TOTAL`
+
+## 4. Verify
+
+Open a PR that touches the sharded project. The Actions UI shows four separate jobs like:
+
+```
+@ app/web → test:e2e [shard 1/4]
+@ app/web → test:e2e [shard 2/4]
+@ app/web → test:e2e [shard 3/4]
+@ app/web → test:e2e [shard 4/4]
+```
+
+Each runs a distinct subset. Total CI time for that task drops proportionally (minus overhead).
+
+## Tips
+
+- Start with `shard: 2` and increase if runners are underutilized.
+- `concurrency` caps total matrix entries across all groups; set it high enough to accommodate all shards.
+- Sharding and `isolate` can combine: a sharded task can also be isolated (dedicated runner per shard).
+
+## Related
+
+- [Configuration reference: rules](/en/docs/reference/configuration#rules) — full field list.
+- [CLI: nanoom run](/en/docs/reference/cli#nanoom-run) — `--shard` / `--total-shards` flags.

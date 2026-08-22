@@ -1,0 +1,42 @@
+---
+title: Design philosophy
+description: The principles that guide nanoom's design and when not to use it
+---
+
+## One question, answered precisely
+
+nanoom does exactly one thing: determine which projects a change affects, and turn that answer into CI primitives. Everything else is out of scope by design.
+
+## Boring technology
+
+- **Git is the database.** Changed files come from `git diff` against a real merge-base. No state files, no caches to invalidate, no daemons.
+- **A single static binary.** Written in Rust; no runtime to install on runners beyond what Actions already provides.
+- **JSON config with a published schema.** Autocomplete and validation for free; no YAML anchors or DSL to learn.
+
+## Correct propagation over clever caching
+
+The dependency graph uses the same resolution rules as pnpm:
+
+- `workspace:*`, `workspace:^x.y.z`, `link:…`, `file:…` → always an internal edge.
+- Plain semver ranges (`^1.0.0`, `~2.1.0`, `>=1 <3`, `||` unions) → internal edge only when the local package version satisfies the range.
+- Unresolvable ranges point at the registry, not the workspace — no edge.
+
+Affected expansion walks reverse edges transitively: change a leaf lib and every direct or indirect dependent is included.
+
+We prefer false positives (run slightly more than needed) over false negatives (silently skip something that broke). Deterministic output order makes matrices reproducible across runs.
+
+## GitHub Actions native
+
+Outputs speak Actions dialect: `{ "include": [...] }` matrices, `$GITHUB_OUTPUT` result lines, event env vars exactly as Actions sets them. nanoom composes with the platform instead of replacing it.
+
+## Graceful degradation
+
+- Shallow clone? Deepen it automatically (`--depth 128`, doubling on failure).
+- Fork PR? Resolve against the head repository.
+- No common ancestor? A clear error tells you to rebase — not a stack trace.
+
+## When not to use nanoom
+
+If you need remote build caching, watch-mode dev servers, codegen pipelines, or you run 500+ packages with heavy build graphs, use Turborepo or Nx. They are excellent tools built for different problems.
+
+nanoom is the fast, dependency-free layer underneath: **detect → matrix → compose → aggregate**.

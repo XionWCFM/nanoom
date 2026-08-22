@@ -1,0 +1,177 @@
+---
+title: How the affected graph works
+description: How nanoom builds the dependency graph, classifies edges, and computes affected projects
+---
+
+This page explains the internals of affected detection. Understanding it helps you configure global dependencies, debug unexpected results, and trust the output.
+
+## Overview of the pipeline
+
+```
+changed files → project mapping → dependency graph → affected expansion → matrix
+```
+
+1. **Changed files** — `git diff` against the merge-base (or `tip` if `COMPARISON=tip`).
+2. **Project mapping** — each file is assigned to the workspace project whose directory contains it.
+3. **Dependency graph** — edges between projects derived from `package.json` dependencies.
+4. **Affected expansion** — starting from directly changed projects, walk reverse edges transitively.
+5. **Matrix** — group affected projects by task, apply concurrency/shard/isolate rules, emit JSON.
+
+## Step 1: Changed files
+
+The diff base is determined by the event:
+
+| Event | Base ref | Head ref |
+| --- | --- | --- |
+| `pull_request` | `PULL_REQUEST_BASE_REF` | `PULL_REQUEST_HEAD_REF` |
+| `push` | `PUSH_REF_NAME` (parent) | `PUSH_REF_NAME` |
+| `merge_group` | `MERGE_GROUP_BASE_REF` | `MERGE_GROUP_HEAD_REF` |
+
+Override with `COMPARISON=tip` to diff against the tip commit instead of the merge-base.
+
+## Step 2: Project mapping
+
+Files are matched to the innermost project directory that contains them. A file outside all project directories (e.g. `README.md` at root) maps to **no project** — it produces no direct affected projects (but may trigger `globalDependencies`).
+
+## Step 3: Dependency graph construction
+
+Edges come from **all four dependency kinds** in each project's `package.json`:
+
+- `dependencies`
+- `devDependencies`
+- `peerDependencies`
+- `optionalDependencies`
+
+For each specifier, nanoom classifies the edge:
+
+| Specifier pattern | Internal edge? | Rationale |
+| --- | --- | --- |
+| `workspace:*` | ✅ Always | Explicit workspace protocol |
+| `workspace:^x.y.z` / `workspace:~x.y.z` | ✅ Always | Workspace protocol with range |
+| `link:../path` | ✅ Always | Local file symlink |
+| `file:../path` | ✅ Always | Local tarball/directory |
+| Plain semver (`^1.0.0`, `~2.1.0`, `>=1 <3`, `1.0.0`, `||`) | ✅ Only if local version satisfies range | Resolves to local package |
+| Unresolvable range | ❌ No | Resolves to registry |
+
+The **local version** is the `version` field of the target project's `package.json`. For `^` ranges starting at `0.x.y`, standard semver rules apply (only patch changes allowed).
+
+Example:
+```json
+// packages/lib-a/package.json
+{ "name": "@scope/lib-a", "version": "1.2.3" }
+
+// packages/app/package.json
+{ "dependencies": { "@scope/lib-a": "^1.0.0" } }
+```
+Since `1.2.3` satisfies `^1.0.0`, an internal edge `app → lib-a` exists.
+
+## Step 4: Affected expansion
+
+Starting from the set of directly changed projects (from Step 2), nanoom walks **reverse edges** transitively:
+
+```
+changed: lib-a
+reverse edges: app → lib-a
+affected: { lib-a, app }
+```
+
+The result is a set of project names in **deterministic discovery order** (the order projects were found during workspace discovery).
+
+### Global dependencies shortcut
+
+If any file matching a `globalDependencies` glob changed (e.g. `pnpm-lock.yaml`), the expansion short-circuits: **all projects become affected**. This covers lockfile changes that potentially affect every package.
+
+## Step 5: Matrix generation
+
+Affected projects are grouped by task group:
+
+```
+group "ci" (tasks: lint, test, build)
+affected: { lib-a, app }
+→ matrix entries:
+  { name: "lib-a", path: "packages/lib-a", task: "lint" }
+  { name: "lib-a", path: "packages/lib-a", task: "test" }
+  { name: "lib-a", path: "packages/lib-a", task: "build" }
+  { name: "app", path: "apps/app", task: "lint" }
+  ...
+```
+
+### Rules modify entries
+
+| Rule | Effect on matrix |
+| --- | --- |
+| `ignore: true` | Remove all entries for this project from the group |
+| `isolate: ["test"]` | Each listed task gets its own matrix entry (no batching) |
+| `shard: [{ task: "test", shard: 4 }]` | Split that task into 4 entries with `shard: 1..4` |
+
+### Concurrency cap
+
+`concurrency` is a hint for how many matrix jobs may run in parallel. It never changes the generated entries: every `(project, task)` pair always gets its own matrix entry, so no work is silently dropped or merged.
+
+## Summary diagram
+
+```
+push/PR
+   │
+   ▼
+git diff (merge-base) ──► changed files
+   │                           │
+   │                           ▼
+   │                    map to projects (dir containment)
+   │                           │
+   ▼                           ▼
+┌─────────────────────────────────────────┐
+│         Workspace discovery             │
+│  (pnpm-workspace.yaml, turbo.json,      │
+│   nx.json, package.json workspaces)     │
+│                                         │
+│  For each project:                      │
+│   read package.json                     │
+│   parse all 4 dep kinds                 │
+│   classify each specifier               │
+│   build directed graph (dep → dependent)│
+└─────────────────────────────────────────┘
+   │
+   ▼
+reverse walk from changed projects
+   │
+   ▼
+globalDependencies hit? ──► YES ──► all projects
+   │
+   NO
+   │
+   ▼
+deterministic set of affected projects
+   │
+   ▼
+apply group rules (ignore/isolate/shard)
+   │
+   ▼
+emit { "include": [...] } matrix (one entry per project/task pair)
+```
+
+## Configuration impact
+
+| Config | Effect on graph |
+| --- | --- |
+| `workspace.include` / `exclude` | Filters which directories become projects |
+| `globalDependencies` | Short-circuits expansion to "all" |
+| `group.rules.ignore` | Removes project from matrix (but not from graph) |
+| `group.rules.isolate` / `shard` | Changes matrix entry shape, not graph |
+
+## Debugging tips
+
+Run locally with JSON output:
+
+```bash
+PULL_REQUEST_BASE_REF=main PULL_REQUEST_HEAD_REF=HEAD \
+  nanoom affected --json
+```
+
+The output includes the full graph (projects, edges, affected set) for inspection.
+
+## Related
+
+- [Reference: Configuration](/en/docs/reference/configuration) — field details.
+- [Reference: CLI affected](/en/docs/reference/cli#nanoom-affected) — flags and env vars.
+- [How-to: PR checks](/en/docs/how-tos/pr-checks) — wiring the matrix into Actions.

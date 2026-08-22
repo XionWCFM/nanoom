@@ -1,0 +1,43 @@
+name: 'nanoom-install'
+description: 'Install monorepo dependencies with the detected package manager'
+author: 'nanoom'
+
+inputs:
+  version:
+    description: 'nanoom version to install (defaults to latest)'
+    required: false
+    default: 'latest'
+  package-manager:
+    description: 'Package manager: auto, pnpm, yarn, or npm'
+    required: false
+    default: 'auto'
+  root-install:
+    description: 'Also install each workspace separately after the root install (true/false)'
+    required: false
+    default: 'false'
+  cwd:
+    description: 'Monorepo working directory (relative to the checked-out repository)'
+    required: false
+    default: '.'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install nanoom
+      uses: ./.github/actions/setup-nanoom
+      with:
+        version: ${{ inputs.version }}
+
+    - name: Install dependencies
+      shell: bash
+      env:
+        NANOOM_PM: ${{ inputs.package-manager }}
+        NANOOM_ROOT_INSTALL: ${{ inputs.root-install }}
+        NANOOM_CWD: ${{ inputs.cwd }}
+      run: |
+        set -euo pipefail
+
+        ARGS=(--cwd "$NANOOM_CWD" install --package-manager "$NANOOM_PM")
+        [ "$NANOOM_ROOT_INSTALL" = "true" ] && ARGS+=(--root-install)
+
+        nanoom "${ARGS[@]}"

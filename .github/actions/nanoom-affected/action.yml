@@ -1,0 +1,85 @@
+name: 'nanoom-affected'
+description: 'Calculate affected projects and expose a GitHub Actions matrix output'
+author: 'nanoom'
+
+inputs:
+  version:
+    description: 'nanoom version to install (defaults to latest)'
+    required: false
+    default: 'latest'
+  group:
+    description: 'Generate matrix for one group. Empty = include every group.'
+    required: false
+    default: ''
+  config:
+    description: 'Path to nanoom.config.json (relative to workspace)'
+    required: false
+    default: 'nanoom.config.json'
+  cwd:
+    description: 'Monorepo working directory (relative to the checked-out repository)'
+    required: false
+    default: '.'
+
+outputs:
+  has-change:
+    description: 'true when at least one project is affected'
+    value: ${{ steps.affected.outputs.has-change }}
+  matrix:
+    description: 'GitHub Actions matrix JSON ({ "include": [...] })'
+    value: ${{ steps.affected.outputs.matrix }}
+  max-parallel:
+    description: 'Maximum parallel runners for the selected group'
+    value: ${{ steps.affected.outputs.max-parallel }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install nanoom
+      uses: ./.github/actions/setup-nanoom
+      with:
+        version: ${{ inputs.version }}
+
+    - name: Calculate affected projects
+      id: affected
+      shell: bash
+      env:
+        NANOOM_GROUP: ${{ inputs.group }}
+        NANOOM_CONFIG: ${{ inputs.config }}
+        NANOOM_CWD: ${{ inputs.cwd }}
+      run: |
+        set -euo pipefail
+
+        # The CLI reads event info from GITHUB_* env vars set by Actions.
+        JSON=$(nanoom -C "$NANOOM_CWD" affected -c "$NANOOM_CONFIG" --json)
+
+        HAS_CHANGE=$(echo "$JSON" | jq -r '.has_change')
+        echo "has-change=${HAS_CHANGE}" >> "$GITHUB_OUTPUT"
+
+        if [ "$HAS_CHANGE" != "true" ]; then
+          echo 'matrix={"include":[]}' >> "$GITHUB_OUTPUT"
+          echo 'max-parallel=1' >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        if [ -n "$NANOOM_GROUP" ]; then
+          MAX_PARALLEL=$(echo "$JSON" | jq -r --arg g "$NANOOM_GROUP" '.group[$g].max_parallel // 1')
+          MATRIX=$(echo "$JSON" | jq -c --arg g "$NANOOM_GROUP" '
+            {include: (.group[$g].workspaces | map({
+              name, path, task,
+              shard: (if .shard then .shard else empty end),
+              isolate: (if .isolate == true then true else empty end)
+            }))}
+          ')
+        else
+          MAX_PARALLEL=1
+          MATRIX=$(echo "$JSON" | jq -c '
+            {include: ([.group[] | .workspaces[]] | map({
+              name, path, task,
+              shard: (if .shard then .shard else empty end),
+              isolate: (if .isolate == true then true else empty end)
+            }))}
+          ')
+        fi
+
+        echo "matrix=${MATRIX}" >> "$GITHUB_OUTPUT"
+        echo "max-parallel=${MAX_PARALLEL}" >> "$GITHUB_OUTPUT"

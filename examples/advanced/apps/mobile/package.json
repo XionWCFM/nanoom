@@ -1,0 +1,9 @@
+{
+  "name": "@adv/mobile",
+  "version": "1.2.0",
+  "scripts": {
+    "test": "node scripts/test.js",
+    "build": "node scripts/build.js",
+    "typecheck": "node scripts/typecheck.js"
+  }
+}

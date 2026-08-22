@@ -1,0 +1,78 @@
+name: 'nanoom-run'
+description: 'Run a task from a group on affected projects (or all projects)'
+author: 'nanoom'
+
+inputs:
+  version:
+    description: 'nanoom version to install (defaults to latest)'
+    required: false
+    default: 'latest'
+  group:
+    description: 'Group name from nanoom.config.json'
+    required: true
+  task:
+    description: 'Task name to execute (must belong to the group)'
+    required: true
+  runner:
+    description: 'Runner: auto, pnpm, yarn, turbo, or nx'
+    required: false
+    default: 'auto'
+  filter:
+    description: 'Run only for this workspace name'
+    required: false
+    default: ''
+  shard:
+    description: 'Shard index (1-based)'
+    required: false
+    default: ''
+  total-shards:
+    description: 'Total number of shards'
+    required: false
+    default: ''
+  all:
+    description: 'Run on every project instead of only affected ones (true/false)'
+    required: false
+    default: 'false'
+  continue-on-error-input:
+    description: 'Keep running remaining projects after a failure (true/false)'
+    required: false
+    default: 'false'
+  cwd:
+    description: 'Monorepo working directory (relative to the checked-out repository)'
+    required: false
+    default: '.'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install nanoom
+      uses: ./.github/actions/setup-nanoom
+      with:
+        version: ${{ inputs.version }}
+
+    - name: Run task
+      id: run
+      shell: bash
+      env:
+        NANOOM_GROUP: ${{ inputs.group }}
+        NANOOM_TASK: ${{ inputs.task }}
+        NANOOM_RUNNER: ${{ inputs.runner }}
+        NANOOM_FILTER: ${{ inputs.filter }}
+        NANOOM_SHARD_INPUT: ${{ inputs.shard }}
+        NANOOM_TOTAL_SHARDS_INPUT: ${{ inputs.total-shards }}
+        NANOOM_ALL: ${{ inputs.all }}
+        NANOOM_CONTINUE: ${{ inputs.continue-on-error-input }}
+        NANOOM_CWD: ${{ inputs.cwd }}
+      run: |
+        set -euo pipefail
+
+        ARGS=(--cwd "$NANOOM_CWD" run "$NANOOM_GROUP" "$NANOOM_TASK")
+        [ "$NANOOM_RUNNER" != "auto" ] && ARGS+=(--runner "$NANOOM_RUNNER")
+
+        [ -n "$NANOOM_FILTER" ] && ARGS+=(--filter "$NANOOM_FILTER")
+        [ -n "$NANOOM_SHARD_INPUT" ] && ARGS+=(--shard "$NANOOM_SHARD_INPUT")
+        [ -n "$NANOOM_TOTAL_SHARDS_INPUT" ] && ARGS+=(--total-shards "$NANOOM_TOTAL_SHARDS_INPUT")
+        [ "$NANOOM_ALL" = "true" ] && ARGS+=(--all)
+        [ "$NANOOM_CONTINUE" = "true" ] && ARGS+=(--continue-on-error)
+
+        nanoom "${ARGS[@]}"
