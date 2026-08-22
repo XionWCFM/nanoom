@@ -118,7 +118,7 @@ jobs:
             --bundle "${{ matrix.artifact }}.sigstore.json"
 
       - name: Upload artifact for release smoke test
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-${{ matrix.artifact }}
           path: |
