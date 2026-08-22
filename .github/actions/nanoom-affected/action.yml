@@ -50,7 +50,7 @@ runs:
         set -euo pipefail
 
         # The CLI reads event info from GITHUB_* env vars set by Actions.
-        JSON=$(nanoom -C "$NANOOM_CWD" affected -c "$NANOOM_CONFIG" --json)
+          JSON=$(nanoom -C "$NANOOM_CWD" -c "$NANOOM_CONFIG" affected --json)
 
         HAS_CHANGE=$(echo "$JSON" | jq -r '.has_change')
         echo "has-change=${HAS_CHANGE}" >> "$GITHUB_OUTPUT"
