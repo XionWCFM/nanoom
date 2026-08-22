@@ -2,24 +2,34 @@
 
 ## Goal Completion Contract
 
-- [ ] Every checklist item below is either implemented in code or explicitly removed from SPEC/README with the reason documented. The remaining unchecked items are external credentials/scenarios or features not yet implemented.
+This file is an executable work contract. An agent working on this repository must
+continue the implement -> test -> inspect evidence -> update checklist loop until
+every in-scope item is checked. It must not stop after reporting a failure, a
+partial implementation, or a plan. When a check fails, record the failure,
+fix the root cause, rerun the smallest relevant test, then rerun the full gate.
+
+The user-preferred package-manager path is Yarn Berry (Yarn 4.x). npm is not the
+development or fixture package-manager path. npm is only an optional distribution
+verification target when publishing the CLI package is explicitly in scope.
+
+- [ ] Every in-scope checklist item below is implemented, tested, and backed by a reproducible command or hosted-run evidence. Items outside the current scope must be marked `DE-SCOPED` with the user's reason; silently leaving them unchecked is not allowed.
 - [x] `cargo test --all --all-features`, `cargo fmt --all --check`, and `cargo clippy --all-targets --all-features -- -D warnings` pass.
 - [x] Measured Rust test coverage is at least 90% (target remains 95% where practical); the CI job must fail below the threshold.
 - [x] A reproducible local end-to-end fixture proves affected detection, matrix generation, `run`, `install`, `status`, dependency propagation, global dependencies, isolate, and shard behavior.
-- [x] Distribution smoke tests prove direct release-binary execution, npm installation/wrapper execution, and the GitHub Actions setup/download path. Direct release assets and the hosted fixture download path were verified with v0.1.4; npm registry publication remains credential-gated.
+- [ ] Distribution smoke tests prove direct release-binary execution, Yarn Berry-based fixture installation/execution, GitHub Actions setup/download, and (only when explicitly requested) npm registry publication/wrapper execution.
 
 ## Findings To Resolve From Readiness Audit
 
 - [x] Fix the GitHub Actions release URL construction in `.github/actions/setup-nanoom/action.yml` (`github.server_url` is already a URL).
 - [x] Implement the npm wrapper's documented missing-platform-binary fallback, or remove the fallback claim and make the platform package publication path self-contained.
-- [ ] Create and validate the five platform npm packages consumed by `@nanoom/cli` optional dependencies; npm registry publication is currently blocked by missing `NPM_TOKEN`.
+- [ ] Create and validate the five platform distribution packages consumed by the CLI; Yarn Berry is the canonical development/fixture path. npm publication is a separate optional distribution gate.
 - [x] Redesign `nanoom install` for monorepos: root lockfile/package-manager install must work by default, and workspace-local installs must not require nonexistent per-workspace lockfiles.
 - [x] Implement the documented group `concurrency` behavior or revise the specification and configuration semantics so they no longer promise matrix-size enforcement.
 - [x] Add the documented `--runner` interface and implement runner-specific execution for pnpm, yarn, turbo, and nx.
 - [x] Make shard metadata affect actual runner/test execution, not only environment variables; add a fixture that proves distinct shards execute distinct work.
 - [x] Make turbo/nx discovery honor their project/package configuration instead of recursively treating every nested `package.json` as a workspace.
 - [x] Strengthen action E2E assertions to verify exact matrix entries, outputs, install, run, shard, and isolate behavior in the fixture workflow.
-- [ ] Execute fork PR and merge-queue action scenarios on a hosted test repository; unit/integration coverage exists, but hosted fork/merge-queue evidence is still pending.
+- [ ] Execute the hosted merge-queue (`merge_group`) scenario and verify the aggregate job is a required status check. `DE-SCOPED: fork PR scenario excluded by the user's current scope; merge queue remains required.`
 - [x] Add a reusable release smoke verifier for archive naming, checksums, executable permissions, and Windows packaging; wire it into the release workflow.
 - [x] Execute the release verifier against real GitHub Release assets and validate setup action download URLs (v0.1.7; five archives, checksums, and Sigstore bundles).
 - [x] Reconcile SPEC, IMPLEMENTATION_PLAN, README, and CHECKLIST so advertised behavior matches implemented behavior.
@@ -96,6 +106,15 @@
 
 ## Phase 2: GitHub Actions
 
+### 2.3 Yarn Berry + Turborepo hosted fixture
+- [ ] `nanoom-fixtures` uses Yarn Berry 4.x with an immutable lockfile and Turborepo.
+- [ ] The fixture contains an explicit transitive graph `app -> core -> shared`.
+- [ ] A `shared` change affects and executes `shared`, `core`, and `app` as appropriate.
+- [ ] The hosted workflow calculates `affected`, emits a dynamic matrix, distributes matrix jobs, records each result, and has a separate aggregate status job.
+- [ ] Matrix sharding and isolate entries are generated from affected output rather than hardcoded YAML.
+- [ ] The aggregate status job reads matrix result artifacts/files and fails when any matrix item fails.
+- [ ] The workflow triggers on `merge_group` and its aggregate status is configured as a required check on main.
+
 ### 2.1 Composite Actions
 - [x] nanoom-affected action.yml
 - [x] nanoom-run action.yml
@@ -148,6 +167,33 @@
 - [x] cargo llvm-cov --workspace --all-features --cobertura --fail-under-lines 90 (93.66% line coverage measured locally and hosted)
 - [x] All integration tests pass
 - [x] Actions work in test repository (`nanoom-fixtures` hosted runs 32578005927 and 32579238857: v0.1.7 release setup, affected/matrix, install, run, status, shard/isolate all passed)
+
+## Agent Loop / Stop Rule
+
+When the user says “CHECKLIST을 구현하고 종료조건이 될 때까지 loop” the agent must:
+
+1. Read this file and `SPEC.md` completely.
+2. Inspect the current repository, branch, CI, fixtures, and prior evidence.
+3. Convert every unchecked in-scope item into an implementation task.
+4. Implement one coherent batch using `apply_patch`.
+5. Run focused tests, then the complete local quality gate.
+6. Run or repair hosted CI/E2E and distribution verification.
+7. Update this checklist immediately with status and evidence.
+8. Repeat from step 3 until the stop rule is satisfied.
+
+The agent may stop and mark the goal complete only when:
+
+- no in-scope unchecked item remains;
+- all required local quality gates pass;
+- coverage is at least 90%;
+- Yarn Berry + Turborepo fixture E2E passes on a hosted runner;
+- transitive dependency propagation is proven;
+- affected -> dynamic matrix -> result artifact -> aggregate status is proven;
+- merge queue trigger and required aggregate status are configured and verified;
+- distribution/install verification required by the current scope passes;
+- this checklist contains the evidence for each claim.
+
+If any condition fails, the goal remains active and the agent must continue the loop.
 
 ## Verified Quality Gates
 
