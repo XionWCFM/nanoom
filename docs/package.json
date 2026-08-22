@@ -2,6 +2,7 @@
   "name": "nanoom-docs",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "yarn@4.9.1",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -19,6 +20,6 @@
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "tailwindcss": "^4.3.3",
-    "typescript": "^7.0.2"
+    "typescript": "^5.9.3"
   }
 }

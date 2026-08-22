@@ -43,7 +43,9 @@ runs:
   using: 'composite'
   steps:
     - name: Install nanoom
-      uses: ./.github/actions/setup-nanoom
+      # A remote composite action runs in the caller's checkout, so a relative
+      # action path would incorrectly look for setup-nanoom in the consumer.
+      uses: XionWCFM/nanoom/.github/actions/setup-nanoom@main
       with:
         version: ${{ inputs.version }}
 

@@ -8,6 +8,12 @@ pub struct StatusArgs {
 
     #[arg(long, help = "Output format (json, markdown, text)")]
     pub format: Option<String>,
+
+    #[arg(
+        long,
+        help = "Comma-separated job=status values, for example build=success,test=failure"
+    )]
+    pub results: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -34,7 +40,7 @@ pub async fn execute(args: StatusArgs, _config: &crate::Config) -> Result<()> {
     let mut has_failure = false;
 
     for job_name in &job_names {
-        let result = read_job_result(job_name)?;
+        let result = read_job_result(job_name, args.results.as_deref())?;
         has_failure |= result.status == JobStatus::Failure;
         results.push(result);
     }
@@ -92,7 +98,28 @@ pub async fn execute(args: StatusArgs, _config: &crate::Config) -> Result<()> {
     Ok(())
 }
 
-fn read_job_result(job_name: &str) -> Result<JobResult> {
+fn read_job_result(job_name: &str, explicit_results: Option<&str>) -> Result<JobResult> {
+    if let Some(results) = explicit_results {
+        if let Some((_, status)) = results
+            .split(',')
+            .map(str::trim)
+            .filter_map(|entry| entry.split_once('='))
+            .find(|(name, _)| name.trim() == job_name)
+        {
+            return Ok(JobResult {
+                name: job_name.to_string(),
+                status: match status.trim() {
+                    "success" => JobStatus::Success,
+                    "failure" => JobStatus::Failure,
+                    "cancelled" => JobStatus::Cancelled,
+                    "skipped" => JobStatus::Skipped,
+                    _ => JobStatus::Failure,
+                },
+                duration_ms: None,
+                url: None,
+            });
+        }
+    }
     let output_file =
         std::env::var("GITHUB_OUTPUT").unwrap_or_else(|_| "/tmp/nanoom-output".to_string());
     let content = std::fs::read_to_string(&output_file).unwrap_or_default();
@@ -148,7 +175,7 @@ mod tests {
         let file = temp_output_file("failure");
         std::env::set_var("GITHUB_OUTPUT", &file);
         std::fs::write(&file, "test_result=failure").unwrap();
-        let result = read_job_result("test").unwrap();
+        let result = read_job_result("test", None).unwrap();
         assert_eq!(result.status, JobStatus::Failure);
     }
 
@@ -158,7 +185,7 @@ mod tests {
         let file = temp_output_file("success");
         std::env::set_var("GITHUB_OUTPUT", &file);
         std::fs::write(&file, "test_result=success").unwrap();
-        let result = read_job_result("test").unwrap();
+        let result = read_job_result("test", None).unwrap();
         assert_eq!(result.status, JobStatus::Success);
     }
 
@@ -168,7 +195,7 @@ mod tests {
         let file = temp_output_file("cancelled");
         std::env::set_var("GITHUB_OUTPUT", &file);
         std::fs::write(&file, "test_result=cancelled").unwrap();
-        let result = read_job_result("test").unwrap();
+        let result = read_job_result("test", None).unwrap();
         assert_eq!(result.status, JobStatus::Cancelled);
     }
 
@@ -178,7 +205,7 @@ mod tests {
         let file = temp_output_file("skipped");
         std::env::set_var("GITHUB_OUTPUT", &file);
         std::fs::write(&file, "test_result=skipped").unwrap();
-        let result = read_job_result("test").unwrap();
+        let result = read_job_result("test", None).unwrap();
         assert_eq!(result.status, JobStatus::Skipped);
     }
 
@@ -188,7 +215,7 @@ mod tests {
         let file = temp_output_file("missing");
         std::env::set_var("GITHUB_OUTPUT", &file);
         std::fs::write(&file, "other=value").unwrap();
-        let result = read_job_result("test").unwrap();
+        let result = read_job_result("test", None).unwrap();
         assert_eq!(result.status, JobStatus::Success);
     }
 
@@ -198,10 +225,16 @@ mod tests {
         let file = temp_output_file("multi");
         std::env::set_var("GITHUB_OUTPUT", &file);
         std::fs::write(&file, "build_result=success\ntest_result=failure").unwrap();
-        let build = read_job_result("build").unwrap();
-        let test = read_job_result("test").unwrap();
+        let build = read_job_result("build", None).unwrap();
+        let test = read_job_result("test", None).unwrap();
         assert_eq!(build.status, JobStatus::Success);
         assert_eq!(test.status, JobStatus::Failure);
+    }
+
+    #[test]
+    fn explicit_results_take_precedence_over_github_output() {
+        let result = read_job_result("matrix", Some("matrix=failure,other=success")).unwrap();
+        assert_eq!(result.status, JobStatus::Failure);
     }
 
     #[test]

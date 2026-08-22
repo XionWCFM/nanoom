@@ -23,7 +23,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 100
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -103,3 +103,102 @@ jobs:
       - name: Smoke test CLI
         shell: bash
         run: ./target/${{ matrix.target }}/release/nanoom --help
+
+  fixture-affected:
+    name: Fixture affected matrix
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.affected.outputs.matrix }}
+      max-parallel: ${{ steps.affected.outputs.max-parallel }}
+    env:
+      NANOOM_LOCAL_BINARY: ${{ github.workspace }}/target/release/nanoom
+      PULL_REQUEST_BASE_REF: main
+      PULL_REQUEST_HEAD_REF: HEAD
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 100
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build local CLI
+        run: cargo build --release
+      - name: Create Yarn Berry + Turborepo fixture
+        run: bash .github/test-fixtures/setup-fixture.sh --shards --isolate --change
+      - id: affected
+        uses: ./.github/actions/nanoom-affected
+        with:
+          version: local
+          group: ci
+          cwd: .fixture
+          base: main
+          head: HEAD
+      - name: Assert transitive affected matrix
+        env:
+          MATRIX: ${{ steps.affected.outputs.matrix }}
+          MAX_PARALLEL: ${{ steps.affected.outputs.max-parallel }}
+        run: |
+          test "$MAX_PARALLEL" = 4
+          echo "$MATRIX" | jq -e '[.include[].name] | sort == ["@fixture/app", "@fixture/core", "@fixture/shared", "@fixture/shared"]' >/dev/null
+          echo "$MATRIX" | jq -e '[.include[] | select(.name == "@fixture/shared" and .shard == 1)] | length == 1' >/dev/null
+          echo "$MATRIX" | jq -e '[.include[] | select(.name == "@fixture/shared" and .shard == 2)] | length == 1' >/dev/null
+          echo "$MATRIX" | jq -e '[.include[] | select(.name == "@fixture/app" and .isolate == true)] | length == 1' >/dev/null
+
+  fixture-run:
+    name: Fixture ${{ matrix.name }} ${{ matrix.task }} shard-${{ matrix.shard || 0 }}
+    needs: fixture-affected
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: ${{ fromJSON(needs.fixture-affected.outputs.max-parallel) }}
+      matrix: ${{ fromJSON(needs.fixture-affected.outputs.matrix) }}
+    env:
+      NANOOM_LOCAL_BINARY: ${{ github.workspace }}/target/release/nanoom
+      PULL_REQUEST_BASE_REF: main
+      PULL_REQUEST_HEAD_REF: HEAD
+      FIXTURE_LOG: ${{ github.workspace }}/.fixture/result.log
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 100
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build local CLI
+        run: cargo build --release
+      - name: Create Yarn Berry fixture
+        run: bash .github/test-fixtures/setup-fixture.sh --shards --isolate --change
+      - uses: ./.github/actions/nanoom-install
+        with:
+          version: local
+          cwd: .fixture
+          package-manager: yarn
+          filter: ${{ matrix.name }}
+      - uses: ./.github/actions/nanoom-run
+        with:
+          version: local
+          cwd: .fixture
+          group: ci
+          task: ${{ matrix.task }}
+          runner: yarn
+          filter: ${{ matrix.name }}
+          shard: ${{ matrix.shard }}
+          isolate: ${{ matrix.isolate }}
+
+  fixture-aggregate:
+    name: Fixture aggregate status
+    if: always()
+    needs: [fixture-affected, fixture-run]
+    runs-on: ubuntu-latest
+    env:
+      NANOOM_LOCAL_BINARY: ${{ github.workspace }}/target/release/nanoom
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 100
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build local CLI
+        run: cargo build --release
+      - name: Report direct matrix job result
+        uses: ./.github/actions/nanoom-status
+        with:
+          version: local
+          jobs: fixture-affected,fixture-run
+          results: fixture-affected=${{ needs.fixture-affected.result }},fixture-run=${{ needs.fixture-run.result }}
+          format: markdown

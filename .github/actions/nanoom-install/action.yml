@@ -19,12 +19,17 @@ inputs:
     description: 'Monorepo working directory (relative to the checked-out repository)'
     required: false
     default: '.'
+  filter:
+    description: 'Install only this workspace and its dependency closure (Yarn Berry)'
+    required: false
+    default: ''
 
 runs:
   using: 'composite'
   steps:
     - name: Install nanoom
-      uses: ./.github/actions/setup-nanoom
+      # Keep nested setup resolvable when this action is consumed remotely.
+      uses: XionWCFM/nanoom/.github/actions/setup-nanoom@main
       with:
         version: ${{ inputs.version }}
 
@@ -34,10 +39,12 @@ runs:
         NANOOM_PM: ${{ inputs.package-manager }}
         NANOOM_ROOT_INSTALL: ${{ inputs.root-install }}
         NANOOM_CWD: ${{ inputs.cwd }}
+        NANOOM_FILTER: ${{ inputs.filter }}
       run: |
         set -euo pipefail
 
         ARGS=(--cwd "$NANOOM_CWD" install --package-manager "$NANOOM_PM")
         [ "$NANOOM_ROOT_INSTALL" = "true" ] && ARGS+=(--root-install)
+        [ -n "$NANOOM_FILTER" ] && ARGS+=(--filter "$NANOOM_FILTER")
 
         nanoom "${ARGS[@]}"

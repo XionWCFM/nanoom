@@ -29,6 +29,10 @@ inputs:
     description: 'Total number of shards'
     required: false
     default: ''
+  isolate:
+    description: 'Run only an isolated matrix entry (true/false)'
+    required: false
+    default: 'false'
   all:
     description: 'Run on every project instead of only affected ones (true/false)'
     required: false
@@ -46,7 +50,8 @@ runs:
   using: 'composite'
   steps:
     - name: Install nanoom
-      uses: ./.github/actions/setup-nanoom
+      # Keep nested setup resolvable when this action is consumed remotely.
+      uses: XionWCFM/nanoom/.github/actions/setup-nanoom@main
       with:
         version: ${{ inputs.version }}
 
@@ -60,6 +65,7 @@ runs:
         NANOOM_FILTER: ${{ inputs.filter }}
         NANOOM_SHARD_INPUT: ${{ inputs.shard }}
         NANOOM_TOTAL_SHARDS_INPUT: ${{ inputs.total-shards }}
+        NANOOM_ISOLATE: ${{ inputs.isolate }}
         NANOOM_ALL: ${{ inputs.all }}
         NANOOM_CONTINUE: ${{ inputs.continue-on-error-input }}
         NANOOM_CWD: ${{ inputs.cwd }}
@@ -72,6 +78,7 @@ runs:
         [ -n "$NANOOM_FILTER" ] && ARGS+=(--filter "$NANOOM_FILTER")
         [ -n "$NANOOM_SHARD_INPUT" ] && ARGS+=(--shard "$NANOOM_SHARD_INPUT")
         [ -n "$NANOOM_TOTAL_SHARDS_INPUT" ] && ARGS+=(--total-shards "$NANOOM_TOTAL_SHARDS_INPUT")
+        [ "$NANOOM_ISOLATE" = "true" ] && ARGS+=(--isolate)
         [ "$NANOOM_ALL" = "true" ] && ARGS+=(--all)
         [ "$NANOOM_CONTINUE" = "true" ] && ARGS+=(--continue-on-error)
 

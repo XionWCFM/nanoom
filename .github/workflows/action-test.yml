@@ -1,12 +1,15 @@
 name: Action Test
 
 on:
+  push:
+    branches: [main]
   pull_request:
+    branches: [main]
     paths:
       - '.github/actions/**'
       - '.github/workflows/action-test.yml'
       - 'src/**'
-  workflow_dispatch:
+  merge_group:
 
 jobs:
   test-composite-actions:
@@ -25,9 +28,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 100
 
       - uses: dtolnay/rust-toolchain@stable
+
+      - name: Enable Yarn Berry
+        run: corepack enable
 
       - uses: Swatinem/rust-cache@v2
 
@@ -69,7 +75,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 100
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -88,8 +94,9 @@ jobs:
         run: |
           OUT=$(./target/release/nanoom -C .fixture affected --base main --json)
           echo "$OUT" | jq -e '.has_change == true' >/dev/null
-          echo "$OUT" | jq -e '[.group.ci.workspaces[] | select(.name == "@fixture/lib" and .shard == 1)] | length == 1' >/dev/null
-          echo "$OUT" | jq -e '[.group.ci.workspaces[] | select(.name == "@fixture/lib" and .shard == 2)] | length == 1' >/dev/null
+          echo "$OUT" | jq -e '[.group.ci.workspaces[] | select(.name == "@fixture/shared" and .shard == 1)] | length == 1' >/dev/null
+          echo "$OUT" | jq -e '[.group.ci.workspaces[] | select(.name == "@fixture/shared" and .shard == 2)] | length == 1' >/dev/null
+          echo "$OUT" | jq -e '[.group.ci.workspaces[].name] | sort == ["@fixture/app", "@fixture/core", "@fixture/shared", "@fixture/shared"]' >/dev/null
           echo "$OUT" | jq -e '[.group.ci.workspaces[] | select(.name == "@fixture/app" and .isolate == true)] | length == 1' >/dev/null
 
   test-all-composite-actions:
@@ -102,7 +109,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 100
       - uses: dtolnay/rust-toolchain@stable
       - name: Build local binary
         run: cargo build --release
@@ -123,8 +130,8 @@ jobs:
           MATRIX: ${{ steps.affected.outputs.matrix }}
           MAX_PARALLEL: ${{ steps.affected.outputs.max-parallel }}
         run: |
-          echo "$MATRIX" | jq -e '[.include[] | select(.name == "@fixture/lib" and .shard == 1)] | length == 1' >/dev/null
-          echo "$MATRIX" | jq -e '[.include[] | select(.name == "@fixture/lib" and .shard == 2)] | length == 1' >/dev/null
+          echo "$MATRIX" | jq -e '[.include[] | select(.name == "@fixture/shared" and .shard == 1)] | length == 1' >/dev/null
+          echo "$MATRIX" | jq -e '[.include[] | select(.name == "@fixture/shared" and .shard == 2)] | length == 1' >/dev/null
           echo "$MATRIX" | jq -e '[.include[] | select(.name == "@fixture/app" and .isolate == true)] | length == 1' >/dev/null
           test "$MAX_PARALLEL" = 4
       - name: Install fixture dependencies
@@ -132,7 +139,7 @@ jobs:
         with:
           version: local
           cwd: .fixture
-          package-manager: npm
+          package-manager: yarn
       - name: Run fixture task
         uses: ./.github/actions/nanoom-run
         with:
@@ -140,7 +147,7 @@ jobs:
           cwd: .fixture
           group: ci
           task: test
-          runner: npm
+          runner: yarn
           all: 'true'
       - name: Seed job results
         run: |
@@ -162,7 +169,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 100
       - uses: dtolnay/rust-toolchain@stable
       - name: Build local binary
         run: cargo build --release
@@ -173,7 +180,7 @@ jobs:
         with:
           version: local
           cwd: .fixture
-          package-manager: npm
+          package-manager: yarn
       - name: Assert install output
         run: test -d .fixture/node_modules
 
@@ -185,14 +192,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 100
       - uses: dtolnay/rust-toolchain@stable
       - name: Build local binary
         run: cargo build --release
       - name: Prepare fixture
         run: bash .github/test-fixtures/setup-fixture.sh
       - name: Install fixture dependencies
-        run: npm install --prefix .fixture --ignore-scripts
+        uses: ./.github/actions/nanoom-install
+        with:
+          version: local
+          cwd: .fixture
+          package-manager: yarn
       - name: Run fixture task
         uses: ./.github/actions/nanoom-run
         with:
@@ -200,7 +211,7 @@ jobs:
           cwd: .fixture
           group: ci
           task: test
-          runner: npm
+          runner: yarn
           all: 'true'
 
   test-status-action-isolated:
@@ -211,7 +222,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 100
       - uses: dtolnay/rust-toolchain@stable
       - name: Build local binary
         run: cargo build --release

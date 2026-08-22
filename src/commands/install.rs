@@ -14,6 +14,9 @@ pub struct InstallArgs {
         help = "Also run an install in each workspace (root install is always performed for a monorepo)"
     )]
     pub root_install: bool,
+
+    #[arg(long, help = "Install only this workspace and its dependency closure")]
+    pub filter: Option<String>,
 }
 
 pub async fn execute(args: InstallArgs, config: &Config, base_cwd: &std::path::Path) -> Result<()> {
@@ -27,6 +30,20 @@ pub async fn execute(args: InstallArgs, config: &Config, base_cwd: &std::path::P
     // when packages do not have their own lockfile. Always install the root;
     // the opt-in flag retains the legacy per-workspace behavior for projects
     // that explicitly need it.
+    if let Some(filter) = &args.filter {
+        if pm == "yarn" && is_yarn_berry(cwd) {
+            run_command(
+                "yarn",
+                vec!["workspaces".into(), "focus".into(), filter.clone()],
+                cwd,
+            )
+            .await?;
+            return Ok(());
+        }
+        return Err(Error::ConfigValidation(
+            "workspace-scoped install currently requires Yarn Berry".into(),
+        ));
+    }
     println!("Installing root dependencies...");
     run_install(&pm, cwd).await?;
 
@@ -45,6 +62,38 @@ pub async fn execute(args: InstallArgs, config: &Config, base_cwd: &std::path::P
     }
 
     Ok(())
+}
+
+async fn run_command(cmd: &str, args: Vec<String>, dir: &Path) -> Result<()> {
+    let status = Command::new(package_manager_executable(cmd))
+        .current_dir(dir)
+        .args(&args)
+        .status()
+        .await?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(Error::CommandFailed {
+            command: cmd.into(),
+            args,
+            code: status.code().unwrap_or(-1),
+        })
+    }
+}
+
+fn package_manager_executable(cmd: &str) -> &str {
+    #[cfg(windows)]
+    {
+        if cmd == "yarn" {
+            "yarn.cmd"
+        } else {
+            cmd
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        cmd
+    }
 }
 
 pub fn detect_package_manager(cwd: &Path, explicit: Option<&str>) -> Result<String> {
@@ -75,7 +124,14 @@ async fn run_install(pm: &str, dir: &Path) -> Result<()> {
         "yarn" => {
             let mut args = vec!["install".to_string()];
             if dir.join("yarn.lock").exists() {
-                args.push("--frozen-lockfile".to_string());
+                // Yarn Berry renamed `--frozen-lockfile` to `--immutable`.
+                // Keep Yarn 1 consumer compatibility while making v4 fixtures
+                // and repositories immutable by default.
+                args.push(if is_yarn_berry(dir) {
+                    "--immutable".to_string()
+                } else {
+                    "--frozen-lockfile".to_string()
+                });
             }
             ("yarn", args)
         }
@@ -114,9 +170,22 @@ async fn run_install(pm: &str, dir: &Path) -> Result<()> {
     Ok(())
 }
 
+fn is_yarn_berry(dir: &Path) -> bool {
+    let config = std::fs::read_to_string(dir.join(".yarnrc.yml")).unwrap_or_default();
+    if config.contains("yarnPath:") {
+        return true;
+    }
+    let package_json = std::fs::read_to_string(dir.join("package.json")).unwrap_or_default();
+    serde_json::from_str::<serde_json::Value>(&package_json)
+        .ok()
+        .and_then(|manifest| manifest.get("packageManager")?.as_str().map(str::to_owned))
+        .is_some_and(|manager| manager.starts_with("yarn@") && !manager.starts_with("yarn@1."))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(not(windows))]
     use std::collections::HashMap;
 
     use tempfile::tempdir;
@@ -157,12 +226,32 @@ mod tests {
         assert_eq!(detect_package_manager(dir3.path(), None).unwrap(), "npm");
     }
 
+    #[test]
+    fn detects_yarn_berry_from_manifest_or_configuration() {
+        let manifest = tempdir().unwrap();
+        std::fs::write(
+            manifest.path().join("package.json"),
+            r#"{"packageManager":"yarn@4.9.1"}"#,
+        )
+        .unwrap();
+        assert!(is_yarn_berry(manifest.path()));
+
+        let config = tempdir().unwrap();
+        std::fs::write(
+            config.path().join(".yarnrc.yml"),
+            "yarnPath: .yarn/releases/yarn.cjs\n",
+        )
+        .unwrap();
+        assert!(is_yarn_berry(config.path()));
+    }
+
+    #[cfg(not(windows))]
     #[tokio::test]
-    async fn test_run_install_npm() {
+    async fn test_run_install_yarn_berry() {
         let dir = tempdir().unwrap();
         std::fs::write(dir.path().join("package.json"), r#"{"name":"test"}"#).unwrap();
-        std::fs::write(dir.path().join("package-lock.json"), "{}").unwrap();
-        let result = run_install("npm", dir.path()).await;
+        std::fs::write(dir.path().join("yarn.lock"), "").unwrap();
+        let result = run_install("yarn", dir.path()).await;
         assert!(result.is_ok());
     }
 
@@ -173,6 +262,7 @@ mod tests {
         assert!(matches!(result, Err(Error::PackageManagerNotFound(pm)) if pm == "bun"));
     }
 
+    #[cfg(not(windows))]
     #[tokio::test]
     async fn test_run_install_command_failure() {
         let dir = tempdir().unwrap();
@@ -182,17 +272,18 @@ mod tests {
         )
         .unwrap();
         // An invalid lockfile forces the frozen install path to fail.
-        std::fs::write(dir.path().join("package-lock.json"), "{}\n").unwrap();
-        let result = run_install("npm", dir.path()).await;
+        std::fs::write(dir.path().join("yarn.lock"), "\n").unwrap();
+        let result = run_install("yarn", dir.path()).await;
         match result {
             Err(Error::CommandFailed { command, code, .. }) => {
-                assert_eq!(command, "npm");
+                assert_eq!(command, "yarn");
                 assert_ne!(code, 0);
             }
             other => panic!("expected CommandFailed, got {:?}", other),
         }
     }
 
+    #[cfg(not(windows))]
     #[tokio::test]
     async fn test_execute_installs_root_and_projects() {
         let dir = tempdir().unwrap();
@@ -201,14 +292,13 @@ mod tests {
             r#"{"name":"root","private":true}"#,
         )
         .unwrap();
-        std::fs::write(dir.path().join("package-lock.json"), "{}").unwrap();
+        std::fs::write(dir.path().join("yarn.lock"), "").unwrap();
         std::fs::create_dir_all(dir.path().join("packages/app")).unwrap();
         std::fs::write(
             dir.path().join("packages/app/package.json"),
             r#"{"name":"app"}"#,
         )
         .unwrap();
-        std::fs::write(dir.path().join("packages/app/package-lock.json"), "{}").unwrap();
 
         let mut group = HashMap::new();
         group.insert(
@@ -230,8 +320,9 @@ mod tests {
         };
 
         let args = InstallArgs {
-            package_manager: Some("npm".to_string()),
+            package_manager: Some("yarn".to_string()),
             root_install: true,
+            filter: None,
         };
         execute(args, &config, dir.path()).await.unwrap();
     }

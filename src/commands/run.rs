@@ -531,7 +531,7 @@ mod tests {
         )
         .unwrap();
         let runner = resolve_script_runner(dir.path(), "test");
-        assert_eq!(runner.as_deref(), Some("npm"));
+        assert_eq!(runner.as_deref(), Some("yarn"));
     }
 
     #[test]

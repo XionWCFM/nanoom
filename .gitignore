@@ -14,7 +14,8 @@ Cargo.lock
 coverage/
 htmlcov/
 cobertura.xml
-lcov.info.fixture/
+lcov.info
+.fixture/
 node_modules/
 docs/.next/
 docs/.source/

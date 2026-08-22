@@ -20,6 +20,13 @@ verification target when publishing the CLI package is explicitly in scope.
 
 ## Findings To Resolve From Readiness Audit
 
+- [ ] `DEFINITION OF DONE (new):` Matrix jobs install only the selected workspace and its dependency closure; full-root installation is explicit, never the matrix default.
+- [ ] `DEFINITION OF DONE (new):` Fixture aggregation uses `needs.<matrix-job>.result`/the status composite action; it must not upload/download per-matrix result artifacts merely to determine pass/fail.
+- [ ] `DEFINITION OF DONE (new):` All fixture workflow task/install invocations use nanoom composite actions; no workflow manually reimplements CLI argument parsing or package-manager commands.
+- [ ] `DEFINITION OF DONE (new):` `turbo`, `nx`, `yarn`, and `pnpm` have first-class composite-action inputs and runner behavior, with hosted coverage for each supported runner.
+- [ ] `DEFINITION OF DONE (new):` Checkouts use bounded `fetch-depth: 100` (or an explicitly justified bound), and nanoom deepens history itself only when its Git resolution needs it; `fetch-depth: 0` is prohibited in fixture workflows.
+- [ ] `DEFINITION OF DONE (new):` The nanoom E2E/action workflow triggers only for `pull_request`, `merge_group`, and pushes to `main`; it has no `workflow_dispatch` trigger. Release publishing may retain manual dispatch separately.
+
 - [x] Fix the GitHub Actions release URL construction in `.github/actions/setup-nanoom/action.yml` (`github.server_url` is already a URL).
 - [x] Implement the npm wrapper's documented missing-platform-binary fallback, or remove the fallback claim and make the platform package publication path self-contained.
 - [ ] Create and validate the five platform distribution packages consumed by the CLI; Yarn Berry is the canonical development/fixture path. npm publication is a separate optional distribution gate.

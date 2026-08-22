@@ -141,6 +141,8 @@ jobs:
         uses: sigstore/cosign-installer@v3.7.0
       - name: Verify archives, checksums, permissions, and executable payload
         run: bash scripts/release-smoke.sh release-artifacts
+      - name: Verify Yarn platform package contracts
+        run: bash scripts/platform-package-smoke.sh
       - name: Verify Sigstore bundles
         env:
           COSIGN_EXPERIMENTAL: "1"

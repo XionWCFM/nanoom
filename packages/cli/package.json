@@ -18,11 +18,11 @@
     "postinstall": "node postinstall.js"
   },
   "optionalDependencies": {
-    "@nanoom/cli-linux-x64": "0.1.0",
-    "@nanoom/cli-linux-arm64": "0.1.0",
-    "@nanoom/cli-macos-x64": "0.1.0",
-    "@nanoom/cli-macos-arm64": "0.1.0",
-    "@nanoom/cli-windows-x64": "0.1.0"
+    "@nanoom/cli-linux-arm64": "0.1.8",
+    "@nanoom/cli-linux-x64": "0.1.8",
+    "@nanoom/cli-macos-arm64": "0.1.8",
+    "@nanoom/cli-macos-x64": "0.1.8",
+    "@nanoom/cli-windows-x64": "0.1.8"
   },
   "engines": {
     "node": ">=18"

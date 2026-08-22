@@ -223,7 +223,9 @@ fn deepen_fetch(repo: &GitRepo, depth: usize) -> Result<()> {
         .arg("-C")
         .arg(&repo.workdir)
         .arg("fetch")
-        .arg("--depth")
+        // Preserve the bounded checkout history and add only the next chunk.
+        // `--depth` replaces the shallow boundary; `--deepen` is cumulative.
+        .arg("--deepen")
         .arg(depth.to_string())
         .arg("origin")
         .output()?;
