@@ -113,7 +113,7 @@ jobs:
           version: local
           cwd: .fixture
           config: nanoom.config.json
-          base: main
+          base: HEAD~1
           head: HEAD
       - name: Assert exact affected outputs
         env:
