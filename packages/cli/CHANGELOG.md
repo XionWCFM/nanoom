@@ -1,5 +1,11 @@
 # @nanoom/cli
 
+## 0.1.8
+
+### Patch Changes
+
+- [#26](https://github.com/XionWCFM/nanoom/pull/26) [`08efed6`](https://github.com/XionWCFM/nanoom/commit/08efed6c79c180a25fbc60db23c5b5ac295ce2c2) Thanks [@XionWCFM](https://github.com/XionWCFM)! - Make local `node_modules/.bin` tools available to Turbo and Nx runner processes.
+
 ## 0.1.7
 
 ### Patch Changes
