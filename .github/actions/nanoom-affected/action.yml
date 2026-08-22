@@ -78,16 +78,18 @@ runs:
           MAX_PARALLEL=$(echo "$JSON" | jq -r --arg g "$NANOOM_GROUP" '.group[$g].max_parallel // 1')
           MATRIX=$(echo "$JSON" | jq -c --arg g "$NANOOM_GROUP" '
             {include: (.group[$g].workspaces | map(
-              {name, path, task, shard: (.shard // null), isolate: (if .isolate == true then true else null end)
-              | with_entries(select(.value != null))
+              {name, path, task}
+              + (if .shard then {shard: .shard} else {} end)
+              + (if .isolate == true then {isolate: true} else {} end)
             ))}
           ')
         else
           MAX_PARALLEL=1
           MATRIX=$(echo "$JSON" | jq -c '
             {include: ([.group[] | .workspaces[]] | map(
-              {name, path, task, shard: (.shard // null), isolate: (if .isolate == true then true else null end)
-              | with_entries(select(.value != null))
+              {name, path, task}
+              + (if .shard then {shard: .shard} else {} end)
+              + (if .isolate == true then {isolate: true} else {} end)
             ))}
           ')
         fi
