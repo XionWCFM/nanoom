@@ -62,11 +62,11 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Install tarpaulin
-        run: cargo install cargo-tarpaulin
+      - name: Install llvm-cov
+        run: cargo install cargo-llvm-cov --locked
 
       - name: Run coverage
-        run: cargo tarpaulin --out Xml --output-dir coverage --workspace --all-features --fail-under 90
+        run: cargo llvm-cov --workspace --all-features --cobertura --output-path coverage/cobertura.xml --fail-under-lines 90
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
