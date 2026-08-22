@@ -195,5 +195,5 @@ jobs:
       - name: Publish verified draft release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ needs.verify-release.outputs.version || github.ref_name }}
+          tag_name: ${{ inputs.version || github.ref_name }}
           draft: false
