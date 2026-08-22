@@ -113,6 +113,8 @@ jobs:
           version: local
           cwd: .fixture
           config: nanoom.config.json
+          base: main
+          head: feature
       - name: Assert exact affected outputs
         env:
           MATRIX: ${{ steps.affected.outputs.matrix }}

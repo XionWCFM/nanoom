@@ -19,6 +19,14 @@ inputs:
     description: 'Monorepo working directory (relative to the checked-out repository)'
     required: false
     default: '.'
+  base:
+    description: 'Optional explicit base reference'
+    required: false
+    default: ''
+  head:
+    description: 'Optional explicit head reference'
+    required: false
+    default: ''
 
 outputs:
   has-change:
@@ -46,11 +54,16 @@ runs:
         NANOOM_GROUP: ${{ inputs.group }}
         NANOOM_CONFIG: ${{ inputs.config }}
         NANOOM_CWD: ${{ inputs.cwd }}
+        NANOOM_BASE: ${{ inputs.base }}
+        NANOOM_HEAD: ${{ inputs.head }}
       run: |
         set -euo pipefail
 
         # The CLI reads event info from GITHUB_* env vars set by Actions.
-          JSON=$(nanoom -C "$NANOOM_CWD" -c "$NANOOM_CONFIG" affected --json)
+        ARGS=(affected --json)
+        if [ -n "$NANOOM_BASE" ]; then ARGS+=(--base "$NANOOM_BASE"); fi
+        if [ -n "$NANOOM_HEAD" ]; then ARGS+=(--head "$NANOOM_HEAD"); fi
+        JSON=$(nanoom -C "$NANOOM_CWD" -c "$NANOOM_CONFIG" "${ARGS[@]}")
 
         HAS_CHANGE=$(echo "$JSON" | jq -r '.has_change')
         echo "has-change=${HAS_CHANGE}" >> "$GITHUB_OUTPUT"
