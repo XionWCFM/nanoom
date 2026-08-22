@@ -1,6 +1,6 @@
 {
   "$schema": "https://unpkg.com/@changesets/config@3.0.0/schema.json",
-  "changelog": ["@changesets/changelog-github", { "repo": "nanoom-dev/nanoom" }],
+  "changelog": ["@changesets/changelog-github", { "repo": "XionWCFM/nanoom" }],
   "commit": false,
   "fixed": [],
   "linked": [],
