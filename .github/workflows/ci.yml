@@ -66,7 +66,7 @@ jobs:
         run: cargo install cargo-llvm-cov --locked
 
       - name: Run coverage
-        run: cargo llvm-cov --workspace --all-features --cobertura --output-path coverage/cobertura.xml --fail-under-lines 90
+        run: mkdir -p coverage && cargo llvm-cov --workspace --all-features --cobertura --output-path coverage/cobertura.xml --fail-under-lines 90
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
