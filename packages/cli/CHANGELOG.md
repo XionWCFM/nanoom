@@ -1,5 +1,11 @@
 # @nanoom/cli
 
+## 0.1.5
+
+### Patch Changes
+
+- Allow reusable setup actions to download releases from an explicitly configured repository.
+
 ## 0.1.4
 
 ### Patch Changes

@@ -7,6 +7,10 @@ inputs:
     description: 'nanoom version to install (e.g. v0.1.0). Defaults to latest release.'
     required: false
     default: 'latest'
+  repository:
+    description: 'GitHub repository that owns the release assets'
+    required: false
+    default: 'XionWCFM/nanoom'
 
 runs:
   using: 'composite'
@@ -18,7 +22,7 @@ runs:
         if [ "${{ inputs.version }}" = "local" ]; then
           VERSION="local"
         elif [ "${{ inputs.version }}" = "latest" ]; then
-          VERSION=$(curl -fsSL "${{ github.api_url }}/repos/${{ github.repository }}/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+          VERSION=$(curl -fsSL "${{ github.api_url }}/repos/${{ inputs.repository }}/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
         else
           VERSION="${{ inputs.version }}"
         fi
@@ -46,7 +50,7 @@ runs:
           FILENAME="nanoom-${OS}-${ARCH}.tar.gz"
         fi
         # github.server_url already includes the https:// scheme.
-        URL="${{ github.server_url }}/${{ github.repository }}/releases/download/${VERSION}/${FILENAME}"
+        URL="${{ github.server_url }}/${{ inputs.repository }}/releases/download/${VERSION}/${FILENAME}"
         CHECKSUM_URL="${URL}.sha256"
 
         curl -fsSL "$URL" -o "/tmp/$FILENAME"

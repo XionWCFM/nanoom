@@ -1,6 +1,6 @@
 {
   "name": "@nanoom/cli",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Monorepo task runner with affected project detection",
   "license": "MIT",
   "repository": {
