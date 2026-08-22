@@ -193,7 +193,6 @@ jobs:
     needs: verify-release
     steps:
       - name: Publish verified draft release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ inputs.version || github.ref_name }}
-          draft: false
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "${{ inputs.version || github.ref_name }}" --draft=false --repo "${{ github.repository }}"
