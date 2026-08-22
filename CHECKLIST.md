@@ -103,7 +103,7 @@
 - [x] nanoom-status action.yml
 - [x] Binary download from GitHub Releases (with npm fallback)
 - [x] Proper inputs/outputs for each action
-- [ ] Test each action in isolation on a hosted runner; the combined local contract workflow is covered.
+- [x] Test each action in isolation on hosted runners (Action Test run 32579481134: affected on Ubuntu/macOS, install, run, and status jobs all passed).
 
 ### 2.2 Action Integration Tests
 - [x] Test repo with monorepo structure
