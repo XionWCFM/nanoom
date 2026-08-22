@@ -1,5 +1,11 @@
 # @nanoom/cli
 
+## 0.1.7
+
+### Patch Changes
+
+- [#21](https://github.com/XionWCFM/nanoom/pull/21) [`ddf5a66`](https://github.com/XionWCFM/nanoom/commit/ddf5a66f31d4e98c7bfc79fa20a26fbf069356af) Thanks [@XionWCFM](https://github.com/XionWCFM)! - Run the cross-platform release signing command with a portable shell on Windows.
+
 ## 0.1.6
 
 ### Patch Changes
