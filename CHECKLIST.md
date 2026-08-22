@@ -21,7 +21,7 @@
 - [x] Strengthen action E2E assertions to verify exact matrix entries, outputs, install, run, shard, and isolate behavior in the fixture workflow.
 - [ ] Execute fork PR and merge-queue action scenarios on a hosted test repository; unit/integration coverage exists, but hosted fork/merge-queue evidence is still pending.
 - [x] Add a reusable release smoke verifier for archive naming, checksums, executable permissions, and Windows packaging; wire it into the release workflow.
-- [x] Execute the release verifier against real GitHub Release assets and validate setup action download URLs (v0.1.4; five archives and checksums).
+- [x] Execute the release verifier against real GitHub Release assets and validate setup action download URLs (v0.1.7; five archives, checksums, and Sigstore bundles).
 - [x] Reconcile SPEC, IMPLEMENTATION_PLAN, README, and CHECKLIST so advertised behavior matches implemented behavior.
 
 ## Phase 0: Project Setup
@@ -126,7 +126,7 @@
 - [x] Local macOS x64 cross-build succeeds after reducing gix features (`x86_64-apple-darwin`); binary reports `nanoom 0.1.0`
 - [x] Execute and verify all 5 cross-compilation jobs in the v0.1.4 release workflow (build and release-smoke verification passed for all five targets).
 - [x] Generate SHA-256 checksums in the release workflow
-- [ ] Add binary signing and verify signatures
+- [x] Add keyless Sigstore binary/archive signing and verify signatures in the release workflow (v0.1.7 hosted release passed).
 
 ### 3.2 npm Package
 - [x] @nanoom/cli package.json
@@ -147,7 +147,7 @@
 - [x] cargo fmt --all --check
 - [x] cargo llvm-cov --workspace --all-features --cobertura --fail-under-lines 90 (93.66% line coverage measured locally and hosted)
 - [x] All integration tests pass
-- [x] Actions work in test repository (`nanoom-fixtures` hosted run 32578005927: release setup, affected/matrix, install, run, status, shard/isolate all passed)
+- [x] Actions work in test repository (`nanoom-fixtures` hosted runs 32578005927 and 32579238857: v0.1.7 release setup, affected/matrix, install, run, status, shard/isolate all passed)
 
 ## Verified Quality Gates
 
