@@ -21,7 +21,7 @@ anyhow = "1.0"
 thiserror = "1.0"
 tokio = { version = "1.38", features = ["full"] }
 gix = { version = "0.86", default-features = false, features = ["revision", "merge", "sha1"] }
-schemars = { version = "0.8", features = ["derive"] }
+schemars = { version = "1.2", features = ["derive"] }
 walkdir = "2.4"
 serde_yaml = "0.9"
 toml = "0.8"
