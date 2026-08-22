@@ -191,7 +191,8 @@ async fn run_task(
         invalid => return Err(Error::InvalidRunner(invalid.to_string())),
     };
 
-    let mut cmd = Command::new(program);
+    let executable = package_manager_executable(&program);
+    let mut cmd = Command::new(executable);
     cmd.current_dir(if matches!(selected_runner, "turbo" | "nx") {
         root
     } else {
@@ -214,6 +215,21 @@ async fn run_task(
     }
 
     Ok(())
+}
+
+fn package_manager_executable(program: &str) -> &str {
+    #[cfg(windows)]
+    {
+        return match program {
+            "npm" => "npm.cmd",
+            "pnpm" => "pnpm.cmd",
+            "yarn" => "yarn.cmd",
+            _ => program,
+        };
+    }
+
+    #[cfg(not(windows))]
+    program
 }
 
 fn resolve_script_runner(project_path: &std::path::Path, task: &str) -> Option<String> {
