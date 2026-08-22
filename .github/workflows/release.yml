@@ -102,6 +102,7 @@ jobs:
         uses: sigstore/cosign-installer@v3.7.0
 
       - name: Sign release archive
+        shell: bash
         env:
           COSIGN_YES: "true"
         run: |
