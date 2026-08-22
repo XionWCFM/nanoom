@@ -92,7 +92,12 @@ async fn run_install(pm: &str, dir: &Path) -> Result<()> {
         _ => return Err(Error::PackageManagerNotFound(pm.to_string())),
     };
 
-    let mut command = Command::new(cmd);
+    #[cfg(windows)]
+    let executable = if cmd == "npm" { "npm.cmd" } else { cmd };
+    #[cfg(not(windows))]
+    let executable = cmd;
+
+    let mut command = Command::new(executable);
     command.current_dir(dir);
     command.args(&args);
 

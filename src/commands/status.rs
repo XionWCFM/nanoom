@@ -136,7 +136,10 @@ mod tests {
     fn temp_output_file(suffix: &str) -> String {
         static COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        format!("/tmp/test-output-{}-{}", suffix, n)
+        std::env::temp_dir()
+            .join(format!("nanoom-test-output-{}-{}", suffix, n))
+            .to_string_lossy()
+            .into_owned()
     }
 
     #[test]
