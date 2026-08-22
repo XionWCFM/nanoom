@@ -35,7 +35,12 @@ for artifact in "${expected[@]}"; do
       mkdir -p "$ARTIFACT_DIR/.smoke/$artifact"
       tar -xzf "$file" -C "$ARTIFACT_DIR/.smoke/$artifact"
       test -x "$ARTIFACT_DIR/.smoke/$artifact/nanoom"
-      "$ARTIFACT_DIR/.smoke/$artifact/nanoom" --version | grep -Fqx "nanoom $VERSION"
+      # Only execute the Linux x64 payload on the Ubuntu verifier. Other
+      # archives are cross-platform artifacts; their payload and permissions
+      # are validated here and their native smoke tests run on their builders.
+      if [ "$artifact" = "nanoom-linux-x64.tar.gz" ] && [ "$(uname -s)" = "Linux" ] && [ "$(uname -m)" = "x86_64" ]; then
+        "$ARTIFACT_DIR/.smoke/$artifact/nanoom" --version | grep -Fqx "nanoom $VERSION"
+      fi
       ;;
     *.zip)
       command -v unzip >/dev/null 2>&1 || { echo "unzip is required for Windows archive validation" >&2; exit 1; }
