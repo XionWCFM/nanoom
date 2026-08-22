@@ -23,7 +23,7 @@ jobs:
         action: [affected]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -67,7 +67,7 @@ jobs:
       PULL_REQUEST_HEAD_REF: main
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -100,7 +100,7 @@ jobs:
       PULL_REQUEST_BASE_REF: main
       PULL_REQUEST_HEAD_REF: HEAD
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
@@ -160,7 +160,7 @@ jobs:
     env:
       NANOOM_LOCAL_BINARY: ${{ github.workspace }}/target/release/nanoom
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
@@ -183,7 +183,7 @@ jobs:
     env:
       NANOOM_LOCAL_BINARY: ${{ github.workspace }}/target/release/nanoom
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
@@ -209,7 +209,7 @@ jobs:
     env:
       NANOOM_LOCAL_BINARY: ${{ github.workspace }}/target/release/nanoom
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
