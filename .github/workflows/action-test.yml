@@ -114,7 +114,7 @@ jobs:
           cwd: .fixture
           config: nanoom.config.json
           base: main
-          head: feature
+          head: HEAD
       - name: Assert exact affected outputs
         env:
           MATRIX: ${{ steps.affected.outputs.matrix }}
