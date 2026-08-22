@@ -198,6 +198,16 @@ async fn run_task(
     } else {
         &project.path
     });
+    if matches!(selected_runner, "turbo" | "nx") {
+        let local_bin = root.join("node_modules").join(".bin");
+        let mut path_entries = vec![local_bin];
+        if let Some(existing) = std::env::var_os("PATH") {
+            path_entries.extend(std::env::split_paths(&existing));
+        }
+        if let Ok(path) = std::env::join_paths(path_entries) {
+            cmd.env("PATH", path);
+        }
+    }
     cmd.args(args);
 
     for (key, value) in &task.env {
