@@ -2,7 +2,7 @@
 
 ## Goal Completion Contract
 
-- [ ] Every checklist item below is either implemented in code or explicitly removed from SPEC/README with the reason documented. External release/hosted-runner evidence remains pending where noted below.
+- [ ] Every checklist item below is either implemented in code or explicitly removed from SPEC/README with the reason documented. The remaining unchecked items are external credentials/scenarios or features not yet implemented.
 - [x] `cargo test --all --all-features`, `cargo fmt --all --check`, and `cargo clippy --all-targets --all-features -- -D warnings` pass.
 - [x] Measured Rust test coverage is at least 90% (target remains 95% where practical); the CI job must fail below the threshold.
 - [x] A reproducible local end-to-end fixture proves affected detection, matrix generation, `run`, `install`, `status`, dependency propagation, global dependencies, isolate, and shard behavior.
@@ -12,14 +12,14 @@
 
 - [x] Fix the GitHub Actions release URL construction in `.github/actions/setup-nanoom/action.yml` (`github.server_url` is already a URL).
 - [x] Implement the npm wrapper's documented missing-platform-binary fallback, or remove the fallback claim and make the platform package publication path self-contained.
-- [ ] Create and validate the five platform npm packages consumed by `@nanoom/cli` optional dependencies; test install and execution on each supported target where runners are available.
+- [ ] Create and validate the five platform npm packages consumed by `@nanoom/cli` optional dependencies; npm registry publication is currently blocked by missing `NPM_TOKEN`.
 - [x] Redesign `nanoom install` for monorepos: root lockfile/package-manager install must work by default, and workspace-local installs must not require nonexistent per-workspace lockfiles.
 - [x] Implement the documented group `concurrency` behavior or revise the specification and configuration semantics so they no longer promise matrix-size enforcement.
 - [x] Add the documented `--runner` interface and implement runner-specific execution for pnpm, yarn, turbo, and nx.
 - [x] Make shard metadata affect actual runner/test execution, not only environment variables; add a fixture that proves distinct shards execute distinct work.
 - [x] Make turbo/nx discovery honor their project/package configuration instead of recursively treating every nested `package.json` as a workspace.
 - [x] Strengthen action E2E assertions to verify exact matrix entries, outputs, install, run, shard, and isolate behavior in the fixture workflow.
-- [ ] Execute fork PR and merge-queue action scenarios on a hosted test repository.
+- [ ] Execute fork PR and merge-queue action scenarios on a hosted test repository; unit/integration coverage exists, but hosted fork/merge-queue evidence is still pending.
 - [x] Add a reusable release smoke verifier for archive naming, checksums, executable permissions, and Windows packaging; wire it into the release workflow.
 - [x] Execute the release verifier against real GitHub Release assets and validate setup action download URLs (v0.1.4; five archives and checksums).
 - [x] Reconcile SPEC, IMPLEMENTATION_PLAN, README, and CHECKLIST so advertised behavior matches implemented behavior.
@@ -124,7 +124,7 @@
 - [x] GitHub Actions release workflow
 - [x] Define release cross-compilation matrix for 5 targets (linux-x64, linux-arm64, macos-x64, macos-arm64, windows-x64)
 - [x] Local macOS x64 cross-build succeeds after reducing gix features (`x86_64-apple-darwin`); binary reports `nanoom 0.1.0`
-- [ ] Execute and verify all 5 cross-compilation jobs
+- [x] Execute and verify all 5 cross-compilation jobs in the v0.1.4 release workflow (build and release-smoke verification passed for all five targets).
 - [x] Generate SHA-256 checksums in the release workflow
 - [ ] Add binary signing and verify signatures
 
@@ -154,7 +154,7 @@
 - [x] `cargo test --all --all-features` passes (140 tests currently, including unit and integration tests).
 - [x] `cargo fmt --all --check` passes.
 - [x] `cargo clippy --all-targets --all-features -- -D warnings` passes.
-- [x] `cargo tarpaulin --out Xml --output-dir coverage --workspace --all-features --fail-under 90` passes at 91.92% (876/953 lines).
+- [x] `cargo llvm-cov --workspace --all-features --summary-only` measures 93.66% line coverage (2223/2364); CI enforces the 90% minimum.
 - [x] npm wrapper/platform-package local smoke passes and `npm pack --dry-run --ignore-scripts` contains the wrapper files.
 - [x] Locally built release binary can be archived, extracted, and executed successfully.
 - [x] `scripts/release-smoke.sh` validates five artifact names, SHA-256 files, tar/zip payloads, and Unix executable permissions in a local fixture.
