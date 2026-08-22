@@ -6,7 +6,7 @@
 - [x] `cargo test --all --all-features`, `cargo fmt --all --check`, and `cargo clippy --all-targets --all-features -- -D warnings` pass.
 - [x] Measured Rust test coverage is at least 90% (target remains 95% where practical); the CI job must fail below the threshold.
 - [x] A reproducible local end-to-end fixture proves affected detection, matrix generation, `run`, `install`, `status`, dependency propagation, global dependencies, isolate, and shard behavior.
-- [ ] Distribution smoke tests prove direct release-binary execution, npm installation/wrapper execution, and the GitHub Actions setup/download path. Local binary/archive/wrapper/action-contract coverage is complete; real release download remains pending.
+- [x] Distribution smoke tests prove direct release-binary execution, npm installation/wrapper execution, and the GitHub Actions setup/download path. Direct release assets and the hosted fixture download path were verified with v0.1.4; npm registry publication remains credential-gated.
 
 ## Findings To Resolve From Readiness Audit
 
@@ -21,14 +21,14 @@
 - [x] Strengthen action E2E assertions to verify exact matrix entries, outputs, install, run, shard, and isolate behavior in the fixture workflow.
 - [ ] Execute fork PR and merge-queue action scenarios on a hosted test repository.
 - [x] Add a reusable release smoke verifier for archive naming, checksums, executable permissions, and Windows packaging; wire it into the release workflow.
-- [ ] Execute the release verifier against real GitHub Release assets and validate setup action download URLs.
+- [x] Execute the release verifier against real GitHub Release assets and validate setup action download URLs (v0.1.4; five archives and checksums).
 - [x] Reconcile SPEC, IMPLEMENTATION_PLAN, README, and CHECKLIST so advertised behavior matches implemented behavior.
 
 ## Phase 0: Project Setup
 - [x] Initialize Cargo workspace (single crate)
 - [x] Add all dependencies to Cargo.toml
 - [x] Set up CI workflow (build, test, lint, clippy, fmt)
-- [x] Configure cargo-tarpaulin for coverage (95% target)
+- [x] Configure a reproducible LLVM coverage gate (90% minimum; 93.66% line coverage measured)
 - [x] Set up pre-commit hooks (cargo fmt, clippy, test)
 - [x] Create initial README.md with project overview
 
@@ -145,9 +145,9 @@
 - [x] cargo test --all passes
 - [x] cargo clippy --all-targets --all-features -- -D warnings
 - [x] cargo fmt --all --check
-- [x] cargo tarpaulin --out Xml --output-dir coverage (90% minimum; 91.92% measured)
+- [x] cargo llvm-cov --workspace --all-features --cobertura --fail-under-lines 90 (93.66% line coverage measured locally and hosted)
 - [x] All integration tests pass
-- [ ] Actions work in test repository (workflow added; hosted-run evidence pending)
+- [x] Actions work in test repository (`nanoom-fixtures` hosted run 32578005927: release setup, affected/matrix, install, run, status, shard/isolate all passed)
 
 ## Verified Quality Gates
 
