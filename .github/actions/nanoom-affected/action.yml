@@ -64,7 +64,6 @@ runs:
         if [ -n "$NANOOM_BASE" ]; then ARGS+=(--base "$NANOOM_BASE"); fi
         if [ -n "$NANOOM_HEAD" ]; then ARGS+=(--head "$NANOOM_HEAD"); fi
         JSON=$(nanoom -C "$NANOOM_CWD" -c "$NANOOM_CONFIG" "${ARGS[@]}")
-        echo "Affected result: ${JSON}"
 
         HAS_CHANGE=$(echo "$JSON" | jq -r '.has_change')
         echo "has-change=${HAS_CHANGE}" >> "$GITHUB_OUTPUT"
@@ -78,20 +77,18 @@ runs:
         if [ -n "$NANOOM_GROUP" ]; then
           MAX_PARALLEL=$(echo "$JSON" | jq -r --arg g "$NANOOM_GROUP" '.group[$g].max_parallel // 1')
           MATRIX=$(echo "$JSON" | jq -c --arg g "$NANOOM_GROUP" '
-            {include: (.group[$g].workspaces | map({
-              name, path, task,
-              shard: (if .shard then .shard else empty end),
-              isolate: (if .isolate == true then true else empty end)
-            }))}
+            {include: (.group[$g].workspaces | map(
+              {name, path, task, shard: (.shard // null), isolate: (if .isolate == true then true else null end)
+              | with_entries(select(.value != null))
+            ))}
           ')
         else
           MAX_PARALLEL=1
           MATRIX=$(echo "$JSON" | jq -c '
-            {include: ([.group[] | .workspaces[]] | map({
-              name, path, task,
-              shard: (if .shard then .shard else empty end),
-              isolate: (if .isolate == true then true else empty end)
-            }))}
+            {include: ([.group[] | .workspaces[]] | map(
+              {name, path, task, shard: (.shard // null), isolate: (if .isolate == true then true else null end)
+              | with_entries(select(.value != null))
+            ))}
           ')
         fi
 
