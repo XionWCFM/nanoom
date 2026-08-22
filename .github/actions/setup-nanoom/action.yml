@@ -1,0 +1,81 @@
+name: 'setup-nanoom'
+description: 'Download and install the nanoom CLI binary from GitHub Releases'
+author: 'nanoom'
+
+inputs:
+  version:
+    description: 'nanoom version to install (e.g. v0.1.0). Defaults to latest release.'
+    required: false
+    default: 'latest'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Determine version
+      id: version
+      shell: bash
+      run: |
+        if [ "${{ inputs.version }}" = "local" ]; then
+          VERSION="local"
+        elif [ "${{ inputs.version }}" = "latest" ]; then
+          VERSION=$(curl -fsSL "${{ github.api_url }}/repos/${{ github.repository }}/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+        else
+          VERSION="${{ inputs.version }}"
+        fi
+        echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+    - name: Download and install binary
+      if: inputs.version != 'local'
+      shell: bash
+      run: |
+        set -euo pipefail
+        VERSION="${{ steps.version.outputs.version }}"
+
+        OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
+        [ "$OS" = "darwin" ] && OS="macos"
+        ARCH="$(uname -m)"
+        case "$ARCH" in
+          x86_64) ARCH="x64" ;;
+          aarch64 | arm64) ARCH="arm64" ;;
+        esac
+
+        if [[ "$OS" == mingw* || "$OS" == msys* || "$OS" == cygwin* ]]; then
+          OS="windows"
+          FILENAME="nanoom-${OS}-${ARCH}.zip"
+        else
+          FILENAME="nanoom-${OS}-${ARCH}.tar.gz"
+        fi
+        # github.server_url already includes the https:// scheme.
+        URL="${{ github.server_url }}/${{ github.repository }}/releases/download/${VERSION}/${FILENAME}"
+        CHECKSUM_URL="${URL}.sha256"
+
+        curl -fsSL "$URL" -o "/tmp/$FILENAME"
+        curl -fsSL "$CHECKSUM_URL" -o "/tmp/$FILENAME.sha256"
+        EXPECTED="$(awk '{print $1}' "/tmp/$FILENAME.sha256")"
+        if command -v sha256sum >/dev/null 2>&1; then
+          ACTUAL="$(sha256sum "/tmp/$FILENAME" | awk '{print $1}')"
+        else
+          ACTUAL="$(shasum -a 256 "/tmp/$FILENAME" | awk '{print $1}')"
+        fi
+        test "$EXPECTED" = "$ACTUAL"
+        mkdir -p "$HOME/.nanoom/bin"
+        if [[ "$FILENAME" == *.zip ]]; then
+          powershell -NoProfile -Command "Expand-Archive -Force '/tmp/$FILENAME' '$HOME/.nanoom/bin'"
+        else
+          tar -xzf "/tmp/$FILENAME" -C "$HOME/.nanoom/bin"
+        fi
+        chmod +x "$HOME/.nanoom/bin/nanoom"
+
+    - name: Install local test binary
+      if: inputs.version == 'local'
+      shell: bash
+      run: |
+        set -euo pipefail
+        test -x "${NANOOM_LOCAL_BINARY}"
+        mkdir -p "$HOME/.nanoom/bin"
+        cp "${NANOOM_LOCAL_BINARY}" "$HOME/.nanoom/bin/nanoom"
+        chmod +x "$HOME/.nanoom/bin/nanoom"
+
+    - name: Add to PATH
+      shell: bash
+      run: echo "$HOME/.nanoom/bin" >> "$GITHUB_PATH"

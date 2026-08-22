@@ -1,0 +1,16 @@
+{
+  "title": "nanoom",
+  "defaultOpen": false,
+  "pages": [
+    "index",
+    "---Get Started---",
+    "installation",
+    "quickstart",
+    "---Guides---",
+    "how-tos",
+    "---Learn---",
+    "explanations",
+    "---Reference---",
+    "reference"
+  ]
+}

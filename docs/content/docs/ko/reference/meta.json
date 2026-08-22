@@ -1,0 +1,5 @@
+{
+  "title": "레퍼런스",
+  "defaultOpen": true,
+  "pages": ["configuration", "cli", "github-actions", "api"]
+}

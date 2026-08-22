@@ -1,0 +1,84 @@
+---
+title: Run on fork pull requests
+description: Safely run affected detection for pull requests from forks
+---
+
+When a pull request comes from a fork, nanoom resolves the merge-base against the **fork's head repository** instead of the base repo. This prevents secrets from leaking into untrusted jobs while still giving you affected detection.
+
+## How it works
+
+nanoom reads `GITHUB_HEAD_REPOSITORY` and `GITHUB_REPOSITORY`. If they differ, it:
+
+1. Clones the fork's head repository.
+2. Computes the merge-base between the fork's branch and the base branch.
+3. Runs detection against that merge-base.
+
+No secrets are required — the fork is public. The workflow runs the same jobs as a normal PR, just with a different diff base.
+
+## 1. Use the detect action as-is
+
+The `nanoom-affected` action handles fork resolution internally. Your detect job stays exactly the same:
+
+```yaml
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      has-change: ${{ steps.detect.outputs.has-change }}
+      matrix: ${{ steps.detect.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: detect
+        uses: ./.github/actions/nanoom-affected
+        with:
+          group: ci
+```
+
+## 2. Keep secrets out of fork jobs (important)
+
+GitHub Actions **does not pass secrets to jobs triggered by fork PRs** from external contributors. This is a platform safeguard. Ensure your workflow does not require secrets in the `test` (or any downstream) job:
+
+```yaml
+  test:
+    needs: [detect]
+    if: ${{ needs.detect.outputs.has-change == 'true' }}
+    # No secrets needed — dependencies installed from public registries
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/nanoom-install
+      - uses: ./.github/actions/nanoom-run
+```
+
+If your tests need a private registry token, store it in the base repo's **repository secrets** and inject it only when `github.event.pull_request.head.repo.full_name == github.repository`. Or skip the job for forks:
+
+```yaml
+  test:
+    if: ${{ needs.detect.outputs.has-change == 'true' && github.event.pull_request.head.repo.full_name == github.repository }}
+```
+
+## 3. Verify locally
+
+Simulate a fork PR locally:
+
+```bash
+# Assume origin is your fork, upstream is the base repo
+git fetch upstream main
+git fetch origin your-branch
+PULL_REQUEST_BASE_REF=main PULL_REQUEST_HEAD_REF=origin/your-branch \
+  GITHUB_HEAD_REPOSITORY=your-username/your-fork \
+  GITHUB_REPOSITORY=org/base-repo \
+  nanoom affected
+```
+
+## Common issues
+
+**"No common ancestor" error.** The fork may have rebased or lost history. Ask the contributor to rebase onto the latest base branch.
+
+**Wrong diff base.** Ensure `fetch-depth: 0` on checkout so the full history is available.
+
+## Related
+
+- [Configuration: globalDependencies](/en/docs/reference/configuration#global-dependencies) — lockfile changes trigger everything, even in forks.
+- [CLI: nanoom affected](/en/docs/reference/cli#nanoom-affected) — env vars used.

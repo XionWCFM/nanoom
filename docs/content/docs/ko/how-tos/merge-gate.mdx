@@ -1,0 +1,90 @@
+---
+title: 상태 체크로 병합 게이트하기
+description: 어떤 잡이든 실패하면 PR을 실패시키는 최종 필수 체크 추가하기
+---
+
+`nanoom-status` 복합 액션은 `$GITHUB_OUTPUT`에서 잡 결과를 읽고, 실패가 있으면 0이 아닌 코드로 종료합니다. 이걸 브랜치 보호 규칙의 **단일 필수 상태 체크**로 만드세요.
+
+## 사전 준비
+
+- 게이트에 걸 잡들이 `$GITHUB_OUTPUT`에 `<잡>_result=success|failure|cancelled|skipped` 줄을 써야 합니다. `nanoom-run` 액션이 자동으로 해줍니다.
+
+## 1단계. 상태 잡 추가
+
+```yaml
+jobs:
+  # ... detect, install, test 잡들 ...
+
+  status:
+    needs: [test] # 또는 [build, test, e2e] 여러 잡 이름이면
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/nanoom-status
+        with:
+          jobs: test
+          format: markdown # 또는 json, text
+```
+
+| 입력 | 타입 | 기본값 | 의미 |
+| --- | --- | --- | --- |
+| `jobs` | string | **필수** | 콤마로 구분한 잡 이름들 (예: `test` 또는 `build,test,e2e`) |
+| `format` | string | `text` | 출력 포맷: `text`, `json`, `markdown` |
+| `version` | string | `latest` | 설치할 nanoom 버전 |
+
+## 2단계. 하는 일
+
+액션이:
+1. nanoom 설치 (캐시됨).
+2. 각 나열된 잡의 `$GITHUB_OUTPUT` 읽기: `test_result=success` 등.
+3. 선택한 포맷으로 요약 표 출력.
+4. **어떤 잡이든 `failure`를 보고하면 1로 종료** — 이걸로 워크플로 실패.
+
+마크다운 출력 예:
+
+```
+| Job | Result |
+|-----|--------|
+| test | ✅ success |
+| test | ✅ success |
+| test | ❌ failure |
+```
+
+## 3단계. 필수 체크로 지정
+
+저장소 설정 → **Branches** → `main` 브랜치 보호 규칙:
+
+- `status`를 **필수 상태 체크**로 추가.
+- 개별 매트릭스 잡은 **추가하지 마세요** (동적으로 생기니까). 집계된 `status` 잡만 안정적입니다.
+
+## 4단계. 확인
+
+테스트가 실패하는 PR을 여세요. `status` 잡이 ❌를 보여주며 PR 체크가 실패해야 합니다. 테스트 고쳐 푸시하면 ✅로 바뀌고 PR 통과.
+
+## 여러 잡 타입
+
+별도 워크플로(또는 `build`, `test`, `e2e` 같은 잡 이름)가 있으면 전부 나열하세요:
+
+```yaml
+with:
+  jobs: build,test,e2e
+```
+
+액션이 각 잡의 `_result` 줄을 읽고 **어느 하나라도 `failure`면 실패**시킵니다.
+
+## 문제 해결
+
+**상태 잡이 항상 통과함.** 상류 잡들이 `_result=`를 `$GITHUB_OUTPUT`에 써야 합니다. `nanoom-run` 액션이 자동으로 해줍니다. 직접 태스크를 돌린다면:
+
+```bash
+echo "test_result=success" >> $GITHUB_OUTPUT
+# 실패 시:
+echo "test_result=failure" >> $GITHUB_OUTPUT
+```
+
+**마크다운 포맷이 안 렌더링됨.** GitHub Actions UI가 스텝 요약의 마크다운을 자동 렌더링합니다. 액션이 stdout에도 출력해 로그에서도 보입니다.
+
+## 관련 문서
+
+- [가이드: PR에서 체크 돌리기](/ko/docs/how-tos/pr-checks) — 전체 워크플로 맥락.
+- [CLI: nanoom status](/ko/docs/reference/cli#nanoom-status) — 플래그 레퍼런스.

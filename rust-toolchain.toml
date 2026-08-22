@@ -1,0 +1,8 @@
+[toolchain]
+channel = "stable"
+components = ["rustfmt", "clippy"]
+targets = []
+
+[profile]
+rustfmt = { edition = "2021" }
+clippy = { edition = "2021" }

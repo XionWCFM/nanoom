@@ -1,0 +1,16 @@
+{
+  "title": "nanoom",
+  "defaultOpen": false,
+  "pages": [
+    "index",
+    "---시작하기---",
+    "installation",
+    "quickstart",
+    "---가이드---",
+    "how-tos",
+    "---이해하기---",
+    "explanations",
+    "---레퍼런스---",
+    "reference"
+  ]
+}

@@ -1,0 +1,82 @@
+---
+title: Run checks on pull requests
+description: Detect affected projects from a pull_request event and turn them into a job matrix
+---
+
+This guide shows you how to wire `nanoom affected` into a `pull_request` workflow so that only affected projects produce jobs. This is the core nanoom loop; the other guides build on it.
+
+## Prerequisites
+
+- A working config with at least one group (see [Quickstart](/en/docs/quickstart) Step 1).
+- The composite actions available in your workflow — either run inside the nanoom repository (`./.github/actions/...`) or reference a published fork (`owner/repo/.github/actions/nanoom-affected@tag`).
+
+## 1. Add the detect job
+
+The detect job reads the pull request event and exports two outputs:
+
+```yaml
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      has-change: ${{ steps.detect.outputs.has-change }}
+      matrix: ${{ steps.detect.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history for reliable merge-base
+      - id: detect
+        uses: ./.github/actions/nanoom-affected
+        with:
+          group: ci # optional: emit a matrix for one group only
+```
+
+| Output | Type | Meaning |
+| --- | --- | --- |
+| `has-change` | string | `"true"` when at least one project is affected |
+| `matrix` | JSON | `{ "include": [...] }` ready for `strategy.matrix` |
+
+## 2. Consume the matrix
+
+Each matrix entry describes one `(project, task)` pair:
+
+```yaml
+  test:
+    needs: [detect]
+    if: ${{ needs.detect.outputs.has-change == 'true' }}
+    strategy:
+      matrix: ${{ fromJson(needs.detect.outputs.matrix) }}
+      fail-fast: false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/nanoom-run
+        with:
+          group: ci
+          task: ${{ matrix.task }}
+          filter: ${{ matrix.name }}
+          shard: ${{ matrix.shard }}
+```
+
+Entry fields:
+
+| Field | Present when | Meaning |
+| --- | --- | --- |
+| `name`, `path`, `task` | always | Project identity and the script to run |
+| `shard` | sharding configured | 1-based shard index for this entry |
+| `isolate` | rule demands it | `"true"` — give this entry a dedicated runner |
+
+## 3. Verify
+
+Open a pull request that touches one package. The `test` job should fan out to exactly the affected projects — check the "Run jobs" list in the Actions UI. Pushing a README-only commit should skip the `test` job entirely via the `if:` condition.
+
+## Troubleshooting
+
+**Matrix is empty although files changed.** The changed file may live outside every discovered project directory, or an `ignore` rule removes the project. Run `nanoom affected --json` locally on the same ref pair to inspect detection.
+
+**Wrong diff base.** For `pull_request` events nanoom uses `PULL_REQUEST_BASE_REF` / `PULL_REQUEST_HEAD_REF`, which Actions sets automatically. For local testing set them yourself — see the [CLI reference](/en/docs/reference/cli#nanoom-affected).
+
+## Related
+
+- [Gate merges with a status check](/en/docs/how-tos/merge-gate) — fail the PR when any job fails.
+- [How the affected graph works](/en/docs/explanations/affected-graph) — what counts as "affected".

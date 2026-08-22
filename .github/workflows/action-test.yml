@@ -1,0 +1,154 @@
+name: Action Test
+
+on:
+  pull_request:
+    paths:
+      - '.github/actions/**'
+      - 'src/**'
+  workflow_dispatch:
+
+jobs:
+  test-composite-actions:
+    name: Test ${{ matrix.action }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    env:
+      NANOOM_LOCAL_BINARY: ${{ github.workspace }}/target/release/nanoom
+      PULL_REQUEST_BASE_REF: main
+      PULL_REQUEST_HEAD_REF: main
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        action: [affected]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build and install binary locally
+        run: |
+          cargo build --release
+          mkdir -p "$HOME/.nanoom/bin"
+          cp target/release/nanoom "$HOME/.nanoom/bin/"
+          echo "$HOME/.nanoom/bin" >> "$GITHUB_PATH"
+
+      - name: Prepare monorepo fixture
+        run: bash .github/test-fixtures/setup-fixture.sh
+
+      - name: Run nanoom-affected (pull_request event)
+        id: affected
+        uses: ./.github/actions/nanoom-affected
+        with:
+          version: local
+          group: ci
+          cwd: .fixture
+          config: nanoom.config.json
+
+      - name: Assert affected action contract
+        env:
+          MATRIX: ${{ steps.affected.outputs.matrix }}
+          MAX_PARALLEL: ${{ steps.affected.outputs.max-parallel }}
+        run: |
+          echo "$MATRIX" | jq -e '.include | type == "array"' >/dev/null
+          test "$MAX_PARALLEL" -ge 1
+
+  test-sharding:
+    name: Verify sharded matrix output
+    runs-on: ubuntu-latest
+    env:
+      NANOOM_LOCAL_BINARY: ${{ github.workspace }}/target/release/nanoom
+      PULL_REQUEST_BASE_REF: main
+      PULL_REQUEST_HEAD_REF: main
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build CLI
+        run: cargo build --release
+
+      - name: Generate fixture with shards and an isolated task
+        run: bash .github/test-fixtures/setup-fixture.sh --shards --isolate --change
+
+      - name: Assert shard entries exist in matrix
+        env:
+          PULL_REQUEST_BASE_REF: main
+          PULL_REQUEST_HEAD_REF: main
+        run: |
+          OUT=$(./target/release/nanoom -C .fixture affected --base main --json)
+          echo "$OUT" | jq -e '.has_change == true' >/dev/null
+          echo "$OUT" | jq -e '[.group.ci.workspaces[] | select(.name == "@fixture/lib" and .shard == 1)] | length == 1' >/dev/null
+          echo "$OUT" | jq -e '[.group.ci.workspaces[] | select(.name == "@fixture/lib" and .shard == 2)] | length == 1' >/dev/null
+          echo "$OUT" | jq -e '[.group.ci.workspaces[] | select(.name == "@fixture/app" and .isolate == true)] | length == 1' >/dev/null
+
+  test-all-composite-actions:
+    name: Run all composite actions against a fixture
+    runs-on: ubuntu-latest
+    env:
+      NANOOM_LOCAL_BINARY: ${{ github.workspace }}/target/release/nanoom
+      PULL_REQUEST_BASE_REF: main
+      PULL_REQUEST_HEAD_REF: HEAD
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build local binary
+        run: cargo build --release
+      - name: Prepare fixture with changed, sharded, and isolated workspaces
+        run: bash .github/test-fixtures/setup-fixture.sh --shards --isolate --change
+      - name: Calculate affected matrix
+        id: affected
+        uses: ./.github/actions/nanoom-affected
+        with:
+          version: local
+          group: ci
+          cwd: .fixture
+          config: nanoom.config.json
+          base: HEAD~1
+          head: HEAD
+      - name: Assert exact affected outputs
+        env:
+          MATRIX: ${{ steps.affected.outputs.matrix }}
+          MAX_PARALLEL: ${{ steps.affected.outputs.max-parallel }}
+        run: |
+          echo "$MATRIX" | jq -e '[.include[] | select(.name == "@fixture/lib" and .shard == 1)] | length == 1' >/dev/null
+          echo "$MATRIX" | jq -e '[.include[] | select(.name == "@fixture/lib" and .shard == 2)] | length == 1' >/dev/null
+          echo "$MATRIX" | jq -e '[.include[] | select(.name == "@fixture/app" and .isolate == true)] | length == 1' >/dev/null
+          test "$MAX_PARALLEL" = 4
+      - name: Install fixture dependencies
+        uses: ./.github/actions/nanoom-install
+        with:
+          version: local
+          cwd: .fixture
+          package-manager: npm
+      - name: Run fixture task
+        uses: ./.github/actions/nanoom-run
+        with:
+          version: local
+          cwd: .fixture
+          group: ci
+          task: test
+          runner: npm
+          all: 'true'
+      - name: Seed job results
+        run: |
+          echo 'build_result=success' >> "$GITHUB_OUTPUT"
+          echo 'test_result=success' >> "$GITHUB_OUTPUT"
+      - name: Aggregate fixture status
+        uses: ./.github/actions/nanoom-status
+        with:
+          version: local
+          cwd: .fixture
+          jobs: build,test
+          format: json

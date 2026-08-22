@@ -1,0 +1,26 @@
+{
+  "$schema": "../../nanoom.schema.json",
+  "group": {
+    "ci": {
+      "tasks": ["test", "build", "typecheck"],
+      "concurrency": 6,
+      "rules": [
+        { "name": "@adv/legacy-admin", "ignore": true },
+        { "name": "@adv/db-migrations", "isolate": ["build"] },
+        { "name": "@adv/design-system", "shard": [{ "task": "test", "shard": 3 }] }
+      ]
+    },
+    "e2e": {
+      "tasks": ["test:e2e"],
+      "concurrency": 2,
+      "rules": [
+        { "name": "@adv/web", "shard": [{ "task": "test:e2e", "shard": 2 }] }
+      ]
+    }
+  },
+  "globalDependencies": ["pnpm-lock.yaml", ".github/workflows/*"],
+  "workspace": {
+    "include": ["packages/*", "apps/*"],
+    "exclude": ["tools/*"]
+  }
+}

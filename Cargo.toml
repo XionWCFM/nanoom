@@ -1,0 +1,45 @@
+[package]
+name = "nanoom"
+version = "0.1.0"
+edition = "2021"
+description = "Monorepo task runner with affected project detection"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/XionWCFM/nanoom"
+readme = "README.md"
+keywords = ["monorepo", "task-runner", "affected", "git", "workspace"]
+categories = ["development-tools", "command-line-utilities"]
+
+[workspace]
+members = []
+
+[dependencies]
+clap = { version = "4.5", features = ["derive", "env"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+globset = "0.4"
+anyhow = "1.0"
+thiserror = "1.0"
+tokio = { version = "1.38", features = ["full"] }
+gix = { version = "0.86", default-features = false, features = ["revision", "merge", "sha1"] }
+schemars = { version = "0.8", features = ["derive"] }
+walkdir = "2.4"
+serde_yaml = "0.9"
+toml = "0.8"
+sha2 = "0.10"
+
+[dev-dependencies]
+pretty_assertions = "1.4"
+tempfile = "3.9"
+proptest = "1.3"
+serial_test = "2.0"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[profile.dev]
+debug = true
+
+[features]
+default = []
