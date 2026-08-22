@@ -45,6 +45,7 @@ jobs:
         uses: ./.github/actions/nanoom-affected
         with:
           version: local
+          group: ci
           cwd: .fixture
           config: nanoom.config.json
 
@@ -111,6 +112,7 @@ jobs:
         uses: ./.github/actions/nanoom-affected
         with:
           version: local
+          group: ci
           cwd: .fixture
           config: nanoom.config.json
           base: HEAD~1
