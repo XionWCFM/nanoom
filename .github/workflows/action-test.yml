@@ -13,6 +13,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       NANOOM_LOCAL_BINARY: ${{ github.workspace }}/target/release/nanoom
+      PULL_REQUEST_BASE_REF: main
+      PULL_REQUEST_HEAD_REF: main
     strategy:
       fail-fast: false
       matrix:
@@ -59,6 +61,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       NANOOM_LOCAL_BINARY: ${{ github.workspace }}/target/release/nanoom
+      PULL_REQUEST_BASE_REF: main
+      PULL_REQUEST_HEAD_REF: main
 
     steps:
       - uses: actions/checkout@v4
@@ -91,6 +95,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       NANOOM_LOCAL_BINARY: ${{ github.workspace }}/target/release/nanoom
+      PULL_REQUEST_BASE_REF: main
+      PULL_REQUEST_HEAD_REF: main
     steps:
       - uses: actions/checkout@v4
         with:
