@@ -25,7 +25,7 @@ Large monorepos take too long to run all tasks on a single runner. We detect cha
 - **CLI:** Unix standard compliance (exit codes, stdout/stderr, signals)
 - **Pre-commit:** Test, build, lint mandatory — no bypass
 - **Git:** Merge queue aware, concurrent contributors, large commit history
-- **Package Managers:** pnpm, yarn first-class; npm supported
+- **Package Managers:** Yarn Berry (Yarn 4.x) is the canonical development and fixture package manager; pnpm is first-class; npm is supported only as an optional distribution/consumer path.
 - **Workspaces:** yarn workspace, pnpm workspace, nx, turborepo first-class
 
 ---
@@ -98,7 +98,8 @@ interface ShardRule {
 ## Binary Distribution
 
 - **GitHub Releases:** Platform-specific binaries (linux-x64, linux-arm64, macos-x64, macos-arm64, windows-x64)
-- **npm Package:** `@nanoom/cli` bundles all platforms, postinstall downloads correct binary
+- **Primary fixture/distribution validation:** Yarn Berry 4.x installs and executes the CLI/fixtures; npm registry publication and wrapper installation are optional release gates, not the development workflow.
+- **npm Package (optional release target):** `@nanoom/cli` bundles all platforms, postinstall downloads correct binary
 - **GitHub Actions:** `actions/setup-nanoom` downloads from Releases; `nanoom-run`, `nanoom-affected`, `nanoom-install`, `nanoom-status` actions wrap CLI
 
 ---
