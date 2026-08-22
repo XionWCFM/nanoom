@@ -86,7 +86,7 @@ jobs:
         run: |
           cd "target/${{ matrix.target }}/release"
           tar czf "/tmp/${{ matrix.artifact }}" nanoom
-          shasum -a 256 "/tmp/${{ matrix.artifact }}" > "/tmp/${{ matrix.artifact }}.sha256"
+          (cd /tmp && shasum -a 256 "${{ matrix.artifact }}" > "${{ matrix.artifact }}.sha256")
           cp /tmp/${{ matrix.artifact }}* "$GITHUB_WORKSPACE/"
 
       - name: Package (windows zip)
