@@ -64,6 +64,7 @@ runs:
         if [ -n "$NANOOM_BASE" ]; then ARGS+=(--base "$NANOOM_BASE"); fi
         if [ -n "$NANOOM_HEAD" ]; then ARGS+=(--head "$NANOOM_HEAD"); fi
         JSON=$(nanoom -C "$NANOOM_CWD" -c "$NANOOM_CONFIG" "${ARGS[@]}")
+        echo "Affected result: ${JSON}"
 
         HAS_CHANGE=$(echo "$JSON" | jq -r '.has_change')
         echo "has-change=${HAS_CHANGE}" >> "$GITHUB_OUTPUT"
