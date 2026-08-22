@@ -24,7 +24,7 @@ gix = { version = "0.86", default-features = false, features = ["revision", "mer
 schemars = { version = "0.8", features = ["derive"] }
 walkdir = "2.4"
 serde_yaml = "0.9"
-toml = "0.8"
+toml = "1.1"
 sha2 = "0.10"
 
 [dev-dependencies]
