@@ -1,5 +1,11 @@
 # @nanoom/cli
 
+## 0.1.2
+
+### Patch Changes
+
+- Use the available macOS runner label for the x64 release build.
+
 ## 0.1.1
 
 ### Patch Changes
