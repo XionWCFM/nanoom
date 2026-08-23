@@ -32,10 +32,14 @@ pub async fn execute(args: InstallArgs, config: &Config, base_cwd: &std::path::P
     // that explicitly need it.
     if let Some(filter) = &args.filter {
         if pm == "yarn" && is_yarn_berry(cwd) {
-            println!("Installing root and workspace dependencies with Yarn Berry (all workspaces; requested filter: {})...", filter);
+            let root = root_workspace_name(cwd)?;
+            println!(
+                "Installing root workspace and focused dependencies with Yarn Berry: {} + {}...",
+                root, filter
+            );
             run_command(
                 "yarn",
-                vec!["workspaces".into(), "focus".into(), "--all".into()],
+                vec!["workspaces".into(), "focus".into(), root, filter.clone()],
                 cwd,
             )
             .await?;
@@ -210,6 +214,21 @@ fn is_yarn_berry(dir: &Path) -> bool {
         .ok()
         .and_then(|manifest| manifest.get("packageManager")?.as_str().map(str::to_owned))
         .is_some_and(|manager| manager.starts_with("yarn@") && !manager.starts_with("yarn@1."))
+}
+
+fn root_workspace_name(dir: &Path) -> Result<String> {
+    let content = std::fs::read_to_string(dir.join("package.json")).map_err(|error| {
+        Error::ConfigValidation(format!("Cannot read root package.json: {error}"))
+    })?;
+    let manifest: serde_json::Value = serde_json::from_str(&content)
+        .map_err(|error| Error::ConfigValidation(format!("Invalid root package.json: {error}")))?;
+    manifest
+        .get("name")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_owned)
+        .ok_or_else(|| {
+            Error::ConfigValidation("Root package.json must define a name for Yarn focus".into())
+        })
 }
 
 #[cfg(test)]
