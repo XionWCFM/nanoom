@@ -6,7 +6,7 @@
 ```
 basic/
 ├── pnpm-workspace.yaml
-├── nanoom.config.json      # ci 그룹: test + build, concurrency 4
+├── nanoom.config.json      # ci 그룹: test + build
 ├── packages/ui/            # 공유 라이브러리
 └── apps/
     ├── web/                # ui에 의존하는 프론트엔드

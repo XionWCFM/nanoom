@@ -1,0 +1,19 @@
+name: nanoom run
+description: Run one authoritative matrix entry
+inputs:
+  matrix: {required: true}
+  packageManager: {default: auto}
+  monorepoTool: {default: auto}
+  cwd: {default: .}
+  version: {default: latest}
+runs:
+  using: composite
+  steps:
+    - uses: XionWCFM/nanoom/.github/actions/_setup@main
+      with: {version: ${{ inputs.version }}}
+    - shell: bash
+      env: {MATRIX: ${{ inputs.matrix }}, PM: ${{ inputs.packageManager }}, TOOL: ${{ inputs.monorepoTool }}, CWD: ${{ inputs.cwd }}}
+      run: |
+        set -euo pipefail; e=$(jq -c '.include[0]' <<<"$MATRIX"); group=$(jq -r .group <<<"$e"); task=$(jq -r .task <<<"$e"); name=$(jq -r .name <<<"$e"); args=(-C "$CWD" run "$group" "$task" --all --filter "$name")
+        [[ $(jq -r '.shard // empty' <<<"$e") ]] && args+=(--shard "$(jq -r .shard <<<"$e")" --total-shards "$(jq -r .totalShards <<<"$e")"); [[ $(jq -r .isolate // false <<<"$e") == true ]] && args+=(--isolate)
+        [[ "$TOOL" != auto ]] && args+=(--runner "$TOOL"); nanoom "${args[@]}"

@@ -160,7 +160,25 @@ async fn run_task(
     // Tasks declared in package.json scripts are routed through the package
     // manager (`pnpm test`), anything else runs as a raw command.
     let selected_runner = runner.unwrap_or("auto");
-    let (program, args) = match selected_runner {
+    let detected_runner = if selected_runner == "auto" {
+        let turbo = root.join("turbo.json").exists();
+        let nx = root.join("nx.json").exists();
+        if turbo && nx {
+            return Err(Error::InvalidRunner(
+                "both turbo.json and nx.json exist; set monorepoTool explicitly".into(),
+            ));
+        }
+        if turbo {
+            "turbo"
+        } else if nx {
+            "nx"
+        } else {
+            "auto"
+        }
+    } else {
+        selected_runner
+    };
+    let (program, args) = match detected_runner {
         "turbo" => (
             "turbo".to_string(),
             vec![
@@ -193,12 +211,12 @@ async fn run_task(
 
     let executable = package_manager_executable(&program);
     let mut cmd = Command::new(executable);
-    cmd.current_dir(if matches!(selected_runner, "turbo" | "nx") {
+    cmd.current_dir(if matches!(detected_runner, "turbo" | "nx") {
         root
     } else {
         &project.path
     });
-    if matches!(selected_runner, "turbo" | "nx") {
+    if matches!(detected_runner, "turbo" | "nx") {
         let local_bin = root.join("node_modules").join(".bin");
         let mut path_entries = vec![local_bin];
         if let Some(existing) = std::env::var_os("PATH") {
@@ -286,7 +304,6 @@ mod tests {
             "ci".to_string(),
             GroupConfig {
                 tasks: vec!["echo".to_string(), "true".to_string(), "false".to_string()],
-                concurrency: 1,
                 rules: vec![],
             },
         );

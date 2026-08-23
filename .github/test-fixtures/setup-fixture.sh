@@ -119,7 +119,7 @@ fi
 cat > "$FIXTURE/nanoom.config.json" << EOF
 {
   "group": {
-    "ci": { "tasks": ["test"], "concurrency": 4${SHARD_BLOCK} }
+    "ci": { "tasks": ["test"]${SHARD_BLOCK} }
   },
   "globalDependencies": ["*.lock"]
 }

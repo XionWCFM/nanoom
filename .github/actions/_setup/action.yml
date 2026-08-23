@@ -1,0 +1,50 @@
+name: nanoom internal setup
+description: Download, verify, and expose the nanoom release binary
+inputs:
+  version:
+    default: latest
+  repository:
+    default: XionWCFM/nanoom
+runs:
+  using: composite
+  steps:
+    - id: version
+      shell: bash
+      env:
+        REQUESTED: ${{ inputs.version }}
+        API: ${{ github.api_url }}
+        REPOSITORY: ${{ inputs.repository }}
+      run: |
+        set -euo pipefail
+        if [[ "$REQUESTED" == local ]]; then v=local
+        elif [[ "$REQUESTED" == latest ]]; then v=$(curl -fsSL "$API/repos/$REPOSITORY/releases/latest" | jq -r .tag_name)
+        else v="$REQUESTED"; fi
+        echo "version=$v" >> "$GITHUB_OUTPUT"
+    - name: Download verified binary
+      if: steps.version.outputs.version != 'local'
+      shell: bash
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
+        REPOSITORY: ${{ inputs.repository }}
+        SERVER: ${{ github.server_url }}
+      run: |
+        set -euo pipefail
+        os=$(uname -s | tr '[:upper:]' '[:lower:]'); [[ $os == darwin ]] && os=macos
+        arch=$(uname -m); case "$arch" in x86_64) arch=x64;; aarch64|arm64) arch=arm64;; esac
+        file="nanoom-${os}-${arch}.tar.gz"
+        url="$SERVER/$REPOSITORY/releases/download/$VERSION/$file"
+        curl -fsSL "$url" -o "/tmp/$file"
+        curl -fsSL "$url.sha256" -o "/tmp/$file.sha256"
+        expected=$(awk '{print $1}' "/tmp/$file.sha256")
+        actual=$( (command -v sha256sum >/dev/null && sha256sum "/tmp/$file" || shasum -a 256 "/tmp/$file") | awk '{print $1}')
+        [[ "$expected" == "$actual" ]]
+        mkdir -p "$RUNNER_TEMP/nanoom-bin"; tar -xzf "/tmp/$file" -C "$RUNNER_TEMP/nanoom-bin"
+        chmod +x "$RUNNER_TEMP/nanoom-bin/nanoom"
+    - name: Use local test binary
+      if: steps.version.outputs.version == 'local'
+      shell: bash
+      env: { BINARY: ${{ env.NANOOM_LOCAL_BINARY }} }
+      run: |
+        set -euo pipefail; test -x "$BINARY"; mkdir -p "$RUNNER_TEMP/nanoom-bin"; cp "$BINARY" "$RUNNER_TEMP/nanoom-bin/nanoom"
+    - shell: bash
+      run: echo "$RUNNER_TEMP/nanoom-bin" >> "$GITHUB_PATH"

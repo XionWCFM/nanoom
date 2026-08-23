@@ -1,0 +1,26 @@
+name: nanoom status
+description: Evaluate needs results without artifacts
+inputs:
+  needs: {required: true}
+  affectedJob: {default: affected}
+  matrixJob: {default: matrix}
+  format: {default: text}
+  version: {default: latest}
+runs:
+  using: composite
+  steps:
+    - uses: XionWCFM/nanoom/.github/actions/_setup@main
+      with: {version: ${{ inputs.version }}}
+    - shell: bash
+      env: {NEEDS: ${{ inputs.needs }}, AFFECTED: ${{ inputs.affectedJob }}, MATRIX: ${{ inputs.matrixJob }}}
+      run: |
+        set -euo pipefail
+        a=$(jq -r --arg n "$AFFECTED" '.[$n].result' <<<"$NEEDS")
+        m=$(jq -r --arg n "$MATRIX" '.[$n].result' <<<"$NEEDS")
+        h=$(jq -r --arg n "$AFFECTED" '.[$n].outputs.has_change // empty' <<<"$NEEDS")
+        [[ "$a" == success ]] || exit 1
+        case "$h:$m" in
+          true:success) ;;
+          false:skipped) ;;
+          *) echo "inconsistent affected/matrix result: has_change=$h matrix=$m" >&2; exit 1 ;;
+        esac

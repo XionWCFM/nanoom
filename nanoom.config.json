@@ -3,7 +3,6 @@
   "group": {
     "ci": {
       "tasks": ["test", "build", "typecheck"],
-      "concurrency": 4,
       "rules": [
         { "name": "@nanoom/test", "ignore": true },
         { "name": "@nanoom/run", "isolate": ["build"] }
@@ -11,7 +10,6 @@
     },
     "e2e": {
       "tasks": ["test:e2e"],
-      "concurrency": 4,
       "rules": [
         { "name": "@nanoom/core", "shard": [{ "task": "test:e2e", "shard": 4 }] }
       ]

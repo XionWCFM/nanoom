@@ -1,0 +1,18 @@
+name: nanoom install
+description: Focused dependency installation for a matrix entry
+inputs:
+  matrix: {required: true}
+  packageManager: {default: auto}
+  cwd: {default: .}
+  version: {default: latest}
+runs:
+  using: composite
+  steps:
+    - uses: XionWCFM/nanoom/.github/actions/_setup@main
+      with: {version: ${{ inputs.version }}}
+    - shell: bash
+      env: {MATRIX: ${{ inputs.matrix }}, PM: ${{ inputs.packageManager }}, CWD: ${{ inputs.cwd }}}
+      run: |
+        set -euo pipefail; name=$(jq -r '.include[0].name' <<<"$MATRIX")
+        [[ "$PM" == npm ]] && { echo 'npm focused install is unsupported; use yarn Berry or pnpm' >&2; exit 2; }
+        nanoom -C "$CWD" install --package-manager "$PM" --filter "$name"

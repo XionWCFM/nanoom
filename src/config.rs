@@ -24,7 +24,6 @@ pub struct Config {
 #[serde(deny_unknown_fields)]
 pub struct GroupConfig {
     pub tasks: Vec<String>,
-    pub concurrency: usize,
     #[serde(default)]
     pub rules: Vec<Rule>,
 }
@@ -95,13 +94,6 @@ impl Config {
                     name
                 )));
             }
-            if group.concurrency == 0 {
-                return Err(Error::ConfigValidation(format!(
-                    "Group '{}' concurrency must be > 0",
-                    name
-                )));
-            }
-
             for rule in &group.rules {
                 if rule.name.is_empty() {
                     return Err(Error::ConfigValidation(format!(

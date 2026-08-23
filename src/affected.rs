@@ -15,18 +15,19 @@ pub struct AffectedOutput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GroupOutput {
     pub label: String,
-    #[serde(rename = "max_parallel")]
-    pub max_parallel: usize,
     pub workspaces: Vec<WorkspaceEntry>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkspaceEntry {
+    pub group: String,
     pub name: String,
     pub path: String,
     pub task: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shard: Option<usize>,
+    #[serde(rename = "totalShards", skip_serializing_if = "Option::is_none")]
+    pub total_shards: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub isolate: Option<bool>,
 }
@@ -82,7 +83,6 @@ pub async fn calculate_with_override(
                 group_name.clone(),
                 GroupOutput {
                     label: group_name.clone(),
-                    max_parallel: group_config.concurrency,
                     workspaces: vec![],
                 },
             );
@@ -103,27 +103,33 @@ pub async fn calculate_with_override(
                 if let Some(shard_rule) = shard_rule {
                     for shard_idx in 1..=shard_rule.shard {
                         workspaces.push(WorkspaceEntry {
+                            group: group_name.clone(),
                             name: project.name.clone(),
                             path: project.path.to_string_lossy().to_string(),
                             task: task.clone(),
                             shard: Some(shard_idx),
+                            total_shards: Some(shard_rule.shard),
                             isolate: Some(false),
                         });
                     }
                 } else if is_isolated {
                     workspaces.push(WorkspaceEntry {
+                        group: group_name.clone(),
                         name: project.name.clone(),
                         path: project.path.to_string_lossy().to_string(),
                         task: task.clone(),
                         shard: None,
+                        total_shards: None,
                         isolate: Some(true),
                     });
                 } else {
                     workspaces.push(WorkspaceEntry {
+                        group: group_name.clone(),
                         name: project.name.clone(),
                         path: project.path.to_string_lossy().to_string(),
                         task: task.clone(),
                         shard: None,
+                        total_shards: None,
                         isolate: Some(false),
                     });
                 }
@@ -134,7 +140,6 @@ pub async fn calculate_with_override(
             group_name.clone(),
             GroupOutput {
                 label: group_name.clone(),
-                max_parallel: group_config.concurrency,
                 workspaces,
             },
         );
@@ -164,6 +169,9 @@ pub fn generate_matrix(output: &AffectedOutput) -> serde_json::Value {
                 if let Some(shard) = w.shard {
                     entry["shard"] = serde_json::Value::Number(shard.into());
                 }
+                if let Some(total) = w.total_shards {
+                    entry["totalShards"] = serde_json::Value::Number(total.into());
+                }
                 if let Some(isolate) = w.isolate {
                     entry["isolate"] = serde_json::Value::Bool(isolate);
                 }
@@ -173,7 +181,7 @@ pub fn generate_matrix(output: &AffectedOutput) -> serde_json::Value {
 
         matrix.insert(
             group_name.clone(),
-            serde_json::json!({ "include": include, "max_parallel": group_output.max_parallel }),
+            serde_json::json!({ "include": include }),
         );
     }
 
@@ -196,6 +204,9 @@ pub fn generate_matrix_for_group(output: &AffectedOutput, group_name: &str) -> s
                 if let Some(shard) = w.shard {
                     entry["shard"] = serde_json::Value::Number(shard.into());
                 }
+                if let Some(total) = w.total_shards {
+                    entry["totalShards"] = serde_json::Value::Number(total.into());
+                }
                 if let Some(isolate) = w.isolate {
                     entry["isolate"] = serde_json::Value::Bool(isolate);
                 }
@@ -203,7 +214,7 @@ pub fn generate_matrix_for_group(output: &AffectedOutput, group_name: &str) -> s
             })
             .collect();
 
-        serde_json::json!({ "include": include, "max_parallel": group_output.max_parallel })
+        serde_json::json!({ "include": include })
     } else {
         serde_json::json!({ "include": [] })
     }
