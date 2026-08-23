@@ -27,7 +27,7 @@ runs:
         BASE: ${{ inputs.base }}
         HEAD: ${{ inputs.head }}
       run: |
-        set -euo pipefail; args=(affected --json -C "$CWD" -c "$CONFIG")
+        set -euo pipefail; args=(-C "$CWD" -c "$CONFIG" affected --json)
         [[ -n "$BASE" ]] && args+=(--base "$BASE"); [[ -n "$HEAD" ]] && args+=(--head "$HEAD")
         json=$(nanoom "${args[@]}"); has=$(jq -r .has_change <<<"$json"); echo "has_change=$has" >> "$GITHUB_OUTPUT"
         if [[ -n "$GROUP" ]]; then matrix=$(jq -c --arg g "$GROUP" '{include: [.group[$g].workspaces[] | . + {group:$g}]} ' <<<"$json")
