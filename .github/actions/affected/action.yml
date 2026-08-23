@@ -26,17 +26,21 @@ runs:
         CONFIG: ${{ inputs.config }}
         BASE: ${{ inputs.base }}
         HEAD: ${{ inputs.head }}
+        EVENT: ${{ github.event_name }}
+        EVENT_BEFORE: ${{ github.event.before }}
+        EVENT_SHA: ${{ github.sha }}
+        BASE_REF: ${{ github.base_ref }}
       run: |
         set -euo pipefail
         if [[ -z "$BASE" || -z "$HEAD" ]]; then
-          case "${GITHUB_EVENT_NAME:-}" in
+          case "$EVENT" in
             push)
-              BASE="${GITHUB_EVENT_BEFORE:-}"
-              HEAD="${GITHUB_SHA:-HEAD}"
+              BASE="$EVENT_BEFORE"
+              HEAD="${EVENT_SHA:-HEAD}"
               ;;
             pull_request|merge_group)
-              BASE="${GITHUB_BASE_REF:-main}"
-              HEAD="${GITHUB_SHA:-HEAD}"
+              BASE="${BASE_REF:-main}"
+              HEAD="${EVENT_SHA:-HEAD}"
               ;;
           esac
         fi
