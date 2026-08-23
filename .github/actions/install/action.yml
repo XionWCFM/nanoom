@@ -8,7 +8,7 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: XionWCFM/nanoom/.github/actions/_setup@codex/ideal-github-actions
+    - uses: XionWCFM/nanoom/.github/actions/_setup@main
       with:
         version: ${{ inputs.version }}
     - shell: bash
