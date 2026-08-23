@@ -17,6 +17,6 @@ runs:
         PM: ${{ inputs.packageManager }}
         CWD: ${{ inputs.cwd }}
       run: |
-        set -euo pipefail; name=$(jq -r '.include[0].name' <<<"$MATRIX")
+        set -euo pipefail; name=$(jq -r '(.include[0] // .).name' <<<"$MATRIX")
         [[ "$PM" == npm ]] && { echo 'npm focused install is unsupported; use yarn Berry or pnpm' >&2; exit 2; }
         nanoom -C "$CWD" install --package-manager "$PM" --filter "$name"
