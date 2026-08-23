@@ -168,7 +168,16 @@ jobs:
       - name: Upload all assets to the draft release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload '${{ inputs.version || github.ref_name }}' release-assets/* --repo '${{ github.repository }}' --clobber
+        run: |
+          tag='${{ inputs.version || github.ref_name }}'
+          for asset in release-assets/*; do
+            name="${asset##*/}"
+            if gh release view "$tag" --repo '${{ github.repository }}' --json assets --jq '.assets[].name' | grep -Fxq "$name"; then
+              echo "Skipping existing release asset: $name"
+            else
+              gh release upload "$tag" "$asset" --repo '${{ github.repository }}'
+            fi
+          done
 
   publish-npm:
     name: Publish @nanoom/cli to npm
