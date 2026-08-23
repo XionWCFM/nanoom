@@ -41,7 +41,7 @@ runs:
           esac
         fi
         if [[ -n "$BASE" && "$BASE" != HEAD && "$BASE" != refs/* ]]; then
-          git fetch --no-tags --depth=100 origin "$BASE" || true
+          git fetch --no-tags --depth=100 origin "$BASE:refs/heads/$BASE" || true
         fi
         args=(-C "$CWD" -c "$CONFIG" affected --json)
         [[ -n "$BASE" ]] && args+=(--base "$BASE"); [[ -n "$HEAD" ]] && args+=(--head "$HEAD")
