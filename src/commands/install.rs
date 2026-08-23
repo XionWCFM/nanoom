@@ -32,15 +32,20 @@ pub async fn execute(args: InstallArgs, config: &Config, base_cwd: &std::path::P
     // that explicitly need it.
     if let Some(filter) = &args.filter {
         if pm == "yarn" && is_yarn_berry(cwd) {
+            println!("Installing root and workspace dependencies with Yarn Berry (all workspaces; requested filter: {})...", filter);
             run_command(
                 "yarn",
-                vec!["workspaces".into(), "focus".into(), filter.clone()],
+                vec!["workspaces".into(), "focus".into(), "--all".into()],
                 cwd,
             )
             .await?;
             return Ok(());
         }
         if pm == "pnpm" {
+            println!(
+                "Installing root and filtered workspace dependencies with pnpm: {}...",
+                filter
+            );
             run_command(
                 "pnpm",
                 vec![
