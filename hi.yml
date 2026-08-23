@@ -1,0 +1,74 @@
+name: nanoom e2e
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  merge_group:
+
+permissions:
+  contents: read
+
+env:
+  PUSH_REF_NAME: ${{ github.ref_name }}
+  PULL_REQUEST_BASE_REF: ${{ github.base_ref }}
+  PULL_REQUEST_HEAD_REF: ${{ github.head_ref || github.sha }}
+
+jobs:
+  affected:
+    name: affected
+    runs-on: ubuntu-latest
+    outputs:
+      has_change: ${{ steps.calculate.outputs.has_change }}
+      matrix: ${{ steps.calculate.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 100
+      
+      - name: Calculate affected workspaces and matrix
+        id: calculate
+        uses: XionWCFM/nanoom/.github/actions/affected@main
+
+  matrix:
+    name: Run ${{ matrix.name }}
+    needs: affected
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.affected.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          
+      - name: Enable Yarn 4
+        run: corepack enable
+
+      - name: Install fixture dependencies
+        uses: XionWCFM/nanoom/.github/actions/install@main
+        with:
+          packageManager: yarn 
+          matrix: ${{ toJSON(matrix) }}
+
+      - name: run
+        uses: XionWCFM/nanoom/.github/actions/run@main
+        with:
+          packageManager: yarn
+          monorepoTool: turbo
+          matrix: ${{ toJSON(matrix) }}
+
+
+  status:
+    name: status
+    needs: [affected, matrix]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - uses: XionWCFM/nanoom/.github/actions/status@main
+        with:
+          needs: ${{ toJSON(needs) }}
+        

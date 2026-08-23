@@ -88,10 +88,12 @@ mod tests {
 
     fn mock_output() -> AffectedOutput {
         let workspaces = vec![WorkspaceEntry {
+            group: "ci".into(),
             name: "proj-a".into(),
             path: "packages/proj-a".into(),
             task: "test".into(),
             shard: None,
+            total_shards: None,
             isolate: Some(false),
         }];
         let mut group = HashMap::new();
@@ -99,7 +101,6 @@ mod tests {
             "ci".into(),
             GroupOutput {
                 label: "ci".into(),
-                max_parallel: 1,
                 workspaces,
             },
         );

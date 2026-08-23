@@ -65,20 +65,23 @@ fn test_generate_matrix() {
                 "ci".to_string(),
                 GroupOutput {
                     label: "ci".to_string(),
-                    max_parallel: 2,
                     workspaces: vec![
                         WorkspaceEntry {
+                            group: "ci".into(),
                             name: "pkg1".to_string(),
                             path: "packages/pkg1".to_string(),
                             task: "test".to_string(),
                             shard: None,
+                            total_shards: None,
                             isolate: Some(false),
                         },
                         WorkspaceEntry {
+                            group: "ci".into(),
                             name: "pkg2".to_string(),
                             path: "packages/pkg2".to_string(),
                             task: "build".to_string(),
                             shard: None,
+                            total_shards: None,
                             isolate: Some(false),
                         },
                     ],
@@ -88,20 +91,23 @@ fn test_generate_matrix() {
                 "e2e".to_string(),
                 GroupOutput {
                     label: "e2e".to_string(),
-                    max_parallel: 4,
                     workspaces: vec![
                         WorkspaceEntry {
+                            group: "e2e".into(),
                             name: "pkg1".to_string(),
                             path: "packages/pkg1".to_string(),
                             task: "test:e2e".to_string(),
                             shard: Some(1),
+                            total_shards: Some(2),
                             isolate: Some(false),
                         },
                         WorkspaceEntry {
+                            group: "e2e".into(),
                             name: "pkg1".to_string(),
                             path: "packages/pkg1".to_string(),
                             task: "test:e2e".to_string(),
                             shard: Some(2),
+                            total_shards: Some(2),
                             isolate: Some(false),
                         },
                     ],
@@ -134,12 +140,13 @@ fn test_generate_matrix_for_group() {
             "ci".to_string(),
             GroupOutput {
                 label: "ci".to_string(),
-                max_parallel: 2,
                 workspaces: vec![WorkspaceEntry {
+                    group: "ci".into(),
                     name: "pkg1".to_string(),
                     path: "packages/pkg1".to_string(),
                     task: "test".to_string(),
                     shard: None,
+                    total_shards: None,
                     isolate: Some(false),
                 }],
             },
@@ -150,7 +157,6 @@ fn test_generate_matrix_for_group() {
     let matrix = generate_matrix_for_group(&output, "ci");
     let include = matrix["include"].as_array().unwrap();
     assert_eq!(include.len(), 1);
-    assert_eq!(matrix["max_parallel"], 2);
     assert_eq!(include[0]["name"], "pkg1");
     assert_eq!(include[0]["task"], "test");
 }
@@ -170,10 +176,12 @@ fn test_generate_matrix_for_nonexistent_group() {
 #[test]
 fn test_workspace_entry_serialization() {
     let entry = WorkspaceEntry {
+        group: "ci".into(),
         name: "pkg1".to_string(),
         path: "packages/pkg1".to_string(),
         task: "test".to_string(),
         shard: Some(1),
+        total_shards: Some(1),
         isolate: Some(false),
     };
 
@@ -188,10 +196,12 @@ fn test_workspace_entry_serialization() {
 #[test]
 fn test_workspace_entry_isolated() {
     let entry = WorkspaceEntry {
+        group: "ci".into(),
         name: "pkg1".to_string(),
         path: "packages/pkg1".to_string(),
         task: "build".to_string(),
         shard: None,
+        total_shards: None,
         isolate: Some(true),
     };
 

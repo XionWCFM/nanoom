@@ -3,7 +3,6 @@
   "group": {
     "ci": {
       "tasks": ["test", "build"],
-      "concurrency": 4
     }
   }
 }

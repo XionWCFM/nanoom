@@ -40,8 +40,22 @@ pub async fn execute(args: InstallArgs, config: &Config, base_cwd: &std::path::P
             .await?;
             return Ok(());
         }
+        if pm == "pnpm" {
+            run_command(
+                "pnpm",
+                vec![
+                    "install".into(),
+                    "--frozen-lockfile".into(),
+                    "--filter".into(),
+                    format!("...{}", filter),
+                ],
+                cwd,
+            )
+            .await?;
+            return Ok(());
+        }
         return Err(Error::ConfigValidation(
-            "workspace-scoped install currently requires Yarn Berry".into(),
+            "npm focused install is unsupported; use Yarn Berry or pnpm".into(),
         ));
     }
     println!("Installing root dependencies...");
@@ -103,6 +117,17 @@ pub fn detect_package_manager(cwd: &Path, explicit: Option<&str>) -> Result<Stri
         }
     }
 
+    if let Ok(content) = std::fs::read_to_string(cwd.join("package.json")) {
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&content) {
+            if let Some(manager) = value.get("packageManager").and_then(|v| v.as_str()) {
+                if let Some(name) = manager.split('@').next() {
+                    if matches!(name, "pnpm" | "yarn" | "npm") {
+                        return Ok(name.to_string());
+                    }
+                }
+            }
+        }
+    }
     if cwd.join("pnpm-lock.yaml").exists() {
         Ok("pnpm".to_string())
     } else if cwd.join("yarn.lock").exists() {
@@ -305,7 +330,6 @@ mod tests {
             "ci".to_string(),
             crate::config::GroupConfig {
                 tasks: vec!["build".to_string()],
-                concurrency: 1,
                 rules: vec![],
             },
         );

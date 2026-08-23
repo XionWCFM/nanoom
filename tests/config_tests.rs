@@ -12,7 +12,6 @@ fn test_load_valid_config() -> Result<()> {
         "group": {
             "ci": {
                 "tasks": ["test", "build"],
-                "concurrency": 4,
                 "rules": [
                     { "name": "@org/test", "ignore": true },
                     { "name": "@org/run", "isolate": ["build"] }
@@ -20,7 +19,6 @@ fn test_load_valid_config() -> Result<()> {
             },
             "e2e": {
                 "tasks": ["test:e2e"],
-                "concurrency": 2,
                 "rules": [
                     { "name": "@org/core", "shard": [{ "task": "test:e2e", "shard": 4 }] }
                 ]
@@ -42,12 +40,10 @@ fn test_load_valid_config() -> Result<()> {
 
     let ci_group = &config.group["ci"];
     assert_eq!(ci_group.tasks, vec!["test", "build"]);
-    assert_eq!(ci_group.concurrency, 4);
     assert_eq!(ci_group.rules.len(), 2);
 
     let e2e_group = &config.group["e2e"];
     assert_eq!(e2e_group.tasks, vec!["test:e2e"]);
-    assert_eq!(e2e_group.concurrency, 2);
     assert_eq!(e2e_group.rules.len(), 1);
 
     assert_eq!(
@@ -66,8 +62,7 @@ fn test_load_minimal_config() -> Result<()> {
     let config_json = r#"{
         "group": {
             "ci": {
-                "tasks": ["test"],
-                "concurrency": 1
+                "tasks": ["test"]
             }
         }
     }"#;
@@ -120,7 +115,6 @@ fn test_unknown_field_rejected() {
         "group": {
             "ci": {
                 "tasks": ["test"],
-                "concurrency": 1,
                 "unknown_field": true
             }
         }
@@ -158,8 +152,7 @@ fn test_validate_group_no_tasks() {
     let config_json = r#"{
         "group": {
             "ci": {
-                "tasks": [],
-                "concurrency": 1
+                "tasks": []
             }
         }
     }"#;
@@ -175,7 +168,7 @@ fn test_validate_group_no_tasks() {
 }
 
 #[test]
-fn test_validate_group_zero_concurrency() {
+fn test_removed_concurrency_is_rejected() {
     let dir = tempdir().unwrap();
     let config_path = dir.path().join("nanoom.config.json");
 
@@ -192,10 +185,7 @@ fn test_validate_group_zero_concurrency() {
 
     let result = Config::load(&config_path, dir.path());
     assert!(result.is_err());
-    assert!(result
-        .unwrap_err()
-        .to_string()
-        .contains("concurrency must be > 0"));
+    assert!(result.unwrap_err().to_string().contains("unknown field"));
 }
 
 #[test]
@@ -207,7 +197,6 @@ fn test_validate_rule_empty_name() {
         "group": {
             "ci": {
                 "tasks": ["test"],
-                "concurrency": 1,
                 "rules": [{ "name": "", "ignore": true }]
             }
         }
@@ -229,7 +218,6 @@ fn test_validate_shard_zero() {
         "group": {
             "ci": {
                 "tasks": ["test"],
-                "concurrency": 1,
                 "rules": [{ "name": "pkg", "shard": [{ "task": "test", "shard": 0 }] }]
             }
         }

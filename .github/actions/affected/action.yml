@@ -1,0 +1,35 @@
+name: nanoom affected
+description: Calculate the authoritative flattened matrix
+inputs:
+  version: {default: latest}
+  group: {default: ''}
+  config: {default: nanoom.config.json}
+  cwd: {default: '.'}
+  base: {default: ''}
+  head: {default: ''}
+outputs:
+  has_change:
+    value: ${{ steps.out.outputs.has_change }}
+  matrix:
+    value: ${{ steps.out.outputs.matrix }}
+runs:
+  using: composite
+  steps:
+    - uses: XionWCFM/nanoom/.github/actions/_setup@codex/ideal-github-actions
+      with:
+        version: ${{ inputs.version }}
+    - id: out
+      shell: bash
+      env:
+        GROUP: ${{ inputs.group }}
+        CWD: ${{ inputs.cwd }}
+        CONFIG: ${{ inputs.config }}
+        BASE: ${{ inputs.base }}
+        HEAD: ${{ inputs.head }}
+      run: |
+        set -euo pipefail; args=(-C "$CWD" -c "$CONFIG" affected --json)
+        [[ -n "$BASE" ]] && args+=(--base "$BASE"); [[ -n "$HEAD" ]] && args+=(--head "$HEAD")
+        json=$(nanoom "${args[@]}"); has=$(jq -r .has_change <<<"$json"); echo "has_change=$has" >> "$GITHUB_OUTPUT"
+        if [[ -n "$GROUP" ]]; then matrix=$(jq -c --arg g "$GROUP" '{include: [.group[$g].workspaces[] | . + {group:$g}]} ' <<<"$json")
+        else matrix=$(jq -c '{include: [.group[] | .workspaces[]]}' <<<"$json"); fi
+        echo "matrix=$matrix" >> "$GITHUB_OUTPUT"

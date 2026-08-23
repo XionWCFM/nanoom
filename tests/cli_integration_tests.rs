@@ -55,7 +55,7 @@ fn setup_monorepo(dir: &Path) {
         &dir.join("nanoom.config.json"),
         &serde_json::json!({
             "group": {
-                "ci": { "tasks": ["test"], "concurrency": 2 }
+                "ci": { "tasks": ["test"] }
             },
             "globalDependencies": ["*.lock"]
         }),
@@ -290,7 +290,7 @@ fn minimal_config(dir: &Path) {
     write_json(
         &dir.join("nanoom.config.json"),
         &serde_json::json!({
-            "group": { "ci": { "tasks": ["test"], "concurrency": 2 } }
+            "group": { "ci": { "tasks": ["test"] } }
         }),
     );
 }
@@ -443,7 +443,6 @@ fn test_affected_preserves_all_entries_when_exceeding_concurrency() {
             "group": {
                 "ci": {
                     "tasks": ["test"],
-                    "concurrency": 1,
                     "rules": [
                         { "name": "pkg-a", "shard": [{ "task": "test", "shard": 2 }] }
                     ]
@@ -583,7 +582,6 @@ fn test_run_shards_execute_distinct_shard_contexts_end_to_end() {
             "group": {
                 "ci": {
                     "tasks": ["test"],
-                    "concurrency": 4,
                     "rules": [{
                         "name": "pkg-a",
                         "shard": [{ "task": "test", "shard": 2 }]
@@ -647,7 +645,6 @@ fn test_run_isolate_selects_only_isolated_workspace_end_to_end() {
             "group": {
                 "ci": {
                     "tasks": ["test"],
-                    "concurrency": 4,
                     "rules": [{ "name": "pkg-a", "isolate": ["test"] }]
                 }
             }
