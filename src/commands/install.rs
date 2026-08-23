@@ -436,7 +436,7 @@ mod tests {
             package_manager: Some("yarn".to_string()),
             root_install: true,
             filter: None,
-            json: false,
+            json: true,
         };
         execute(args, &config, dir.path()).await.unwrap();
     }

@@ -498,7 +498,7 @@ mod tests {
                 isolate: false,
                 all: true,
                 continue_on_error: false,
-                json: false,
+                json: true,
             },
             &config,
             dir.path(),
