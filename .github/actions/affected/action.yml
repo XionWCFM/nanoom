@@ -15,7 +15,7 @@ outputs:
 runs:
   using: composite
   steps:
-    - uses: XionWCFM/nanoom/.github/actions/_setup@main
+    - uses: XionWCFM/nanoom/.github/actions/_setup@codex/ideal-github-actions
       with:
         version: ${{ inputs.version }}
     - id: out
