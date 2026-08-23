@@ -38,6 +38,9 @@ pub struct RunArgs {
 
     #[arg(long, help = "Continue on error")]
     pub continue_on_error: bool,
+
+    #[arg(long, help = "Output a JSON result")]
+    pub json: bool,
 }
 
 struct TaskConfig {
@@ -104,7 +107,14 @@ pub async fn execute(args: RunArgs, config: &Config, cwd: &std::path::Path) -> R
     };
 
     if projects.is_empty() {
-        println!("No projects to run task '{}' on", args.task);
+        if args.json {
+            println!(
+                "{}",
+                serde_json::json!({"task": args.task, "projects": [], "status": "success"})
+            );
+        } else {
+            println!("No projects to run task '{}' on", args.task);
+        }
         return Ok(());
     }
 
@@ -116,11 +126,13 @@ pub async fn execute(args: RunArgs, config: &Config, cwd: &std::path::Path) -> R
             .filter(|p| projects.iter().any(|q| q.name == p.name))
             .collect();
 
-    println!(
-        "Running task '{}' on {} project(s)",
-        args.task,
-        projects.len()
-    );
+    if !args.json {
+        eprintln!(
+            "Running task '{}' on {} project(s)",
+            args.task,
+            projects.len()
+        );
+    }
 
     let task_config = TaskConfig {
         command: args.task.clone(),
@@ -137,8 +149,17 @@ pub async fn execute(args: RunArgs, config: &Config, cwd: &std::path::Path) -> R
     }
 
     for project in ordered_projects {
-        println!("\n--- {} ---", project.name);
-        let result = run_task(&project, &task_config, args.runner.as_deref(), cwd).await;
+        if !args.json {
+            eprintln!("\n--- {} ---", project.name);
+        }
+        let result = run_task(
+            &project,
+            &task_config,
+            args.runner.as_deref(),
+            cwd,
+            args.json,
+        )
+        .await;
 
         if let Err(e) = result {
             eprintln!("Error in {}: {}", project.name, e);
@@ -148,6 +169,12 @@ pub async fn execute(args: RunArgs, config: &Config, cwd: &std::path::Path) -> R
         }
     }
 
+    if args.json {
+        println!(
+            "{}",
+            serde_json::json!({"task": args.task, "projects": projects.iter().map(|p| &p.name).collect::<Vec<_>>(), "status": "success"})
+        );
+    }
     Ok(())
 }
 
@@ -156,6 +183,7 @@ async fn run_task(
     task: &TaskConfig,
     runner: Option<&str>,
     root: &std::path::Path,
+    json: bool,
 ) -> Result<()> {
     // Tasks declared in package.json scripts are routed through the package
     // manager (`pnpm test`), anything else runs as a raw command.
@@ -232,7 +260,19 @@ async fn run_task(
         cmd.env(key, value);
     }
 
-    let status = cmd.status().await?;
+    let status = if json {
+        use std::process::Stdio;
+        let output = cmd
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .await?;
+        eprint!("{}", String::from_utf8_lossy(&output.stdout));
+        eprint!("{}", String::from_utf8_lossy(&output.stderr));
+        output.status
+    } else {
+        cmd.status().await?
+    };
 
     if !status.success() {
         return Err(Error::TaskFailed {
@@ -341,7 +381,9 @@ mod tests {
             args: vec![],
             env: HashMap::new(),
         };
-        assert!(run_task(&project, &task, None, dir.path()).await.is_ok());
+        assert!(run_task(&project, &task, None, dir.path(), false)
+            .await
+            .is_ok());
     }
 
     #[tokio::test]
@@ -353,7 +395,7 @@ mod tests {
             args: vec![],
             env: HashMap::new(),
         };
-        let result = run_task(&project, &task, None, dir.path()).await;
+        let result = run_task(&project, &task, None, dir.path(), false).await;
         match result {
             Err(Error::TaskFailed {
                 project,
@@ -382,7 +424,9 @@ mod tests {
             ],
             env,
         };
-        assert!(run_task(&project, &task, None, dir.path()).await.is_ok());
+        assert!(run_task(&project, &task, None, dir.path(), false)
+            .await
+            .is_ok());
 
         let mut bad_env = HashMap::new();
         bad_env.insert("NANOOM_TEST_VAR".to_string(), "wrong".to_string());
@@ -394,7 +438,7 @@ mod tests {
             ],
             env: bad_env,
         };
-        assert!(run_task(&project, &failing, None, dir.path())
+        assert!(run_task(&project, &failing, None, dir.path(), false)
             .await
             .is_err());
     }
@@ -412,6 +456,7 @@ mod tests {
             isolate: false,
             all: true,
             continue_on_error: false,
+            json: false,
         };
         let result = execute(args, &config, Path::new(".")).await;
         assert!(matches!(result, Err(Error::ConfigValidation(_))));
@@ -430,6 +475,7 @@ mod tests {
             isolate: false,
             all: true,
             continue_on_error: false,
+            json: false,
         };
         let result = execute(args, &config, Path::new(".")).await;
         assert!(matches!(result, Err(Error::ConfigValidation(_))));
@@ -452,6 +498,7 @@ mod tests {
                 isolate: false,
                 all: true,
                 continue_on_error: false,
+                json: false,
             },
             &config,
             dir.path(),
@@ -478,6 +525,7 @@ mod tests {
                 isolate: false,
                 all: true,
                 continue_on_error: false,
+                json: false,
             },
             &config,
             dir.path(),
@@ -504,6 +552,7 @@ mod tests {
                 isolate: false,
                 all: true,
                 continue_on_error: false,
+                json: false,
             },
             &config,
             dir.path(),
@@ -530,6 +579,7 @@ mod tests {
                 isolate: false,
                 all: true,
                 continue_on_error: true,
+                json: false,
             },
             &config,
             dir.path(),

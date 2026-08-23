@@ -14,6 +14,9 @@ pub struct StatusArgs {
         help = "Comma-separated job=status values, for example build=success,test=failure"
     )]
     pub results: Option<String>,
+
+    #[arg(long, help = "Output a JSON result")]
+    pub json: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -45,7 +48,11 @@ pub async fn execute(args: StatusArgs, _config: &crate::Config) -> Result<()> {
         results.push(result);
     }
 
-    let format = args.format.as_deref().unwrap_or("text");
+    let format = if args.json {
+        "json"
+    } else {
+        args.format.as_deref().unwrap_or("text")
+    };
     match format {
         "json" => {
             let output = serde_json::json!({

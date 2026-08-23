@@ -8,7 +8,8 @@ inputs:
 runs:
   using: composite
   steps:
-    - id: version
+    - name: Resolve nanoom version
+      id: version
       shell: bash
       env:
         REQUESTED: ${{ inputs.version }}
@@ -16,12 +17,13 @@ runs:
         REPOSITORY: ${{ inputs.repository }}
       run: |
         set -euo pipefail
-        echo "[nanoom setup] requested=$REQUESTED repository=$REPOSITORY"
+        trap 'echo "::error title=nanoom setup failed::Could not resolve version '\''$REQUESTED'\''. Check the version and repository inputs, then retry."' ERR
         if [[ "$REQUESTED" == local ]]; then v=local
         elif [[ "$REQUESTED" == latest ]]; then v=$(curl -fsSL "$API/repos/$REPOSITORY/releases/latest" | jq -r .tag_name)
         else v="$REQUESTED"; fi
-        echo "[nanoom setup] resolved_version=$v"
+        [[ -n "$v" && "$v" != null ]]
         echo "version=$v" >> "$GITHUB_OUTPUT"
+        echo "::notice title=nanoom setup::Resolved $REPOSITORY version $v"
     - name: Download verified binary
       if: steps.version.outputs.version != 'local'
       shell: bash
@@ -31,11 +33,14 @@ runs:
         SERVER: ${{ github.server_url }}
       run: |
         set -euo pipefail
+        trap 'echo "::error title=nanoom download failed::Could not download or verify '\''$VERSION'\''. Check that the release contains an asset for this runner and a matching .sha256 file."' ERR
         os=$(uname -s | tr '[:upper:]' '[:lower:]'); [[ $os == darwin ]] && os=macos
         arch=$(uname -m); case "$arch" in x86_64) arch=x64;; aarch64|arm64) arch=arm64;; esac
-        echo "[nanoom setup] downloading $VERSION for $os/$arch"
         file="nanoom-${os}-${arch}.tar.gz"
         url="$SERVER/$REPOSITORY/releases/download/$VERSION/$file"
+        echo "::group::Download $file"
+        echo "Release: $REPOSITORY@$VERSION"
+        echo "Runner:  $os/$arch"
         curl -fsSL "$url" -o "/tmp/$file"
         curl -fsSL "$url.sha256" -o "/tmp/$file.sha256"
         expected=$(awk '{print $1}' "/tmp/$file.sha256")
@@ -43,12 +48,21 @@ runs:
         [[ "$expected" == "$actual" ]]
         mkdir -p "$RUNNER_TEMP/nanoom-bin"; tar -xzf "/tmp/$file" -C "$RUNNER_TEMP/nanoom-bin"
         chmod +x "$RUNNER_TEMP/nanoom-bin/nanoom"
+        echo "Checksum: verified"
+        echo "::endgroup::"
+        echo "::notice title=nanoom setup::Installed $VERSION for $os/$arch (checksum verified)"
     - name: Use local test binary
       if: steps.version.outputs.version == 'local'
       shell: bash
       env:
         BINARY: ${{ env.NANOOM_LOCAL_BINARY }}
       run: |
-        set -euo pipefail; echo "[nanoom setup] using local binary=$BINARY"; test -x "$BINARY"; mkdir -p "$RUNNER_TEMP/nanoom-bin"; cp "$BINARY" "$RUNNER_TEMP/nanoom-bin/nanoom"
-    - shell: bash
-      run: echo "[nanoom setup] adding binary directory=$RUNNER_TEMP/nanoom-bin"; echo "$RUNNER_TEMP/nanoom-bin" >> "$GITHUB_PATH"
+        set -euo pipefail
+        trap 'echo "::error title=Local nanoom setup failed::NANOOM_LOCAL_BINARY must point to an executable file. Build the CLI and set the variable to its absolute path."' ERR
+        test -x "$BINARY"; mkdir -p "$RUNNER_TEMP/nanoom-bin"; cp "$BINARY" "$RUNNER_TEMP/nanoom-bin/nanoom"
+        echo "::notice title=nanoom setup::Using local binary $BINARY"
+    - name: Add nanoom to PATH
+      shell: bash
+      run: |
+        echo "$RUNNER_TEMP/nanoom-bin" >> "$GITHUB_PATH"
+        echo "nanoom is ready: $RUNNER_TEMP/nanoom-bin/nanoom"

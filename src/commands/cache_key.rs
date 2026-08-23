@@ -13,6 +13,9 @@ pub struct CacheKeyArgs {
 
     #[arg(long, default_value = "", help = "Workspace filter")]
     pub filter: String,
+
+    #[arg(long, help = "Output a JSON result")]
+    pub json: bool,
 }
 
 pub fn execute(args: CacheKeyArgs, cwd: &Path) -> Result<()> {
@@ -42,7 +45,12 @@ pub fn execute(args: CacheKeyArgs, cwd: &Path) -> Result<()> {
     }
 
     let digest = format!("{:x}", hasher.finalize());
-    println!("nanoom-{}-{}-{}", args.runner, args.task, &digest[..16]);
+    let key = format!("nanoom-{}-{}-{}", args.runner, args.task, &digest[..16]);
+    if args.json {
+        println!("{}", serde_json::json!({"key": key}));
+    } else {
+        println!("{key}");
+    }
     Ok(())
 }
 
@@ -59,6 +67,7 @@ mod tests {
             runner: "turbo".into(),
             task: "test".into(),
             filter: "pkg-a".into(),
+            json: false,
         };
         let key_a = key_for_test(&args, dir.path());
         let key_b = key_for_test(&args, dir.path());
@@ -84,6 +93,7 @@ mod tests {
                 runner: "npm".into(),
                 task: "test".into(),
                 filter: String::new(),
+                json: false,
             },
             dir.path(),
         )

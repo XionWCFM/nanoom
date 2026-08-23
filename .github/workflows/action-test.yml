@@ -22,4 +22,7 @@ jobs:
           test -f .github/actions/install/action.yml
           test -f .github/actions/run/action.yml
           test -f .github/actions/status/action.yml
-          ! rg -n 'setup-nanoom|nanoom-(affected|install|run|status)|max-parallel|upload-artifact|download-artifact' .github/actions .github/workflows/ci.yml
+          ! grep -R -nE 'setup-nanoom|nanoom-(affected|install|run|status)|max-parallel|upload-artifact|download-artifact' .github/actions .github/workflows/ci.yml
+          test "$(grep -R -l 'GITHUB_STEP_SUMMARY' .github/actions/*/action.yml | wc -l | tr -d ' ')" = 2
+          test "$(grep -R -l '::error title=' .github/actions/*/action.yml | wc -l | tr -d ' ')" = 5
+          test "$(grep -R -l '::notice title=' .github/actions/*/action.yml | wc -l | tr -d ' ')" = 5

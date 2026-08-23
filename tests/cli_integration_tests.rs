@@ -75,6 +75,11 @@ fn binary_path() -> std::path::PathBuf {
 }
 
 fn run_cli(cwd: &Path, args: &[&str], envs: &[(&str, &str)]) -> (bool, String) {
+    let (success, stdout, stderr) = run_cli_parts(cwd, args, envs);
+    (success, format!("{}{}", stdout, stderr))
+}
+
+fn run_cli_parts(cwd: &Path, args: &[&str], envs: &[(&str, &str)]) -> (bool, String, String) {
     let mut cmd = Command::new(binary_path());
     cmd.current_dir(cwd).args(args);
 
@@ -92,7 +97,50 @@ fn run_cli(cwd: &Path, args: &[&str], envs: &[(&str, &str)]) -> (bool, String) {
     let output = cmd.output().expect("failed to run nanoom binary");
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-    (output.status.success(), format!("{}{}", stdout, stderr))
+    (output.status.success(), stdout, stderr)
+}
+
+#[test]
+fn json_mode_keeps_stdout_machine_readable_and_diagnostics_on_stderr() {
+    let dir = tempdir().unwrap();
+    let (success, stdout, stderr) = run_cli_parts(dir.path(), &["version", "--json"], &[]);
+    assert!(success);
+    let value: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(value["name"], "nanoom");
+    assert!(stderr.is_empty(), "unexpected stderr: {stderr}");
+}
+
+#[test]
+fn json_mode_returns_json_error_and_nonzero_exit() {
+    let dir = tempdir().unwrap();
+    let (success, stdout, stderr) = run_cli_parts(dir.path(), &["affected", "--json"], &[]);
+    assert!(!success);
+    let value: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(value["status"], "failure");
+    assert!(value["error"].as_str().is_some());
+    assert!(stderr.contains("error:"));
+}
+
+#[test]
+fn cache_key_json_is_a_single_json_object() {
+    let dir = tempdir().unwrap();
+    fs::write(
+        dir.path().join("nanoom.config.json"),
+        "{\"group\":{\"ci\":{\"tasks\":[\"test\"]}}}\n",
+    )
+    .unwrap();
+    let (success, stdout, stderr) = run_cli_parts(
+        dir.path(),
+        &["cache-key", "--runner", "turbo", "--task", "test", "--json"],
+        &[],
+    );
+    assert!(success);
+    let value: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert!(value["key"]
+        .as_str()
+        .unwrap()
+        .starts_with("nanoom-turbo-test-"));
+    assert!(stderr.is_empty());
 }
 
 #[test]
