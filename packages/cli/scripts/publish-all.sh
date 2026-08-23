@@ -30,8 +30,8 @@ for index in "${!TARGETS[@]}"; do
       ;;
   esac
 
-  yarn workspace "$pkg" npm publish --access public
+  yarn workspace "$pkg" npm publish --access public --tolerate-republish
 done
 
-yarn workspace @nanoom/cli npm publish --access public
+yarn workspace @nanoom/cli npm publish --access public --tolerate-republish
 echo "Published @nanoom/cli@$VERSION and all platform packages."
