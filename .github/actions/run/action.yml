@@ -20,7 +20,7 @@ runs:
         CWD: ${{ inputs.cwd }}
       run: |
         set -euo pipefail; e=$(jq -c '(.include[0] // .)' <<<"$MATRIX"); group=$(jq -r .group <<<"$e"); task=$(jq -r .task <<<"$e"); name=$(jq -r .name <<<"$e"); args=(-C "$CWD" run "$group" "$task" --all --filter "$name")
-        echo "[nanoom run] group=$group task=$task workspace=$name package_manager=$PM monorepo_tool=$TOOL"
+        echo "[nanoom run] cwd=$CWD group=$group task=$task workspace=$name package_manager=$PM monorepo_tool=$TOOL matrix=$MATRIX"
         [[ -n $(jq -r '.shard // empty' <<<"$e") ]] && args+=(--shard "$(jq -r '.shard' <<<"$e")" --total-shards "$(jq -r '.totalShards' <<<"$e")"); [[ $(jq -r '.isolate // false' <<<"$e") == true ]] && args+=(--isolate)
         if [[ "$TOOL" == turbo && ! -x "$CWD/node_modules/.bin/turbo" ]]; then
           echo 'turbo is not present in the focused dependency closure; using the requested package-manager runner' >&2
