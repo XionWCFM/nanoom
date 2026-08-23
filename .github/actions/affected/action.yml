@@ -27,7 +27,23 @@ runs:
         BASE: ${{ inputs.base }}
         HEAD: ${{ inputs.head }}
       run: |
-        set -euo pipefail; args=(-C "$CWD" -c "$CONFIG" affected --json)
+        set -euo pipefail
+        if [[ -z "$BASE" || -z "$HEAD" ]]; then
+          case "${GITHUB_EVENT_NAME:-}" in
+            push)
+              BASE="${GITHUB_EVENT_BEFORE:-}"
+              HEAD="${GITHUB_SHA:-HEAD}"
+              ;;
+            pull_request|merge_group)
+              BASE="${GITHUB_BASE_REF:-main}"
+              HEAD="${GITHUB_SHA:-HEAD}"
+              ;;
+          esac
+        fi
+        if [[ -n "$BASE" && "$BASE" != HEAD && "$BASE" != refs/* ]]; then
+          git fetch --no-tags --depth=100 origin "$BASE" || true
+        fi
+        args=(-C "$CWD" -c "$CONFIG" affected --json)
         [[ -n "$BASE" ]] && args+=(--base "$BASE"); [[ -n "$HEAD" ]] && args+=(--head "$HEAD")
         json=$(nanoom "${args[@]}"); has=$(jq -r .has_change <<<"$json"); echo "has_change=$has" >> "$GITHUB_OUTPUT"
         if [[ -n "$GROUP" ]]; then matrix=$(jq -c --arg g "$GROUP" '{include: [.group[$g].workspaces[] | . + {group:$g}]} ' <<<"$json")
