@@ -10,9 +10,13 @@ runs:
   using: composite
   steps:
     - uses: XionWCFM/nanoom/.github/actions/_setup@main
-      with: {version: ${{ inputs.version }}}
+      with:
+        version: ${{ inputs.version }}
     - shell: bash
-      env: {NEEDS: ${{ inputs.needs }}, AFFECTED: ${{ inputs.affectedJob }}, MATRIX: ${{ inputs.matrixJob }}}
+      env:
+        NEEDS: ${{ inputs.needs }}
+        AFFECTED: ${{ inputs.affectedJob }}
+        MATRIX: ${{ inputs.matrixJob }}
       run: |
         set -euo pipefail
         a=$(jq -r --arg n "$AFFECTED" '.[$n].result' <<<"$NEEDS")

@@ -8,13 +8,16 @@ inputs:
   base: {default: ''}
   head: {default: ''}
 outputs:
-  has_change: {value: ${{ steps.out.outputs.has_change }}}
-  matrix: {value: ${{ steps.out.outputs.matrix }}}
+  has_change:
+    value: ${{ steps.out.outputs.has_change }}
+  matrix:
+    value: ${{ steps.out.outputs.matrix }}
 runs:
   using: composite
   steps:
     - uses: XionWCFM/nanoom/.github/actions/_setup@main
-      with: {version: ${{ inputs.version }}}
+      with:
+        version: ${{ inputs.version }}
     - id: out
       shell: bash
       env:

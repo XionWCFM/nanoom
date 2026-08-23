@@ -43,7 +43,8 @@ runs:
     - name: Use local test binary
       if: steps.version.outputs.version == 'local'
       shell: bash
-      env: { BINARY: ${{ env.NANOOM_LOCAL_BINARY }} }
+      env:
+        BINARY: ${{ env.NANOOM_LOCAL_BINARY }}
       run: |
         set -euo pipefail; test -x "$BINARY"; mkdir -p "$RUNNER_TEMP/nanoom-bin"; cp "$BINARY" "$RUNNER_TEMP/nanoom-bin/nanoom"
     - shell: bash
