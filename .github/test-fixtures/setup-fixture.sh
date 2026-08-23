@@ -78,6 +78,7 @@ cat > "$FIXTURE/packages/app/package.json" << 'EOF'
   "scripts": { "test": "node -e \"require('fs').appendFileSync(process.env.FIXTURE_LOG || 'fixture.log', 'app:' + (process.env.NANOOM_SHARD_INDEX || '0') + '\\n')\"" }
 }
 EOF
+echo "module.exports = { name: '@fixture/app' };" > "$FIXTURE/packages/app/index.js"
 
 cat > "$FIXTURE/packages/core/package.json" << 'EOF'
 {
@@ -87,6 +88,7 @@ cat > "$FIXTURE/packages/core/package.json" << 'EOF'
   "scripts": { "test": "node -e \"require('fs').appendFileSync(process.env.FIXTURE_LOG || 'fixture.log', 'core:' + (process.env.NANOOM_SHARD_INDEX || '0') + '\\n')\"" }
 }
 EOF
+echo "module.exports = { name: '@fixture/core' };" > "$FIXTURE/packages/core/index.js"
 
 cat > "$FIXTURE/packages/shared/package.json" << 'EOF'
 {
@@ -95,6 +97,7 @@ cat > "$FIXTURE/packages/shared/package.json" << 'EOF'
   "scripts": { "test": "node -e \"require('fs').appendFileSync(process.env.FIXTURE_LOG || 'fixture.log', 'shared:' + (process.env.NANOOM_SHARD_INDEX || '0') + '\\n')\"" }
 }
 EOF
+echo "module.exports = { name: '@fixture/shared' };" > "$FIXTURE/packages/shared/index.js"
 
 cat > "$FIXTURE/packages/root-tool/package.json" << 'EOF'
 {

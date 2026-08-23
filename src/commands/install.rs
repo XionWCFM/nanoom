@@ -274,7 +274,6 @@ fn focused_workspace_names(config: &Config, cwd: &Path, filter: &str) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(not(windows))]
     use std::collections::HashMap;
 
     use tempfile::tempdir;
