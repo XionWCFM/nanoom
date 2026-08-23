@@ -19,5 +19,6 @@ runs:
       run: |
         set -euo pipefail; name=$(jq -r '(.include[0] // .).name' <<<"$MATRIX")
         [[ "$PM" == npm ]] && { echo 'npm focused install is unsupported; use yarn Berry or pnpm' >&2; exit 2; }
-        echo "[nanoom install] package_manager=$PM workspace=$name"
+        echo "[nanoom install] cwd=$CWD package_manager=$PM workspace=$name matrix=$MATRIX"
+        echo "[nanoom install] command=nanoom -C $CWD install --package-manager $PM --filter $name"
         nanoom -C "$CWD" install --package-manager "$PM" --filter "$name"

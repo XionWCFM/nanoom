@@ -19,9 +19,12 @@ runs:
         MATRIX: ${{ inputs.matrixJob }}
       run: |
         set -euo pipefail
+        echo "[nanoom status] affected_job=$AFFECTED matrix_job=$MATRIX"
+        echo "[nanoom status] needs=$NEEDS"
         a=$(jq -r --arg n "$AFFECTED" '.[$n].result' <<<"$NEEDS")
         m=$(jq -r --arg n "$MATRIX" '.[$n].result' <<<"$NEEDS")
         h=$(jq -r --arg n "$AFFECTED" '.[$n].outputs.has_change // empty' <<<"$NEEDS")
+        echo "[nanoom status] affected_result=$a matrix_result=$m has_change=$h"
         [[ "$a" == success ]] || exit 1
         case "$h:$m" in
           true:success) ;;

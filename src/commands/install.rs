@@ -1,6 +1,7 @@
 use crate::config::Config;
 use crate::error::{Error, Result};
 use clap::Args;
+use std::collections::HashSet;
 use std::path::Path;
 use tokio::process::Command;
 
@@ -33,16 +34,15 @@ pub async fn execute(args: InstallArgs, config: &Config, base_cwd: &std::path::P
     if let Some(filter) = &args.filter {
         if pm == "yarn" && is_yarn_berry(cwd) {
             let root = root_workspace_name(cwd)?;
+            let focused = focused_workspace_names(config, cwd, filter)?;
             println!(
-                "Installing root workspace and focused dependencies with Yarn Berry: {} + {}...",
-                root, filter
+                "Installing root workspace and focused dependency closure with Yarn Berry: {} + {}...",
+                root,
+                focused.join(" + ")
             );
-            run_command(
-                "yarn",
-                vec!["workspaces".into(), "focus".into(), root, filter.clone()],
-                cwd,
-            )
-            .await?;
+            let mut yarn_args = vec!["workspaces".into(), "focus".into(), root];
+            yarn_args.extend(focused);
+            run_command("yarn", yarn_args, cwd).await?;
             return Ok(());
         }
         if pm == "pnpm" {
@@ -231,6 +231,46 @@ fn root_workspace_name(dir: &Path) -> Result<String> {
         })
 }
 
+fn focused_workspace_names(config: &Config, cwd: &Path, filter: &str) -> Result<Vec<String>> {
+    let workspace = crate::workspace::Workspace::discover(config, cwd)?;
+    let mut names = HashSet::new();
+    let mut pending = vec![filter.to_string()];
+    let root = std::fs::read_to_string(cwd.join("package.json")).map_err(|error| {
+        Error::ConfigValidation(format!("Cannot read root package.json: {error}"))
+    })?;
+    let root_manifest: serde_json::Value = serde_json::from_str(&root)
+        .map_err(|error| Error::ConfigValidation(format!("Invalid root package.json: {error}")))?;
+    for field in [
+        "dependencies",
+        "devDependencies",
+        "peerDependencies",
+        "optionalDependencies",
+    ] {
+        if let Some(dependencies) = root_manifest
+            .get(field)
+            .and_then(serde_json::Value::as_object)
+        {
+            pending.extend(dependencies.keys().cloned());
+        }
+    }
+    while let Some(name) = pending.pop() {
+        if !names.insert(name.clone()) {
+            continue;
+        }
+        if let Some(project) = workspace.get_project_by_name(&name) {
+            pending.extend(project.dependencies.iter().cloned());
+        }
+    }
+    names.remove(filter);
+    let mut names: Vec<_> = names
+        .into_iter()
+        .filter(|name| workspace.get_project_by_name(name).is_some())
+        .collect();
+    names.sort();
+    names.insert(0, filter.to_string());
+    Ok(names)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -373,5 +413,47 @@ mod tests {
             filter: None,
         };
         execute(args, &config, dir.path()).await.unwrap();
+    }
+
+    #[test]
+    fn test_yarn_focus_includes_root_and_transitive_workspace_dependencies() {
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("package.json"),
+            r#"{"name":"root","private":true,"workspaces":["packages/*"],"dependencies":{"root-tool":"workspace:*"}}"#,
+        )
+        .unwrap();
+        for (name, dependency) in [
+            ("app", "core"),
+            ("core", "shared"),
+            ("shared", ""),
+            ("root-tool", ""),
+        ] {
+            let path = dir.path().join(format!("packages/{name}"));
+            std::fs::create_dir_all(&path).unwrap();
+            let dependencies = if dependency.is_empty() {
+                String::new()
+            } else {
+                format!(r#", "dependencies":{{"{dependency}":"workspace:*"}}"#)
+            };
+            std::fs::write(
+                path.join("package.json"),
+                format!(r#"{{"name":"{name}"{dependencies}}}"#),
+            )
+            .unwrap();
+        }
+        let config = Config {
+            schema: None,
+            group: HashMap::new(),
+            global_dependencies: vec![],
+            workspace: crate::config::WorkspaceConfig {
+                include: vec!["packages/*".into()],
+                exclude: vec![],
+            },
+        };
+        assert_eq!(
+            focused_workspace_names(&config, dir.path(), "app").unwrap(),
+            vec!["app", "core", "root-tool", "shared"]
+        );
     }
 }
