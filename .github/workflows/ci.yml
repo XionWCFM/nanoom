@@ -108,6 +108,7 @@ jobs:
     name: Fixture affected matrix
     runs-on: ubuntu-latest
     outputs:
+      has_change: ${{ steps.affected.outputs.has_change }}
       matrix: ${{ steps.affected.outputs.matrix }}
     env:
       NANOOM_LOCAL_BINARY: ${{ github.workspace }}/target/release/nanoom
@@ -194,4 +195,6 @@ jobs:
         with:
           version: local
           needs: ${{ toJSON(needs) }}
+          affectedJob: fixture-affected
+          matrixJob: fixture-run
           format: markdown
