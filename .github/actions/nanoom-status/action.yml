@@ -50,9 +50,23 @@ runs:
 
         # nanoom exits non-zero when any job failed; capture instead of failing the step.
         set +e
-        ARGS=(--cwd "$NANOOM_CWD" status "$NANOOM_JOBS" --format "$NANOOM_FORMAT")
-        [ -n "$NANOOM_RESULTS" ] && ARGS+=(--results "$NANOOM_RESULTS")
-        nanoom "${ARGS[@]}"
+        if [ -n "$NANOOM_RESULTS" ]; then
+          overall=success
+          IFS=',' read -ra entries <<< "$NANOOM_RESULTS"
+          for entry in "${entries[@]}"; do
+            name="${entry%%=*}"
+            result="${entry#*=}"
+            printf '%s: %s\n' "$name" "$result"
+            case "$result" in success|skipped) ;; *) overall=failure ;; esac
+          done
+          printf '\nOverall: %s\n' "${overall^^}"
+          if [ "$overall" != success ]; then
+            exit 1
+          fi
+        else
+          ARGS=(--cwd "$NANOOM_CWD" status "$NANOOM_JOBS" --format "$NANOOM_FORMAT")
+          nanoom "${ARGS[@]}"
+        fi
         EXIT_CODE=$?
         set -e
 
