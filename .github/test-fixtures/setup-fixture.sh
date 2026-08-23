@@ -6,14 +6,16 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"   # repo root
 FIXTURE="$PWD/.fixture"
 rm -rf "$FIXTURE"
-mkdir -p "$FIXTURE/packages/app" "$FIXTURE/packages/core" "$FIXTURE/packages/shared" "$FIXTURE/.yarn/releases"
+mkdir -p "$FIXTURE/packages/app" "$FIXTURE/packages/core" "$FIXTURE/packages/shared" "$FIXTURE/packages/root-tool" "$FIXTURE/.yarn/releases"
 
 cat > "$FIXTURE/package.json" << 'EOF'
 {
   "name": "fixture-root",
   "private": true,
   "packageManager": "yarn@4.9.1",
-  "workspaces": ["packages/*"]
+  "workspaces": ["packages/*"],
+  "dependencies": { "@fixture/root-tool": "workspace:*" },
+  "scripts": { "verify-install": "node verify-install.js" }
 }
 EOF
 
@@ -55,6 +57,12 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@fixture/root-tool@workspace:*, @fixture/root-tool@workspace:packages/root-tool":
+  version: 0.0.0-use.local
+  resolution: "@fixture/root-tool@workspace:packages/root-tool"
+  languageName: unknown
+  linkType: soft
+
 "fixture-root@workspace:.":
   version: 0.0.0-use.local
   resolution: "fixture-root@workspace:."
@@ -88,6 +96,32 @@ cat > "$FIXTURE/packages/shared/package.json" << 'EOF'
 }
 EOF
 
+cat > "$FIXTURE/packages/root-tool/package.json" << 'EOF'
+{
+  "name": "@fixture/root-tool",
+  "version": "1.0.0",
+  "main": "index.js"
+}
+EOF
+cat > "$FIXTURE/packages/root-tool/index.js" << 'EOF'
+module.exports = { rootDependency: true };
+EOF
+
+cat > "$FIXTURE/verify-install.js" << 'EOF'
+const fs = require('fs');
+const path = require('path');
+const target = process.argv[2];
+if (!target) throw new Error('usage: node verify-install.js <workspace>');
+const rootTool = require('@fixture/root-tool');
+if (!rootTool.rootDependency) throw new Error('root dependency was not installed');
+const dependency = { '@fixture/app': '@fixture/core', '@fixture/core': '@fixture/shared' }[target];
+if (dependency) {
+  require(require.resolve(dependency, { paths: [__dirname] }));
+}
+console.log(`[fixture verify] root=@fixture/root-tool workspace=${target} dependency=${dependency || 'none'}`);
+fs.writeFileSync(path.join(__dirname, 'install-verification.log'), `${target}\n`);
+EOF
+
 SHARD_BLOCK=""
 ISOLATE_BLOCK=""
 CHANGE=false
@@ -111,9 +145,9 @@ if [ -n "$ISOLATE_BLOCK" ]; then
 fi
 
 if [ -n "$RULES" ]; then
-  SHARD_BLOCK="$RULES"
+  SHARD_BLOCK="${RULES%]}, { \"name\": \"@fixture/root-tool\", \"ignore\": true }]"
 else
-  SHARD_BLOCK=""
+  SHARD_BLOCK=', "rules": [{ "name": "@fixture/root-tool", "ignore": true }]'
 fi
 
 cat > "$FIXTURE/nanoom.config.json" << EOF

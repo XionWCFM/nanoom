@@ -49,8 +49,9 @@ runs:
         fi
         args=(-C "$CWD" -c "$CONFIG" affected --json)
         [[ -n "$BASE" ]] && args+=(--base "$BASE"); [[ -n "$HEAD" ]] && args+=(--head "$HEAD")
-        echo "[nanoom affected] event=$EVENT base=${BASE:-auto} head=${HEAD:-auto} group=${GROUP:-all}"
+        echo "[nanoom affected] cwd=$CWD config=$CONFIG event=$EVENT base=${BASE:-auto} head=${HEAD:-auto} group=${GROUP:-all}"
         json=$(nanoom "${args[@]}"); has=$(jq -r .has_change <<<"$json"); echo "has_change=$has" >> "$GITHUB_OUTPUT"
+        echo "[nanoom affected] raw_result=$json"
         if [[ -n "$GROUP" ]]; then matrix=$(jq -c --arg g "$GROUP" '{include: [.group[$g].workspaces[] | . + {group:$g}]} ' <<<"$json")
         else matrix=$(jq -c '{include: [.group[] | .workspaces[]]}' <<<"$json"); fi
         echo "[nanoom affected] has_change=$has matrix=$matrix"

@@ -16,9 +16,11 @@ runs:
         REPOSITORY: ${{ inputs.repository }}
       run: |
         set -euo pipefail
+        echo "[nanoom setup] requested=$REQUESTED repository=$REPOSITORY"
         if [[ "$REQUESTED" == local ]]; then v=local
         elif [[ "$REQUESTED" == latest ]]; then v=$(curl -fsSL "$API/repos/$REPOSITORY/releases/latest" | jq -r .tag_name)
         else v="$REQUESTED"; fi
+        echo "[nanoom setup] resolved_version=$v"
         echo "version=$v" >> "$GITHUB_OUTPUT"
     - name: Download verified binary
       if: steps.version.outputs.version != 'local'
@@ -31,6 +33,7 @@ runs:
         set -euo pipefail
         os=$(uname -s | tr '[:upper:]' '[:lower:]'); [[ $os == darwin ]] && os=macos
         arch=$(uname -m); case "$arch" in x86_64) arch=x64;; aarch64|arm64) arch=arm64;; esac
+        echo "[nanoom setup] downloading $VERSION for $os/$arch"
         file="nanoom-${os}-${arch}.tar.gz"
         url="$SERVER/$REPOSITORY/releases/download/$VERSION/$file"
         curl -fsSL "$url" -o "/tmp/$file"
@@ -46,6 +49,6 @@ runs:
       env:
         BINARY: ${{ env.NANOOM_LOCAL_BINARY }}
       run: |
-        set -euo pipefail; test -x "$BINARY"; mkdir -p "$RUNNER_TEMP/nanoom-bin"; cp "$BINARY" "$RUNNER_TEMP/nanoom-bin/nanoom"
+        set -euo pipefail; echo "[nanoom setup] using local binary=$BINARY"; test -x "$BINARY"; mkdir -p "$RUNNER_TEMP/nanoom-bin"; cp "$BINARY" "$RUNNER_TEMP/nanoom-bin/nanoom"
     - shell: bash
-      run: echo "$RUNNER_TEMP/nanoom-bin" >> "$GITHUB_PATH"
+      run: echo "[nanoom setup] adding binary directory=$RUNNER_TEMP/nanoom-bin"; echo "$RUNNER_TEMP/nanoom-bin" >> "$GITHUB_PATH"

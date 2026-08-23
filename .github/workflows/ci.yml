@@ -168,6 +168,9 @@ jobs:
           cwd: .fixture
           packageManager: yarn
           matrix: ${{ toJSON(matrix) }}
+      - name: Verify root and workspace dependencies
+        shell: bash
+        run: node .fixture/verify-install.js "$(jq -r .name <<< '${{ toJSON(matrix) }}')"
       - uses: ./.github/actions/run
         with:
           version: local
