@@ -23,6 +23,7 @@ runs:
       run: |
         set -euo pipefail
         trap 'echo "::error title=Matrix task failed::Review the task output above. Reproduce with the displayed nanoom command and verify the workspace script and runner selection."' ERR
+        cyan=$'\033[36m'; green=$'\033[32m'; bold=$'\033[1m'; dim=$'\033[2m'; reset=$'\033[0m'
         started=$(date +%s)
         e=$(jq -ce '(.include[0] // .) | select(.group and .task and .name)' <<<"$MATRIX"); group=$(jq -r .group <<<"$e"); task=$(jq -r .task <<<"$e"); name=$(jq -r .name <<<"$e"); args=(-C "$CWD" run "$group" "$task" --all --filter "$name")
         [[ -n $(jq -r '.shard // empty' <<<"$e") ]] && args+=(--shard "$(jq -r '.shard' <<<"$e")" --total-shards "$(jq -r '.totalShards' <<<"$e")"); [[ $(jq -r '.isolate // false' <<<"$e") == true ]] && args+=(--isolate)
@@ -33,15 +34,15 @@ runs:
           args+=(--runner "$TOOL")
         fi
         printf -v command '%q ' nanoom "${args[@]}"
-        echo "::group::◆ nanoom run"
-        echo "  workspace: $name"
-        echo "  group/task: $group / $task"
-        echo "  runner: ${TOOL}/${PM}"
-        [[ -n $(jq -r '.shard // empty' <<<"$e") ]] && echo "  shard: $(jq -r '.shard' <<<"$e")/$(jq -r '.totalShards' <<<"$e")"
-        [[ $(jq -r '.isolate // false' <<<"$e") == true ]] && echo "  isolation: enabled"
-        echo "  command: ${command% }"
+        printf '::group::%s◆ nanoom run%s\n' "$bold$cyan" "$reset"
+        printf '  %sworkspace:%s %s\n' "$dim" "$reset" "$name"
+        printf '  %sgroup/task:%s %s / %s\n' "$dim" "$reset" "$group" "$task"
+        printf '  %srunner:%s %s/%s\n' "$dim" "$reset" "$TOOL" "$PM"
+        [[ -n $(jq -r '.shard // empty' <<<"$e") ]] && printf '  %sshard:%s %s/%s\n' "$dim" "$reset" "$(jq -r '.shard' <<<"$e")" "$(jq -r '.totalShards' <<<"$e")"
+        [[ $(jq -r '.isolate // false' <<<"$e") == true ]] && printf '  %sisolation:%s enabled\n' "$dim" "$reset"
+        printf '  %scommand:%s %s\n' "$dim" "$reset" "${command% }"
         nanoom "${args[@]}"
         elapsed=$(( $(date +%s) - started ))
-        echo "  ✓ task succeeded (${elapsed}s)"
+        printf '  %s✓ task succeeded%s (%ss)\n' "$green" "$reset" "$elapsed"
         echo "::endgroup::"
         echo "::notice title=Matrix task complete::$group / $name / $task succeeded (${elapsed}s)"

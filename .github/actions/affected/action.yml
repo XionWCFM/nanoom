@@ -31,22 +31,23 @@ runs:
       run: |
         set -euo pipefail
         trap 'echo "::error title=Affected calculation failed::Review the error above. Verify cwd/config and fetch both comparison refs (checkout fetch-depth: 0 is the safest option)."' ERR
+        cyan=$'\033[36m'; green=$'\033[32m'; yellow=$'\033[33m'; bold=$'\033[1m'; dim=$'\033[2m'; reset=$'\033[0m'
         started=$(date +%s)
-        echo "::group::◆ nanoom affected"
-        echo "  Resolving changed workspaces"
+        printf '::group::%s◆ nanoom affected%s\n' "$bold$cyan" "$reset"
+        printf '  %sResolving changed workspaces%s\n' "$dim" "$reset"
         args=(-C "$CWD" -c "$CONFIG" affected --json)
         [[ -n "$BASE" ]] && args+=(--base "$BASE"); [[ -n "$HEAD" ]] && args+=(--head "$HEAD")
-        echo "  ✓ working directory: $CWD"
-        echo "  ✓ config: $CONFIG"
-        echo "  ✓ comparison: ${BASE:-event-derived} -> ${HEAD:-event-derived}"
-        echo "  ✓ selection: ${GROUP:-all groups}"
-        echo "  ✓ mechanism: changed files → dependency graph → group rules/tasks → matrix"
+        printf '  %s✓%s working directory: %s\n' "$green" "$reset" "$CWD"
+        printf '  %s✓%s config: %s\n' "$green" "$reset" "$CONFIG"
+        printf '  %s✓%s comparison: %s -> %s\n' "$green" "$reset" "${BASE:-event-derived}" "${HEAD:-event-derived}"
+        printf '  %s✓%s selection: %s\n' "$green" "$reset" "${GROUP:-all groups}"
+        printf '  %s✓%s mechanism: %schanged files → dependency graph → group rules/tasks → matrix%s\n' "$green" "$reset" "$dim" "$reset"
         if [[ -n "$BASE" && -n "$HEAD" ]]; then
           changed_files=$(git -C "$CWD" diff --name-only "$BASE...$HEAD")
           changed=$(awk 'NF {n++} END {print n+0}' <<<"$changed_files")
-          echo "  ✓ changed files: $changed"
+          printf '  %s✓%s changed files: %s\n' "$green" "$reset" "$changed"
           if (( changed )); then
-            echo "  changed paths:"
+            printf '  %schanged paths:%s\n' "$dim" "$reset"
             while IFS= read -r path; do echo "    · $path"; done <<<"$changed_files"
           fi
         fi
@@ -58,13 +59,13 @@ runs:
         count=$(jq '.include | length' <<<"$matrix")
         elapsed=$(( $(date +%s) - started ))
         echo "::notice title=Affected result::has_change=$has; $count matrix entries will run (${elapsed}s)"
-        echo "::group::◆ matrix plan ($count entries)"
+        printf '::group::%s◆ matrix plan (%s entries)%s\n' "$bold$cyan" "$count" "$reset"
         if (( count )); then
           jq -r '.include[] | "- \(.group) / \(.name) / \(.task)" + (if .shard then " / shard \(.shard)/\(.totalShards)" else "" end) + (if .isolate then " / isolated" else "" end)' <<<"$matrix"
         else
-          echo "  ─ no workspace tasks matched; downstream matrix will be skipped"
+          printf '  %s─ no workspace tasks matched; downstream matrix will be skipped%s\n' "$yellow" "$reset"
         fi
-        echo "  ✓ matrix ready (${elapsed}s)"
+        printf '  %s✓ matrix ready%s (%ss)\n' "$green" "$reset" "$elapsed"
         echo "::endgroup::"
         {
           echo "### nanoom affected"

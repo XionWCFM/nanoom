@@ -298,6 +298,13 @@ mod tests {
     }
 
     #[test]
+    fn reads_yarn_root_workspace_name() {
+        let dir = tempdir().unwrap();
+        std::fs::write(dir.path().join("package.json"), r#"{"name":"repo-root"}"#).unwrap();
+        assert_eq!(root_workspace_name(dir.path()).unwrap(), "repo-root");
+    }
+
+    #[test]
     fn test_detect_package_manager_explicit() {
         let dir = tempdir().unwrap();
         assert_eq!(

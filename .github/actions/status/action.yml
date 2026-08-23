@@ -23,13 +23,16 @@ runs:
       run: |
         set -euo pipefail
         trap 'echo "::error title=Workflow status failed::Review the status table above. Ensure needs contains the configured affectedJob and matrixJob, and that the matrix job uses if: needs.<affected>.outputs.has_change == '\''true'\''."' ERR
+        cyan=$'\033[36m'; green=$'\033[32m'; red=$'\033[31m'; bold=$'\033[1m'; reset=$'\033[0m'
         jq -e . >/dev/null <<<"$NEEDS"
         a=$(jq -r --arg n "$AFFECTED" '.[$n].result' <<<"$NEEDS")
         m=$(jq -r --arg n "$MATRIX" '.[$n].result' <<<"$NEEDS")
         h=$(jq -r --arg n "$AFFECTED" '.[$n].outputs.has_change // empty' <<<"$NEEDS")
         [[ "$FORMAT" == text || "$FORMAT" == markdown ]] || { echo "::error title=Invalid status format::format must be text or markdown, got '$FORMAT'."; exit 2; }
-        echo "Affected job ($AFFECTED): $a; has_change=$h"
-        echo "Matrix job ($MATRIX): $m"
+        printf '%s◆ nanoom status%s\n' "$bold$cyan" "$reset"
+        printf '  affected job: %s%s%s (has_change=%s)\n' "$green" "$a" "$reset" "$h"
+        if [[ "$m" == success ]]; then color=$green; else color=$red; fi
+        printf '  matrix job:   %s%s%s\n' "$color" "$m" "$reset"
         {
           echo '### nanoom workflow status'
           echo
