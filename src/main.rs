@@ -47,13 +47,32 @@ enum Commands {
     Schema {
         #[arg(long, help = "Write schema to file instead of stdout")]
         output: Option<PathBuf>,
+        #[arg(long, help = "Output a JSON result (schema is JSON by default)")]
+        json: bool,
     },
     CacheKey(CacheKeyArgs),
-    Version,
+    Version {
+        #[arg(long, help = "Output a JSON result")]
+        json: bool,
+    },
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() {
+    let json = std::env::args().any(|arg| arg == "--json");
+    if let Err(error) = run().await {
+        if json {
+            println!(
+                "{}",
+                serde_json::json!({"status": "failure", "error": error.to_string()})
+            );
+        }
+        eprintln!("error: {error}");
+        std::process::exit(1);
+    }
+}
+
+async fn run() -> Result<()> {
     let cli = Cli::parse();
 
     let config_path = cli
@@ -64,12 +83,19 @@ async fn main() -> Result<()> {
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
 
     // Schema command does not require a config file; all others do.
-    if let Commands::Version = cli.command {
-        println!("nanoom {}", env!("CARGO_PKG_VERSION"));
+    if let Commands::Version { json } = &cli.command {
+        if *json {
+            println!(
+                "{}",
+                serde_json::json!({"name": "nanoom", "version": env!("CARGO_PKG_VERSION")})
+            );
+        } else {
+            println!("nanoom {}", env!("CARGO_PKG_VERSION"));
+        }
         return Ok(());
     }
 
-    if let Commands::Schema { output } = cli.command {
+    if let Commands::Schema { output, .. } = cli.command {
         if let Some(path) = output {
             nanoom::schema::generate_to_file(&path)?;
             println!("Schema written to {}", path.display());
@@ -89,6 +115,6 @@ async fn main() -> Result<()> {
         Commands::Status(args) => nanoom::commands::status::execute(args, &config).await,
         Commands::Schema { .. } => Ok(()),
         Commands::CacheKey(args) => nanoom::commands::cache_key::execute(args, &cwd),
-        Commands::Version => Ok(()),
+        Commands::Version { .. } => Ok(()),
     }
 }

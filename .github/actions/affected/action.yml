@@ -15,10 +15,12 @@ outputs:
 runs:
   using: composite
   steps:
-    - uses: XionWCFM/nanoom/.github/actions/_setup@main
+    - name: Set up nanoom
+      uses: XionWCFM/nanoom/.github/actions/_setup@main
       with:
         version: ${{ inputs.version }}
-    - id: out
+    - name: Calculate affected workspaces
+      id: out
       shell: bash
       env:
         GROUP: ${{ inputs.group }}
@@ -26,33 +28,54 @@ runs:
         CONFIG: ${{ inputs.config }}
         BASE: ${{ inputs.base }}
         HEAD: ${{ inputs.head }}
-        EVENT: ${{ github.event_name }}
-        EVENT_BEFORE: ${{ github.event.before }}
-        EVENT_SHA: ${{ github.sha }}
-        BASE_REF: ${{ github.base_ref }}
       run: |
         set -euo pipefail
-        if [[ -z "$BASE" || -z "$HEAD" ]]; then
-          case "$EVENT" in
-            push)
-              BASE="$EVENT_BEFORE"
-              HEAD="${EVENT_SHA:-HEAD}"
-              ;;
-            pull_request|merge_group)
-              BASE="${BASE_REF:-main}"
-              HEAD="${EVENT_SHA:-HEAD}"
-              ;;
-          esac
-        fi
-        if [[ -n "$BASE" && "$BASE" != HEAD && "$BASE" != refs/* ]]; then
-          git fetch --no-tags --depth=100 origin "$BASE:refs/heads/$BASE" || true
-        fi
+        trap 'echo "::error title=Affected calculation failed::Review the error above. Verify cwd/config and fetch both comparison refs (checkout fetch-depth: 0 is the safest option)."' ERR
+        cyan=$'\033[36m'; green=$'\033[32m'; yellow=$'\033[33m'; bold=$'\033[1m'; dim=$'\033[2m'; reset=$'\033[0m'
+        started=$(date +%s)
+        printf '::group::%s◆ nanoom affected%s\n' "$bold$cyan" "$reset"
+        printf '  %sResolving changed workspaces%s\n' "$dim" "$reset"
         args=(-C "$CWD" -c "$CONFIG" affected --json)
         [[ -n "$BASE" ]] && args+=(--base "$BASE"); [[ -n "$HEAD" ]] && args+=(--head "$HEAD")
-        echo "[nanoom affected] cwd=$CWD config=$CONFIG event=$EVENT base=${BASE:-auto} head=${HEAD:-auto} group=${GROUP:-all}"
+        printf '  %s✓%s working directory: %s\n' "$green" "$reset" "$CWD"
+        printf '  %s✓%s config: %s\n' "$green" "$reset" "$CONFIG"
+        printf '  %s✓%s comparison: %s -> %s\n' "$green" "$reset" "${BASE:-event-derived}" "${HEAD:-event-derived}"
+        printf '  %s✓%s selection: %s\n' "$green" "$reset" "${GROUP:-all groups}"
+        printf '  %s✓%s mechanism: %schanged files → dependency graph → group rules/tasks → matrix%s\n' "$green" "$reset" "$dim" "$reset"
+        if [[ -n "$BASE" && -n "$HEAD" ]]; then
+          changed_files=$(git -C "$CWD" diff --name-only "$BASE...$HEAD")
+          changed=$(awk 'NF {n++} END {print n+0}' <<<"$changed_files")
+          printf '  %s✓%s changed files: %s\n' "$green" "$reset" "$changed"
+          if (( changed )); then
+            printf '  %schanged paths:%s\n' "$dim" "$reset"
+            while IFS= read -r path; do echo "    · $path"; done <<<"$changed_files"
+          fi
+        fi
+        echo "::endgroup::"
         json=$(nanoom "${args[@]}"); has=$(jq -r .has_change <<<"$json"); echo "has_change=$has" >> "$GITHUB_OUTPUT"
-        echo "[nanoom affected] raw_result=$json"
         if [[ -n "$GROUP" ]]; then matrix=$(jq -c --arg g "$GROUP" '{include: [.group[$g].workspaces[] | . + {group:$g}]} ' <<<"$json")
         else matrix=$(jq -c '{include: [.group[] | .workspaces[]]}' <<<"$json"); fi
-        echo "[nanoom affected] has_change=$has matrix=$matrix"
         echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+        count=$(jq '.include | length' <<<"$matrix")
+        elapsed=$(( $(date +%s) - started ))
+        echo "::notice title=Affected result::has_change=$has; $count matrix entries will run (${elapsed}s)"
+        printf '::group::%s◆ matrix plan (%s entries)%s\n' "$bold$cyan" "$count" "$reset"
+        if (( count )); then
+          jq -r '.include[] | "- \(.group) / \(.name) / \(.task)" + (if .shard then " / shard \(.shard)/\(.totalShards)" else "" end) + (if .isolate then " / isolated" else "" end)' <<<"$matrix"
+        else
+          printf '  %s─ no workspace tasks matched; downstream matrix will be skipped%s\n' "$yellow" "$reset"
+        fi
+        printf '  %s✓ matrix ready%s (%ss)\n' "$green" "$reset" "$elapsed"
+        echo "::endgroup::"
+        {
+          echo "### nanoom affected"
+          echo
+          echo "**Result:** \`has_change=$has\` — **$count** matrix entries"
+          echo
+          echo "Comparison: \`${BASE:-event-derived}\` -> \`${HEAD:-event-derived}\`; group: \`${GROUP:-all}\`."
+          echo
+          echo '| Group | Workspace | Task | Execution |'
+          echo '|---|---|---|---|'
+          jq -r '.include[] | "| \(.group) | \(.name) | \(.task) | " + (if .shard then "shard \(.shard)/\(.totalShards)" elif .isolate then "isolated" else "standard" end) + " |"' <<<"$matrix"
+          (( count )) || echo '| - | - | - | no work |'
+        } >> "$GITHUB_STEP_SUMMARY"

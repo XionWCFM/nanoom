@@ -8,17 +8,30 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: XionWCFM/nanoom/.github/actions/_setup@main
+    - name: Set up nanoom
+      uses: XionWCFM/nanoom/.github/actions/_setup@main
       with:
         version: ${{ inputs.version }}
-    - shell: bash
+    - name: Install focused dependencies
+      shell: bash
       env:
         MATRIX: ${{ inputs.matrix }}
         PM: ${{ inputs.packageManager }}
         CWD: ${{ inputs.cwd }}
       run: |
-        set -euo pipefail; name=$(jq -r '(.include[0] // .).name' <<<"$MATRIX")
-        [[ "$PM" == npm ]] && { echo 'npm focused install is unsupported; use yarn Berry or pnpm' >&2; exit 2; }
-        echo "[nanoom install] cwd=$CWD package_manager=$PM workspace=$name matrix=$MATRIX"
-        echo "[nanoom install] command=nanoom -C $CWD install --package-manager $PM --filter $name"
+        set -euo pipefail
+        trap 'echo "::error title=Focused install failed::Review the package-manager output above. Verify the matrix JSON, workspace name, lockfile, and packageManager input."' ERR
+        cyan=$'\033[36m'; green=$'\033[32m'; bold=$'\033[1m'; dim=$'\033[2m'; reset=$'\033[0m'
+        started=$(date +%s)
+        name=$(jq -er '(.include[0] // .).name | select(type == "string" and length > 0)' <<<"$MATRIX")
+        [[ "$PM" == npm ]] && { echo '::error title=Unsupported package manager::npm cannot perform a focused workspace install. Use Yarn Berry or pnpm.'; exit 2; }
+        printf '::group::%s◆ nanoom install%s\n' "$bold$cyan" "$reset"
+        printf '  %sworkspace:%s %s\n' "$dim" "$reset" "$name"
+        printf '  %spackage manager:%s %s\n' "$dim" "$reset" "$PM"
+        printf '  %scwd:%s %s\n' "$dim" "$reset" "$CWD"
+        printf '  %s✓ installing focused dependency closure%s\n' "$green" "$reset"
         nanoom -C "$CWD" install --package-manager "$PM" --filter "$name"
+        elapsed=$(( $(date +%s) - started ))
+        printf '  %s✓ dependencies ready%s (%ss)\n' "$green" "$reset" "$elapsed"
+        echo "::endgroup::"
+        echo "::notice title=Focused install complete::$name dependencies are ready (${elapsed}s)"

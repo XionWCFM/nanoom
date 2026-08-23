@@ -9,25 +9,41 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: XionWCFM/nanoom/.github/actions/_setup@main
+    - name: Set up nanoom
+      uses: XionWCFM/nanoom/.github/actions/_setup@main
       with:
         version: ${{ inputs.version }}
-    - shell: bash
+    - name: Evaluate workflow status
+      shell: bash
       env:
         NEEDS: ${{ inputs.needs }}
         AFFECTED: ${{ inputs.affectedJob }}
         MATRIX: ${{ inputs.matrixJob }}
+        FORMAT: ${{ inputs.format }}
       run: |
         set -euo pipefail
-        echo "[nanoom status] affected_job=$AFFECTED matrix_job=$MATRIX"
-        echo "[nanoom status] needs=$NEEDS"
+        trap 'echo "::error title=Workflow status failed::Review the status table above. Ensure needs contains the configured affectedJob and matrixJob, and that the matrix job uses if: needs.<affected>.outputs.has_change == '\''true'\''."' ERR
+        cyan=$'\033[36m'; green=$'\033[32m'; red=$'\033[31m'; bold=$'\033[1m'; reset=$'\033[0m'
+        jq -e . >/dev/null <<<"$NEEDS"
         a=$(jq -r --arg n "$AFFECTED" '.[$n].result' <<<"$NEEDS")
         m=$(jq -r --arg n "$MATRIX" '.[$n].result' <<<"$NEEDS")
         h=$(jq -r --arg n "$AFFECTED" '.[$n].outputs.has_change // empty' <<<"$NEEDS")
-        echo "[nanoom status] affected_result=$a matrix_result=$m has_change=$h"
-        [[ "$a" == success ]] || exit 1
+        [[ "$FORMAT" == text || "$FORMAT" == markdown ]] || { echo "::error title=Invalid status format::format must be text or markdown, got '$FORMAT'."; exit 2; }
+        printf '%s◆ nanoom status%s\n' "$bold$cyan" "$reset"
+        printf '  affected job: %s%s%s (has_change=%s)\n' "$green" "$a" "$reset" "$h"
+        if [[ "$m" == success ]]; then color=$green; else color=$red; fi
+        printf '  matrix job:   %s%s%s\n' "$color" "$m" "$reset"
+        {
+          echo '### nanoom workflow status'
+          echo
+          echo '| Job | Result | Detail |'
+          echo '|---|---|---|'
+          echo "| $AFFECTED | $a | has_change=$h |"
+          echo "| $MATRIX | $m | expected from affected result |"
+        } >> "$GITHUB_STEP_SUMMARY"
+        [[ "$a" == success ]] || { echo "::error title=Affected job did not succeed::$AFFECTED finished with '$a'. Open that job and fix its affected calculation."; exit 1; }
         case "$h:$m" in
-          true:success) ;;
-          false:skipped) ;;
-          *) echo "inconsistent affected/matrix result: has_change=$h matrix=$m" >&2; exit 1 ;;
+          true:success) echo "::notice title=Workflow status::Changes were found and all matrix entries succeeded." ;;
+          false:skipped) echo "::notice title=Workflow status::No changes were found and the matrix job was correctly skipped." ;;
+          *) echo "::error title=Inconsistent workflow result::has_change=$h requires matrix=$([[ $h == true ]] && echo success || echo skipped), but $MATRIX finished with '$m'. Check the matrix job condition and failures."; exit 1 ;;
         esac

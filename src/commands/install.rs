@@ -1,8 +1,8 @@
 use crate::config::Config;
 use crate::error::{Error, Result};
 use clap::Args;
-use std::collections::HashSet;
 use std::path::Path;
+use std::process::Stdio;
 use tokio::process::Command;
 
 #[derive(Args, Debug, Clone)]
@@ -18,13 +18,16 @@ pub struct InstallArgs {
 
     #[arg(long, help = "Install only this workspace and its dependency closure")]
     pub filter: Option<String>,
+
+    #[arg(long, help = "Output a JSON result")]
+    pub json: bool,
 }
 
 pub async fn execute(args: InstallArgs, config: &Config, base_cwd: &std::path::Path) -> Result<()> {
     let cwd = base_cwd;
 
     let pm = detect_package_manager(cwd, args.package_manager.as_deref())?;
-    println!("Using package manager: {}", pm);
+    eprintln!("Using package manager: {}", pm);
 
     // Lockfiles belong to the monorepo root for pnpm, yarn, and npm workspaces.
     // Installing independently inside every package is both slower and fails
@@ -34,41 +37,31 @@ pub async fn execute(args: InstallArgs, config: &Config, base_cwd: &std::path::P
     if let Some(filter) = &args.filter {
         if pm == "yarn" && is_yarn_berry(cwd) {
             let root = root_workspace_name(cwd)?;
-            let focused = focused_workspace_names(config, cwd, filter)?;
-            println!(
-                "Installing root workspace and focused dependency closure with Yarn Berry: {} + {}...",
-                root,
-                focused.join(" + ")
-            );
-            let mut yarn_args = vec!["workspaces".into(), "focus".into(), root];
-            yarn_args.extend(focused);
-            run_command("yarn", yarn_args, cwd).await?;
+            run_command("yarn", yarn_focused_args(&root, filter), cwd, args.json).await?;
+            if args.json {
+                println!(
+                    "{}",
+                    serde_json::json!({"package_manager": pm, "filter": filter, "status": "success"})
+                );
+            }
             return Ok(());
         }
         if pm == "pnpm" {
-            println!(
-                "Installing root and filtered workspace dependencies with pnpm: {}...",
-                filter
-            );
-            run_command(
-                "pnpm",
-                vec![
-                    "install".into(),
-                    "--frozen-lockfile".into(),
-                    "--filter".into(),
-                    format!("...{}", filter),
-                ],
-                cwd,
-            )
-            .await?;
+            run_command("pnpm", pnpm_focused_args(filter), cwd, args.json).await?;
+            if args.json {
+                println!(
+                    "{}",
+                    serde_json::json!({"package_manager": pm, "filter": filter, "status": "success"})
+                );
+            }
             return Ok(());
         }
         return Err(Error::ConfigValidation(
             "npm focused install is unsupported; use Yarn Berry or pnpm".into(),
         ));
     }
-    println!("Installing root dependencies...");
-    run_install(&pm, cwd).await?;
+    eprintln!("Installing root dependencies...");
+    run_install(&pm, cwd, args.json).await?;
 
     if !args.root_install {
         return Ok(());
@@ -79,20 +72,70 @@ pub async fn execute(args: InstallArgs, config: &Config, base_cwd: &std::path::P
     for project in workspace.all_projects() {
         let project_path = &project.path;
         if project_path.join("package.json").exists() {
-            println!("Installing for {}...", project.name);
-            run_install(&pm, project_path).await?;
+            eprintln!("Installing for {}...", project.name);
+            run_install(&pm, project_path, args.json).await?;
         }
     }
 
+    if args.json {
+        println!(
+            "{}",
+            serde_json::json!({"package_manager": pm, "status": "success", "root_install": args.root_install})
+        );
+    }
     Ok(())
 }
 
-async fn run_command(cmd: &str, args: Vec<String>, dir: &Path) -> Result<()> {
-    let status = Command::new(package_manager_executable(cmd))
-        .current_dir(dir)
-        .args(&args)
-        .status()
-        .await?;
+fn yarn_focused_args(root: &str, filter: &str) -> Vec<String> {
+    vec![
+        "workspaces".into(),
+        "focus".into(),
+        root.into(),
+        filter.into(),
+    ]
+}
+
+fn root_workspace_name(dir: &Path) -> Result<String> {
+    let content = std::fs::read_to_string(dir.join("package.json")).map_err(|error| {
+        Error::ConfigValidation(format!("Cannot read root package.json: {error}"))
+    })?;
+    let manifest: serde_json::Value = serde_json::from_str(&content)
+        .map_err(|error| Error::ConfigValidation(format!("Invalid root package.json: {error}")))?;
+    manifest
+        .get("name")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_owned)
+        .ok_or_else(|| {
+            Error::ConfigValidation("Root package.json must define a name for Yarn focus".into())
+        })
+}
+
+fn pnpm_focused_args(filter: &str) -> Vec<String> {
+    vec![
+        "install".into(),
+        "--frozen-lockfile".into(),
+        "--filter".into(),
+        ".".into(),
+        "--filter".into(),
+        format!("{filter}..."),
+    ]
+}
+
+async fn run_command(cmd: &str, args: Vec<String>, dir: &Path, json: bool) -> Result<()> {
+    let mut command = Command::new(package_manager_executable(cmd));
+    command.current_dir(dir).args(&args);
+    let status = if json {
+        let output = command
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .await?;
+        eprint!("{}", String::from_utf8_lossy(&output.stdout));
+        eprint!("{}", String::from_utf8_lossy(&output.stderr));
+        output.status
+    } else {
+        command.status().await?
+    };
     if status.success() {
         Ok(())
     } else {
@@ -146,7 +189,7 @@ pub fn detect_package_manager(cwd: &Path, explicit: Option<&str>) -> Result<Stri
     }
 }
 
-async fn run_install(pm: &str, dir: &Path) -> Result<()> {
+async fn run_install(pm: &str, dir: &Path, json: bool) -> Result<()> {
     let (cmd, args): (&str, Vec<String>) = match pm {
         "pnpm" => {
             let mut args = vec!["install".to_string()];
@@ -191,7 +234,18 @@ async fn run_install(pm: &str, dir: &Path) -> Result<()> {
     command.current_dir(dir);
     command.args(&args);
 
-    let status = command.status().await?;
+    let status = if json {
+        let output = command
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .await?;
+        eprint!("{}", String::from_utf8_lossy(&output.stdout));
+        eprint!("{}", String::from_utf8_lossy(&output.stderr));
+        output.status
+    } else {
+        command.status().await?
+    };
 
     if !status.success() {
         return Err(Error::CommandFailed {
@@ -216,67 +270,39 @@ fn is_yarn_berry(dir: &Path) -> bool {
         .is_some_and(|manager| manager.starts_with("yarn@") && !manager.starts_with("yarn@1."))
 }
 
-fn root_workspace_name(dir: &Path) -> Result<String> {
-    let content = std::fs::read_to_string(dir.join("package.json")).map_err(|error| {
-        Error::ConfigValidation(format!("Cannot read root package.json: {error}"))
-    })?;
-    let manifest: serde_json::Value = serde_json::from_str(&content)
-        .map_err(|error| Error::ConfigValidation(format!("Invalid root package.json: {error}")))?;
-    manifest
-        .get("name")
-        .and_then(serde_json::Value::as_str)
-        .map(str::to_owned)
-        .ok_or_else(|| {
-            Error::ConfigValidation("Root package.json must define a name for Yarn focus".into())
-        })
-}
-
-fn focused_workspace_names(config: &Config, cwd: &Path, filter: &str) -> Result<Vec<String>> {
-    let workspace = crate::workspace::Workspace::discover(config, cwd)?;
-    let mut names = HashSet::new();
-    let mut pending = vec![filter.to_string()];
-    let root = std::fs::read_to_string(cwd.join("package.json")).map_err(|error| {
-        Error::ConfigValidation(format!("Cannot read root package.json: {error}"))
-    })?;
-    let root_manifest: serde_json::Value = serde_json::from_str(&root)
-        .map_err(|error| Error::ConfigValidation(format!("Invalid root package.json: {error}")))?;
-    for field in [
-        "dependencies",
-        "devDependencies",
-        "peerDependencies",
-        "optionalDependencies",
-    ] {
-        if let Some(dependencies) = root_manifest
-            .get(field)
-            .and_then(serde_json::Value::as_object)
-        {
-            pending.extend(dependencies.keys().cloned());
-        }
-    }
-    while let Some(name) = pending.pop() {
-        if !names.insert(name.clone()) {
-            continue;
-        }
-        if let Some(project) = workspace.get_project_by_name(&name) {
-            pending.extend(project.dependencies.iter().cloned());
-        }
-    }
-    names.remove(filter);
-    let mut names: Vec<_> = names
-        .into_iter()
-        .filter(|name| workspace.get_project_by_name(name).is_some())
-        .collect();
-    names.sort();
-    names.insert(0, filter.to_string());
-    Ok(names)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(not(windows))]
     use std::collections::HashMap;
 
     use tempfile::tempdir;
+
+    #[test]
+    fn focused_install_selects_root_and_dependency_closure_without_production_mode() {
+        assert_eq!(
+            yarn_focused_args("repo-root", "@repo/app"),
+            ["workspaces", "focus", "repo-root", "@repo/app"]
+        );
+        assert_eq!(
+            pnpm_focused_args("@repo/app"),
+            [
+                "install",
+                "--frozen-lockfile",
+                "--filter",
+                ".",
+                "--filter",
+                "@repo/app..."
+            ]
+        );
+    }
+
+    #[test]
+    fn reads_yarn_root_workspace_name() {
+        let dir = tempdir().unwrap();
+        std::fs::write(dir.path().join("package.json"), r#"{"name":"repo-root"}"#).unwrap();
+        assert_eq!(root_workspace_name(dir.path()).unwrap(), "repo-root");
+    }
 
     #[test]
     fn test_detect_package_manager_explicit() {
@@ -339,14 +365,14 @@ mod tests {
         let dir = tempdir().unwrap();
         std::fs::write(dir.path().join("package.json"), r#"{"name":"test"}"#).unwrap();
         std::fs::write(dir.path().join("yarn.lock"), "").unwrap();
-        let result = run_install("yarn", dir.path()).await;
+        let result = run_install("yarn", dir.path(), false).await;
         assert!(result.is_ok());
     }
 
     #[tokio::test]
     async fn test_run_install_unknown_package_manager() {
         let dir = tempdir().unwrap();
-        let result = run_install("bun", dir.path()).await;
+        let result = run_install("bun", dir.path(), false).await;
         assert!(matches!(result, Err(Error::PackageManagerNotFound(pm)) if pm == "bun"));
     }
 
@@ -361,7 +387,7 @@ mod tests {
         .unwrap();
         // An invalid lockfile forces the frozen install path to fail.
         std::fs::write(dir.path().join("yarn.lock"), "\n").unwrap();
-        let result = run_install("yarn", dir.path()).await;
+        let result = run_install("yarn", dir.path(), false).await;
         match result {
             Err(Error::CommandFailed { command, code, .. }) => {
                 assert_eq!(command, "yarn");
@@ -410,49 +436,8 @@ mod tests {
             package_manager: Some("yarn".to_string()),
             root_install: true,
             filter: None,
+            json: true,
         };
         execute(args, &config, dir.path()).await.unwrap();
-    }
-
-    #[test]
-    fn test_yarn_focus_includes_root_and_transitive_workspace_dependencies() {
-        let dir = tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("package.json"),
-            r#"{"name":"root","private":true,"workspaces":["packages/*"],"dependencies":{"root-tool":"workspace:*"}}"#,
-        )
-        .unwrap();
-        for (name, dependency) in [
-            ("app", "core"),
-            ("core", "shared"),
-            ("shared", ""),
-            ("root-tool", ""),
-        ] {
-            let path = dir.path().join(format!("packages/{name}"));
-            std::fs::create_dir_all(&path).unwrap();
-            let dependencies = if dependency.is_empty() {
-                String::new()
-            } else {
-                format!(r#", "dependencies":{{"{dependency}":"workspace:*"}}"#)
-            };
-            std::fs::write(
-                path.join("package.json"),
-                format!(r#"{{"name":"{name}"{dependencies}}}"#),
-            )
-            .unwrap();
-        }
-        let config = Config {
-            schema: None,
-            group: HashMap::new(),
-            global_dependencies: vec![],
-            workspace: crate::config::WorkspaceConfig {
-                include: vec!["packages/*".into()],
-                exclude: vec![],
-            },
-        };
-        assert_eq!(
-            focused_workspace_names(&config, dir.path(), "app").unwrap(),
-            vec!["app", "core", "root-tool", "shared"]
-        );
     }
 }
