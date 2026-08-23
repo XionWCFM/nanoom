@@ -1,0 +1,6 @@
+[settings]
+lockfile = true
+
+[tools]
+node = "24.18.0"
+rust = "1.98.0"
