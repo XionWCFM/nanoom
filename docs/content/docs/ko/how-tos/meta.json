@@ -1,5 +1,0 @@
-{
-  "title": "가이드",
-  "defaultOpen": true,
-  "pages": ["pr-checks", "sharding", "fork-prs", "merge-gate"]
-}

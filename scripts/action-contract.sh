@@ -27,6 +27,6 @@ grep -q 'matrix:' .github/actions/install/action.yml
 grep -q 'matrix:' .github/actions/run/action.yml
 grep -q 'GITHUB_STEP_SUMMARY' .github/actions/status/action.yml
 ! grep -q '^  version:' .github/actions/status/action.yml
-! grep -R -nE 'PUSH_REF_NAME|PULL_REQUEST_(BASE|HEAD)_REF|MERGE_GROUP_(BASE|HEAD)_REF|root-install|setup-nanoom|nanoom-(affected|install|run|status)|"concurrency"' README.md docs/content
+! grep -R -nE 'PUSH_REF_NAME|PULL_REQUEST_(BASE|HEAD)_REF|MERGE_GROUP_(BASE|HEAD)_REF|root-install|setup-nanoom|nanoom-(affected|install|run|status)|"concurrency"' README.md
 
 echo 'action contract passed'

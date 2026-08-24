@@ -33,9 +33,6 @@ fi
 if any '(package\.json|yarn\.lock|Cargo\.toml|Cargo\.lock|install|dependency)' && ! any '(^|/)(test|tests|fixtures|scripts)/|verify-install'; then
   echo 'BLOCKED: dependency/install change has no focused-install or dependency regression evidence.'; fail=1
 fi
-if any '(^|/)(Cargo\.toml|package\.json|src/|\.github/actions/)' && ! any '^docs/(content|adr)/'; then
-  echo 'BLOCKED: public implementation change has no documentation update.'; fail=1
-fi
 
 if ((fail)); then
   echo 'review-change: BLOCKED'

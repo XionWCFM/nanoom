@@ -90,7 +90,7 @@ bash scripts/verify-completion.sh --local
 NANOOM_FIXTURE_RUN_ID=<hosted-run-id> bash scripts/verify-completion.sh
 ```
 
-The exact repeatable exit conditions, evidence lifetime, retry policy, and regression ownership are defined in [ADR-0002](docs/adr/0002-repeatable-completion-gates.md). Coverage is a guardrail; a non-skipped released-binary consumer fixture is the final behavior gate.
+Coverage is a guardrail; a non-skipped released-binary consumer fixture is the final behavior gate.
 
 ## License
 

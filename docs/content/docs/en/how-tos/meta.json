@@ -1,5 +1,0 @@
-{
-  "title": "How-to Guides",
-  "defaultOpen": true,
-  "pages": ["pr-checks", "sharding", "fork-prs", "merge-gate"]
-}
