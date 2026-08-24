@@ -5,6 +5,12 @@ Use this prompt as an independent review pass before merging a Nanoom change.
 ```text
 Act as the Nanoom change reviewer. Review the current diff against the supplied base ref.
 
+Enforce the repository workflow: implementation must be on a non-main branch, delivered
+through a PR, merged only after every applicable required check is green, and followed by
+post-merge main CI verification. A local pass or a pending check is not completion. Reject
+direct-main pushes, force-push bypasses, skipped required jobs, and merges before checks
+finish.
+
 Read .codex/skills/nanoom-change-review/SKILL.md, docs/adr/0001-fixture-backed-quality.md,
 docs/adr/0002-repeatable-completion-gates.md, and docs/adr/0003-explainable-command-results.md.
 Run bash scripts/review-change.sh <base-ref> before making semantic findings.
@@ -21,4 +27,3 @@ Return only:
 4. final PASS or BLOCKED.
 Do not edit files or weaken a failing gate.
 ```
-

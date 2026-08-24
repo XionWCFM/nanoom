@@ -9,6 +9,19 @@ Use this skill for every non-trivial Nanoom change, especially CLI, composite Ac
 
 The goal is to catch omissions before implementation is called complete. Review the real diff and its callers; do not approve based on coverage alone.
 
+## Mandatory repository workflow
+
+This repository is PR-only. Never push implementation work directly to `main`, never merge with pending or failing checks, and never declare completion from a local green run alone.
+
+1. Start from an up-to-date `main` and create a dedicated work branch.
+2. Commit the implementation, tests, docs, fixtures, and release metadata together as applicable.
+3. Push the branch and open a PR targeting `main`.
+4. Wait for every required PR check to finish with `success` (including review, tests, docs, coverage, contract, fixture, and release checks that apply). A pending check is not green; a skipped required path is not success.
+5. Merge only through the approved PR mechanism after all checks are green and review findings are `PASS`.
+6. After merge, verify the resulting `main` commit and its post-merge CI. For releases, verify the tag, published artifacts, package version, and released consumer fixture against that exact commit.
+
+If a direct push is rejected by branch protection, do not bypass it or force-push. Treat the rejection as confirmation that the PR workflow is required.
+
 ## Required review sequence
 
 1. Identify the changed public surface and the owning path: CLI, Action, workflow, package, docs, release, or fixture.
@@ -30,10 +43,11 @@ Reject the change until fixed when any of these is true:
 - a workflow can skip work while aggregate status still passes;
 - release/version evidence does not identify the exact source commit;
 - the final JSON, reason, command, or selected commit cannot be explained from logs.
+- work was pushed directly to `main`, merged before all required checks were green, or only a local checkout was verified;
+- the PR checks, merge commit, post-merge main CI, or release/fixture evidence cannot be tied to the same source commit.
 
 ## Review output
 
 Report findings first, each with severity, file/line, concrete failure mode, and required fix. End with:
 
 `PASS` only when no blocking finding remains and every applicable gate has evidence; otherwise `BLOCKED`.
-
