@@ -112,8 +112,6 @@ jobs:
       matrix: ${{ steps.affected.outputs.matrix }}
     env:
       NANOOM_LOCAL_BINARY: ${{ github.workspace }}/target/release/nanoom
-      PULL_REQUEST_BASE_REF: main
-      PULL_REQUEST_HEAD_REF: HEAD
     steps:
       - uses: actions/checkout@v4
         with:
@@ -149,8 +147,6 @@ jobs:
       matrix: ${{ fromJSON(needs.fixture-affected.outputs.matrix) }}
     env:
       NANOOM_LOCAL_BINARY: ${{ github.workspace }}/target/release/nanoom
-      PULL_REQUEST_BASE_REF: main
-      PULL_REQUEST_HEAD_REF: HEAD
       FIXTURE_LOG: ${{ github.workspace }}/.fixture/result.log
     steps:
       - uses: actions/checkout@v4

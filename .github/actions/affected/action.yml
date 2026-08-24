@@ -28,9 +28,12 @@ runs:
         CONFIG: ${{ inputs.config }}
         BASE: ${{ inputs.base }}
         HEAD: ${{ inputs.head }}
+        EVENT: ${{ github.event_name }}
+        EVENT_BASE: ${{ github.event.before || github.base_ref || github.event.merge_group.base_sha }}
+        EVENT_HEAD: ${{ github.sha }}
       run: |
         set -euo pipefail
-        trap 'echo "::error title=Affected calculation failed::Review the error above. Verify cwd/config and fetch both comparison refs (checkout fetch-depth: 0 is the safest option)."' ERR
+        trap 'echo "::error title=Affected calculation failed::Review the error above. Verify cwd/config and the GitHub event comparison refs."' ERR
         cyan=$'\033[36m'; green=$'\033[32m'; yellow=$'\033[33m'; bold=$'\033[1m'; dim=$'\033[2m'; reset=$'\033[0m'
         started=$(date +%s)
         printf '::group::%s◆ nanoom affected%s\n' "$bold$cyan" "$reset"
@@ -42,6 +45,20 @@ runs:
         printf '  %s✓%s comparison: %s -> %s\n' "$green" "$reset" "${BASE:-event-derived}" "${HEAD:-event-derived}"
         printf '  %s✓%s selection: %s\n' "$green" "$reset" "${GROUP:-all groups}"
         printf '  %s✓%s mechanism: %schanged files → dependency graph → group rules/tasks → matrix%s\n' "$green" "$reset" "$dim" "$reset"
+        if [[ -z "$BASE" ]]; then BASE="$EVENT_BASE"; fi
+        if [[ -z "$HEAD" ]]; then HEAD="$EVENT_HEAD"; fi
+        [[ -n "$BASE" ]] || { echo '::error title=Missing comparison base::affected could not resolve a base revision from inputs or the GitHub event.'; exit 2; }
+        [[ -n "$HEAD" ]] || HEAD=HEAD
+        if ! git -C "$CWD" rev-parse --verify "$BASE^{commit}" >/dev/null 2>&1; then
+          if [[ "$EVENT" == pull_request && "$BASE" != refs/* ]]; then
+            git -C "$CWD" fetch --no-tags --depth=100 origin "$BASE:refs/remotes/origin/$BASE"
+            BASE="refs/remotes/origin/$BASE"
+          else
+            git -C "$CWD" fetch --no-tags --depth=100 origin "$BASE"
+            BASE=FETCH_HEAD
+          fi
+        fi
+        printf '  %s✓%s resolved comparison: %s -> %s\n' "$green" "$reset" "$BASE" "$HEAD"
         if [[ -n "$BASE" && -n "$HEAD" ]]; then
           changed_files=$(git -C "$CWD" diff --name-only "$BASE...$HEAD")
           changed=$(awk 'NF {n++} END {print n+0}' <<<"$changed_files")

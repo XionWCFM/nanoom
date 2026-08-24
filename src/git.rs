@@ -105,28 +105,6 @@ pub enum GitEvent {
 }
 
 impl GitEvent {
-    pub fn from_env() -> Result<Self> {
-        if let Ok(ref_name) = std::env::var("PUSH_REF_NAME") {
-            return Ok(GitEvent::Push { ref_name });
-        }
-
-        if let Ok(base_ref) = std::env::var("PULL_REQUEST_BASE_REF") {
-            let head_ref =
-                std::env::var("PULL_REQUEST_HEAD_REF").unwrap_or_else(|_| "HEAD".to_string());
-            return Ok(GitEvent::PullRequest { base_ref, head_ref });
-        }
-
-        if let Ok(base_ref) = std::env::var("MERGE_GROUP_BASE_REF") {
-            let head_ref =
-                std::env::var("MERGE_GROUP_HEAD_REF").unwrap_or_else(|_| "HEAD".to_string());
-            return Ok(GitEvent::MergeGroup { base_ref, head_ref });
-        }
-
-        Err(Error::GitError(
-            "No GitHub event environment variables found".to_string(),
-        ))
-    }
-
     pub fn base_ref(&self) -> &str {
         match self {
             GitEvent::Push { ref_name } => ref_name,
@@ -549,79 +527,6 @@ mod tests {
         let dir = init_repo();
         let repo = GitRepo::open(dir.path()).unwrap();
         assert!(matches!(get_origin_url(&repo), Err(Error::GitError(_))));
-    }
-
-    fn setup_push() {
-        std::env::set_var("PUSH_REF_NAME", "main");
-        std::env::remove_var("PULL_REQUEST_BASE_REF");
-        std::env::remove_var("MERGE_GROUP_BASE_REF");
-    }
-
-    fn setup_pr() {
-        std::env::set_var("PULL_REQUEST_BASE_REF", "main");
-        std::env::set_var("PULL_REQUEST_HEAD_REF", "feature");
-        std::env::remove_var("PUSH_REF_NAME");
-        std::env::remove_var("MERGE_GROUP_BASE_REF");
-    }
-
-    fn setup_merge_group() {
-        std::env::set_var("MERGE_GROUP_BASE_REF", "main");
-        std::env::set_var("MERGE_GROUP_HEAD_REF", "pr-123");
-        std::env::remove_var("PUSH_REF_NAME");
-        std::env::remove_var("PULL_REQUEST_BASE_REF");
-    }
-
-    fn clear_event_env() {
-        std::env::remove_var("PUSH_REF_NAME");
-        std::env::remove_var("PULL_REQUEST_BASE_REF");
-        std::env::remove_var("PULL_REQUEST_HEAD_REF");
-        std::env::remove_var("MERGE_GROUP_BASE_REF");
-        std::env::remove_var("MERGE_GROUP_HEAD_REF");
-    }
-
-    #[test]
-    #[serial]
-    fn test_git_event_from_env_push() {
-        setup_push();
-        let event = GitEvent::from_env().unwrap();
-        assert!(matches!(event, GitEvent::Push { ref ref_name } if *ref_name == "main"));
-        assert_eq!(event.base_ref(), "main");
-        assert_eq!(event.head_ref(), "HEAD");
-        clear_event_env();
-    }
-
-    #[test]
-    #[serial]
-    fn test_git_event_from_env_pr() {
-        setup_pr();
-        let event = GitEvent::from_env().unwrap();
-        assert!(
-            matches!(event, GitEvent::PullRequest { ref base_ref, ref head_ref } if *base_ref == "main" && *head_ref == "feature")
-        );
-        assert_eq!(event.base_ref(), "main");
-        assert_eq!(event.head_ref(), "feature");
-        clear_event_env();
-    }
-
-    #[test]
-    #[serial]
-    fn test_git_event_from_env_merge_group() {
-        setup_merge_group();
-        let event = GitEvent::from_env().unwrap();
-        assert!(
-            matches!(event, GitEvent::MergeGroup { ref base_ref, ref head_ref } if *base_ref == "main" && *head_ref == "pr-123")
-        );
-        assert_eq!(event.base_ref(), "main");
-        assert_eq!(event.head_ref(), "pr-123");
-        clear_event_env();
-    }
-
-    #[test]
-    #[serial]
-    fn test_git_event_from_env_missing() {
-        clear_event_env();
-        let result = GitEvent::from_env();
-        assert!(result.is_err());
     }
 
     #[test]
