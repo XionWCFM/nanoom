@@ -40,9 +40,9 @@ Download an archive from [GitHub Releases](https://github.com/XionWCFM/nanoom/re
 
 ```bash
 curl -fsSL -o nanoom.tar.gz \
-  https://github.com/XionWCFM/nanoom/releases/download/v0.2.5/nanoom-macos-arm64.tar.gz
+  https://github.com/XionWCFM/nanoom/releases/download/v0.2.6/nanoom-macos-arm64.tar.gz
 curl -fsSL -o nanoom.tar.gz.sha256 \
-  https://github.com/XionWCFM/nanoom/releases/download/v0.2.5/nanoom-macos-arm64.tar.gz.sha256
+  https://github.com/XionWCFM/nanoom/releases/download/v0.2.6/nanoom-macos-arm64.tar.gz.sha256
 
 shasum -a 256 -c nanoom.tar.gz.sha256
 tar -xzf nanoom.tar.gz && chmod +x nanoom && ./nanoom --version
@@ -53,7 +53,7 @@ tar -xzf nanoom.tar.gz && chmod +x nanoom && ./nanoom --version
 Use a public command Action pinned to a release tag. It verifies the release checksum before invoking nanoom:
 
 ```yaml
-- uses: XionWCFM/nanoom/.github/actions/affected@v0.2.5
+- uses: XionWCFM/nanoom/.github/actions/affected@v0.2.6
 ```
 
 ## Enable editor autocomplete

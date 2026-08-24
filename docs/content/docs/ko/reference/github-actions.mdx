@@ -3,13 +3,13 @@ title: GitHub Actions 레퍼런스
 description: 공개 복합 Action 입력, 출력, 계약
 ---
 
-공개 Action은 릴리스 태그로 고정하세요: `XionWCFM/nanoom/.github/actions/<name>@v0.2.5`. 내부 설치 스크립트도 같은 태그에서 로드되며 `main`을 따라가지 않습니다.
+공개 Action은 릴리스 태그로 고정하세요: `XionWCFM/nanoom/.github/actions/<name>@v0.2.6`. 내부 설치 스크립트도 같은 태그에서 로드되며 `main`을 따라가지 않습니다. 로그는 접힘 없이 입력 → 해석값 → 이유 → 명령 → 결과 → 최종 JSON 순서로 출력됩니다.
 
 ## `affected`
 
 ```yaml
 - id: affected
-  uses: XionWCFM/nanoom/.github/actions/affected@v0.2.5
+  uses: XionWCFM/nanoom/.github/actions/affected@v0.2.6
   with:
     cwd: .
     config: nanoom.config.json
@@ -27,7 +27,7 @@ description: 공개 복합 Action 입력, 출력, 계약
 ## `install`
 
 ```yaml
-- uses: XionWCFM/nanoom/.github/actions/install@v0.2.5
+- uses: XionWCFM/nanoom/.github/actions/install@v0.2.6
   with:
     matrix: ${{ toJSON(matrix) }}
     packageManager: yarn
@@ -38,7 +38,7 @@ description: 공개 복합 Action 입력, 출력, 계약
 ## `run`
 
 ```yaml
-- uses: XionWCFM/nanoom/.github/actions/run@v0.2.5
+- uses: XionWCFM/nanoom/.github/actions/run@v0.2.6
   with:
     matrix: ${{ toJSON(matrix) }}
     packageManager: yarn
@@ -50,7 +50,7 @@ description: 공개 복합 Action 입력, 출력, 계약
 ## `status`
 
 ```yaml
-- uses: XionWCFM/nanoom/.github/actions/status@v0.2.5
+- uses: XionWCFM/nanoom/.github/actions/status@v0.2.6
   with:
     needs: ${{ toJSON(needs) }}
     affectedJob: affected
@@ -61,4 +61,4 @@ description: 공개 복합 Action 입력, 출력, 계약
 
 `needs`는 필수입니다. 나머지 기본값은 위와 같고 `format` 기본값만 `text`입니다. 이 Action은 CLI를 설치하지 않고 `jq`로 직접 판정합니다. `hasChange=true/matrix=success` 또는 `hasChange=false/matrix=skipped`만 성공하며, 불일치·취소·실패 조합은 모두 실패합니다.
 
-각 매트릭스 항목은 `group`, `name`, `path`, `task`를 포함합니다. 샤드 항목은 `shard`, `totalShards`, 격리 항목은 `isolate: true`를 추가합니다. 브랜치 보호에는 최종 `status` 잡을 안정적인 필수 체크로 사용하세요.
+각 매트릭스 항목은 `group`, `name`, `path`, `task`를 포함합니다. 샤드 항목은 `shard`, `totalShards`, 격리 항목은 `isolate: true`를 추가합니다. 브랜치 보호에는 최종 `status` 잡을 안정적인 필수 체크로 사용하세요. fixture 소비자 workflow에는 내부 JSON 필드 assertion 단계를 넣지 말고 실제 설치·실행·status 흐름만 표시하세요.

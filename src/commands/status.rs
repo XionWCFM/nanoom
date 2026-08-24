@@ -88,15 +88,17 @@ pub async fn execute(args: StatusArgs, _config: &crate::Config) -> Result<()> {
             );
         }
         "text" => {
+            println!("◆ nanoom status");
+            println!("  Observed jobs:");
             for r in &results {
-                println!("{}: {}", r.name, status_emoji(&r.status));
+                println!("  - {}: {}", r.name, status_emoji(&r.status));
             }
             println!(
-                "\nOverall: {}",
+                "  Result: {}",
                 if has_failure { "FAILURE" } else { "SUCCESS" }
             );
             println!(
-                "Reason: {}",
+                "  Why: {}",
                 if has_failure {
                     "one or more jobs failed or were cancelled"
                 } else {

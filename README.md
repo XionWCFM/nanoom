@@ -62,13 +62,13 @@ Four public composite Actions live under `.github/actions`: `affected`, `install
 
 ```yaml
 - id: affected
-  uses: XionWCFM/nanoom/.github/actions/affected@v0.2.5
+  uses: XionWCFM/nanoom/.github/actions/affected@v0.2.6
 
-- uses: XionWCFM/nanoom/.github/actions/install@v0.2.5
+- uses: XionWCFM/nanoom/.github/actions/install@v0.2.6
   with:
     matrix: ${{ toJSON(matrix) }}
 
-- uses: XionWCFM/nanoom/.github/actions/run@v0.2.5
+- uses: XionWCFM/nanoom/.github/actions/run@v0.2.6
   with:
     matrix: ${{ toJSON(matrix) }}
 ```
@@ -76,7 +76,7 @@ Four public composite Actions live under `.github/actions`: `affected`, `install
 The `status` Action evaluates the workflow's `needs` JSON directly and does not download the CLI:
 
 ```yaml
-- uses: XionWCFM/nanoom/.github/actions/status@v0.2.5
+- uses: XionWCFM/nanoom/.github/actions/status@v0.2.6
   with:
     needs: ${{ toJSON(needs) }}
     matrixJob: run

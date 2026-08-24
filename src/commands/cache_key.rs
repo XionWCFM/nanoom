@@ -60,7 +60,7 @@ pub fn execute(args: CacheKeyArgs, cwd: &Path) -> Result<()> {
         );
     } else {
         eprintln!(
-            "Cache key inputs: runner={} task={} filter={} files={}",
+            "◆ nanoom cache-key\n  Inputs: runner={} task={} filter={} files={}",
             args.runner,
             args.task,
             if args.filter.is_empty() {

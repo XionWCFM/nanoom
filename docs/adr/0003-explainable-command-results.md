@@ -14,7 +14,7 @@ Every CLI and composite Action exposes one canonical result and derives its huma
 - JSON CLI mode writes exactly one JSON document to stdout; diagnostics and child output use stderr.
 - Affected reports contain requested refs, resolved 40-character base/head commits, comparison mode, changed paths, and one stable direct, transitive, or global reason per selected workspace.
 - Install and run report their working directory, exact command, selection scope, reason, and final status.
-- Every composite Action prints a grouped final JSON and exports it as `result`; affected retains its existing `has_change` and `groups` outputs.
+- Every composite Action prints an always-visible final JSON and exports it as `result`; custom `::group::` folding is forbidden. Affected retains its existing `has_change` and `groups` outputs.
 - Actions render the same result in notices and Step Summary tables without hiding the canonical JSON.
 - Secrets and authorization values never enter commands, result JSON, or summaries.
 
@@ -31,7 +31,7 @@ The reusable agent rule is installed as the `explainable-cli-actions` skill. The
 The change is complete only when all conditions hold for one immutable producer commit and one released consumer tag:
 
 1. CLI regression tests parse the canonical JSON, verify full commit hashes, and distinguish direct from transitive selection.
-2. Action contract tests require `result`, final JSON, resolved commits, and reasons on every public Action.
+2. Action contract tests require `result`, always-visible final JSON, resolved commits, and reasons on every public Action, and reject custom log groups.
 3. Local completion gates pass twice from a clean tree without tracked-file drift.
 4. Hosted producer CI passes every required check for the producer commit.
 5. The released tag points to that commit and its published binary reports the same version.
@@ -42,4 +42,4 @@ Any missing or skipped positive fixture entry, absent reason/hash/output, instal
 
 ## Consequences
 
-Default logs are longer, but failures are reproducible without rerunning in a special debug mode. Public JSON gains additive diagnostic fields and Actions gain an additive `result` output; existing matrix consumers remain compatible.
+Default logs are longer, but failures are reproducible without rerunning in a special debug mode. Logs are intentionally flat so the user does not need to open a dropdown to understand a result. Public JSON gains additive diagnostic fields and Actions gain an additive `result` output; existing matrix consumers remain compatible.
