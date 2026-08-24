@@ -530,6 +530,29 @@ mod tests {
     }
 
     #[test]
+    fn test_git_event_accessors_use_explicit_revisions() {
+        let push = GitEvent::Push {
+            ref_name: "main".into(),
+        };
+        assert_eq!(push.base_ref(), "main");
+        assert_eq!(push.head_ref(), "HEAD");
+
+        let pr = GitEvent::PullRequest {
+            base_ref: "base".into(),
+            head_ref: "head".into(),
+        };
+        assert_eq!(pr.base_ref(), "base");
+        assert_eq!(pr.head_ref(), "head");
+
+        let merge_group = GitEvent::MergeGroup {
+            base_ref: "queue-base".into(),
+            head_ref: "queue-head".into(),
+        };
+        assert_eq!(merge_group.base_ref(), "queue-base");
+        assert_eq!(merge_group.head_ref(), "queue-head");
+    }
+
+    #[test]
     #[serial]
     fn test_comparison_mode_from_env() {
         std::env::set_var("COMPARISON", "tip");
