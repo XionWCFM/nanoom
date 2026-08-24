@@ -20,3 +20,6 @@ docs/.next/
 docs/.source/
 docs/node_modules/
 **/.yarn/install-state.gz
+.turbo/
+**/.turbo/
+**/tsconfig.tsbuildinfo

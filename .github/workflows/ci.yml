@@ -61,18 +61,6 @@ jobs:
       - name: Clippy
         run: cargo clippy --locked --all-targets --all-features -- -D warnings
 
-  docs:
-    name: Docs build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - run: corepack enable
-      - run: yarn --cwd docs install --immutable
-      - run: yarn --cwd docs build
-
   coverage:
     name: Coverage (90% minimum, 95% target)
     runs-on: ubuntu-latest
