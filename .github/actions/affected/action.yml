@@ -38,8 +38,6 @@ runs:
         started=$(date +%s)
         printf '::group::%s◆ nanoom affected%s\n' "$bold$cyan" "$reset"
         printf '  %sResolving changed workspaces%s\n' "$dim" "$reset"
-        args=(-C "$CWD" -c "$CONFIG" affected --json)
-        [[ -n "$BASE" ]] && args+=(--base "$BASE"); [[ -n "$HEAD" ]] && args+=(--head "$HEAD")
         printf '  %s✓%s working directory: %s\n' "$green" "$reset" "$CWD"
         printf '  %s✓%s config: %s\n' "$green" "$reset" "$CONFIG"
         printf '  %s✓%s comparison: %s -> %s\n' "$green" "$reset" "${BASE:-event-derived}" "${HEAD:-event-derived}"
@@ -59,6 +57,7 @@ runs:
           fi
         fi
         printf '  %s✓%s resolved comparison: %s -> %s\n' "$green" "$reset" "$BASE" "$HEAD"
+        args=(-C "$CWD" -c "$CONFIG" affected --json --base "$BASE" --head "$HEAD")
         if [[ -n "$BASE" && -n "$HEAD" ]]; then
           changed_files=$(git -C "$CWD" diff --name-only "$BASE...$HEAD")
           changed=$(awk 'NF {n++} END {print n+0}' <<<"$changed_files")
