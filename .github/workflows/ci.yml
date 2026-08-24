@@ -12,6 +12,16 @@ env:
   RUSTFLAGS: -D warnings
 
 jobs:
+  change-review:
+    name: Change omission review
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 100
+      - name: Check required change evidence
+        run: bash scripts/review-change.sh "${{ github.event.pull_request.base.sha || github.event.before }}"
+
   test:
     name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
