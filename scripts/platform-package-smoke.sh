@@ -32,7 +32,7 @@ node -e '
   if (mismatches.length !== 0) throw new Error(`wrapper dependency versions do not match ${version}`);
 ' "$ROOT/packages/cli/package.json" "$VERSION"
 
-node "$ROOT/.yarn/releases/yarn-4.9.1.cjs" --cwd "$ROOT" workspaces list --json | \
+node "$ROOT/.yarn/releases/yarn-4.11.0.cjs" --cwd "$ROOT" workspaces list --json | \
   jq -s -e '[.[].name] | contains(["@nanoom/cli", "@nanoom/cli-linux-x64", "@nanoom/cli-linux-arm64", "@nanoom/cli-macos-x64", "@nanoom/cli-macos-arm64", "@nanoom/cli-windows-x64"])' >/dev/null
 
 echo "Validated five Yarn Berry platform package contracts at version $VERSION."

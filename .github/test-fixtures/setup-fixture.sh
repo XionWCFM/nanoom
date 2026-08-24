@@ -12,17 +12,17 @@ cat > "$FIXTURE/package.json" << 'EOF'
 {
   "name": "fixture-root",
   "private": true,
-  "packageManager": "yarn@4.9.1",
+  "packageManager": "yarn@4.11.0",
   "workspaces": ["packages/*"],
   "dependencies": { "@fixture/root-tool": "workspace:*" },
   "scripts": { "verify-install": "node verify-install.js" }
 }
 EOF
 
-cp "$ROOT/.yarn/releases/yarn-4.9.1.cjs" "$FIXTURE/.yarn/releases/"
+cp "$ROOT/.yarn/releases/yarn-4.11.0.cjs" "$FIXTURE/.yarn/releases/"
 cat > "$FIXTURE/.yarnrc.yml" << 'EOF'
 nodeLinker: node-modules
-yarnPath: .yarn/releases/yarn-4.9.1.cjs
+yarnPath: .yarn/releases/yarn-4.11.0.cjs
 EOF
 cat > "$FIXTURE/turbo.json" << 'EOF'
 { "tasks": { "test": { "outputs": [] } } }
