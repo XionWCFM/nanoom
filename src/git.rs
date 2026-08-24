@@ -43,6 +43,13 @@ impl GitRepo {
         }
     }
 
+    pub fn resolve_commit(&self, revision: &str) -> Result<String> {
+        self.repo
+            .rev_parse_single(revision)
+            .map(|id| id.to_string())
+            .map_err(|error| Error::GitError(error.to_string()))
+    }
+
     pub fn get_changed_files(&self, base: &str, head: Option<&str>) -> Result<Vec<PathBuf>> {
         let head_rev = head.unwrap_or("HEAD");
         self.get_changed_files_for_range(&format!("{}...{}", base, head_rev))

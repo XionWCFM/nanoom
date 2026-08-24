@@ -3,13 +3,13 @@ title: GitHub Actions 레퍼런스
 description: 공개 복합 Action 입력, 출력, 계약
 ---
 
-공개 Action은 릴리스 태그로 고정하세요: `XionWCFM/nanoom/.github/actions/<name>@v0.2.3`. 내부 설치 스크립트도 같은 태그에서 로드되며 `main`을 따라가지 않습니다.
+공개 Action은 릴리스 태그로 고정하세요: `XionWCFM/nanoom/.github/actions/<name>@v0.2.5`. 내부 설치 스크립트도 같은 태그에서 로드되며 `main`을 따라가지 않습니다.
 
 ## `affected`
 
 ```yaml
 - id: affected
-  uses: XionWCFM/nanoom/.github/actions/affected@v0.2.3
+  uses: XionWCFM/nanoom/.github/actions/affected@v0.2.5
   with:
     cwd: .
     config: nanoom.config.json
@@ -27,7 +27,7 @@ description: 공개 복합 Action 입력, 출력, 계약
 ## `install`
 
 ```yaml
-- uses: XionWCFM/nanoom/.github/actions/install@v0.2.3
+- uses: XionWCFM/nanoom/.github/actions/install@v0.2.5
   with:
     matrix: ${{ toJSON(matrix) }}
     packageManager: yarn
@@ -38,7 +38,7 @@ description: 공개 복합 Action 입력, 출력, 계약
 ## `run`
 
 ```yaml
-- uses: XionWCFM/nanoom/.github/actions/run@v0.2.3
+- uses: XionWCFM/nanoom/.github/actions/run@v0.2.5
   with:
     matrix: ${{ toJSON(matrix) }}
     packageManager: yarn
@@ -50,7 +50,7 @@ description: 공개 복합 Action 입력, 출력, 계약
 ## `status`
 
 ```yaml
-- uses: XionWCFM/nanoom/.github/actions/status@v0.2.3
+- uses: XionWCFM/nanoom/.github/actions/status@v0.2.5
   with:
     needs: ${{ toJSON(needs) }}
     affectedJob: affected

@@ -356,19 +356,14 @@ pub fn calculate_affected(
 ) -> Vec<Project> {
     let mut affected_indices = HashSet::new();
 
-    let global_matcher = build_global_matcher(global_deps, cwd);
+    let global_files = matching_global_files(changed_files, global_deps, cwd);
+
+    if !global_files.is_empty() {
+        return workspace.projects.clone();
+    }
 
     for file in changed_files {
         let relative = file.strip_prefix(cwd).unwrap_or(file);
-
-        if let Some(matcher) = &global_matcher {
-            if matcher.is_match(relative) {
-                for idx in 0..workspace.projects.len() {
-                    affected_indices.insert(idx);
-                }
-                return workspace.projects.clone();
-            }
-        }
 
         for (idx, project) in workspace.projects.iter().enumerate() {
             let project_relative = project.path.strip_prefix(cwd).unwrap_or(&project.path);
@@ -400,6 +395,21 @@ pub fn calculate_affected(
     ordered
         .into_iter()
         .map(|idx| workspace.projects[idx].clone())
+        .collect()
+}
+
+pub(crate) fn matching_global_files(
+    changed_files: &[PathBuf],
+    global_deps: &[String],
+    cwd: &Path,
+) -> Vec<PathBuf> {
+    let Some(matcher) = build_global_matcher(global_deps, cwd) else {
+        return vec![];
+    };
+    changed_files
+        .iter()
+        .filter(|file| matcher.is_match(file.strip_prefix(cwd).unwrap_or(file)))
+        .cloned()
         .collect()
 }
 

@@ -20,7 +20,7 @@ description: 서로 다른 매트릭스 샤드 생성과 실행
 이 설정은 `shard: 1..4`, `totalShards: 4`인 네 항목을 생성합니다. 전체 항목을 Action에 전달하세요.
 
 ```yaml
-- uses: XionWCFM/nanoom/.github/actions/run@v0.2.3
+- uses: XionWCFM/nanoom/.github/actions/run@v0.2.5
   with:
     matrix: ${{ toJSON(matrix) }}
 ```

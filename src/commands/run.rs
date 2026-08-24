@@ -119,7 +119,11 @@ pub async fn execute(args: RunArgs, config: &Config, cwd: &std::path::Path) -> R
         if args.json {
             println!(
                 "{}",
-                serde_json::json!({"task": args.task, "projects": [], "status": "success"})
+                serde_json::json!({
+                    "status": "success", "group": args.group, "task": args.task,
+                    "projects": [], "runner": args.runner.as_deref().unwrap_or("auto"),
+                    "reason": "no workspace matched the requested group, task, filter, shard, and isolation constraints"
+                })
             );
         } else {
             println!("No projects to run task '{}' on", args.task);
@@ -189,7 +193,19 @@ pub async fn execute(args: RunArgs, config: &Config, cwd: &std::path::Path) -> R
     if args.json {
         println!(
             "{}",
-            serde_json::json!({"task": args.task, "projects": projects.iter().map(|p| &p.name).collect::<Vec<_>>(), "status": "success"})
+            serde_json::json!({
+                "status": "success",
+                "group": args.group,
+                "task": args.task,
+                "projects": projects.iter().map(|p| &p.name).collect::<Vec<_>>(),
+                "runner": args.runner.as_deref().unwrap_or("auto"),
+                "filter": args.filter,
+                "shard": args.shard,
+                "totalShards": args.total_shards,
+                "isolate": args.isolate,
+                "selection": if args.all { "all" } else { "affected" },
+                "reason": if args.all { "explicit --all selection constrained by matrix arguments" } else { "affected calculation selected these workspaces" }
+            })
         );
     }
     Ok(())

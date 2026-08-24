@@ -11,7 +11,7 @@ steps:
   - uses: actions/checkout@v4
     with: { fetch-depth: 100 }
   - id: affected
-    uses: XionWCFM/nanoom/.github/actions/affected@v0.2.3
+    uses: XionWCFM/nanoom/.github/actions/affected@v0.2.5
 ```
 
 Do not use `pull_request_target` to run untrusted fork code. GitHub withholds repository secrets from ordinary fork `pull_request` workflows; keep install/run jobs usable without private tokens, or guard the secret-dependent job with `github.event.pull_request.head.repo.full_name == github.repository`.

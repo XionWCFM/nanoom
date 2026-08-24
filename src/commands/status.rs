@@ -57,7 +57,8 @@ pub async fn execute(args: StatusArgs, _config: &crate::Config) -> Result<()> {
         "json" => {
             let output = serde_json::json!({
                 "jobs": results,
-                "overall": if has_failure { "failure" } else { "success" }
+                "overall": if has_failure { "failure" } else { "success" },
+                "reason": if has_failure { "one or more jobs failed or were cancelled" } else { "no job failed or was cancelled" }
             });
             println!("{}", serde_json::to_string_pretty(&output)?);
         }
@@ -93,6 +94,14 @@ pub async fn execute(args: StatusArgs, _config: &crate::Config) -> Result<()> {
             println!(
                 "\nOverall: {}",
                 if has_failure { "FAILURE" } else { "SUCCESS" }
+            );
+            println!(
+                "Reason: {}",
+                if has_failure {
+                    "one or more jobs failed or were cancelled"
+                } else {
+                    "no job failed or was cancelled"
+                }
             );
         }
         invalid => {

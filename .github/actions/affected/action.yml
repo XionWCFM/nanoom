@@ -11,6 +11,9 @@ outputs:
     value: ${{ steps.out.outputs.has_change }}
   groups:
     value: ${{ steps.out.outputs.groups }}
+  result:
+    description: Canonical affected report including revisions, changed files, reasons, and matrices
+    value: ${{ steps.out.outputs.result }}
 runs:
   using: composite
   steps:
@@ -43,7 +46,7 @@ runs:
         printf '  %sResolving changed workspaces%s\n' "$dim" "$reset"
         printf '  %s✓%s working directory: %s\n' "$green" "$reset" "$CWD"
         printf '  %s✓%s config: %s\n' "$green" "$reset" "$CONFIG"
-        printf '  %s✓%s comparison: %s -> %s\n' "$green" "$reset" "${BASE:-event-derived}" "${HEAD:-event-derived}"
+        printf '  %srequested comparison:%s %s -> %s\n' "$dim" "$reset" "${BASE:-event-derived}" "${HEAD:-event-derived}"
         printf '  %s✓%s selection: all configured groups\n' "$green" "$reset"
         printf '  %s✓%s mechanism: %schanged files → dependency graph → group rules/tasks → matrix%s\n' "$green" "$reset" "$dim" "$reset"
         if [[ -z "$BASE" ]]; then BASE="$EVENT_BASE"; fi
@@ -59,43 +62,52 @@ runs:
             BASE=FETCH_HEAD
           fi
         fi
-        printf '  %s✓%s resolved comparison: %s -> %s\n' "$green" "$reset" "$BASE" "$HEAD"
-        args=(-C "$CWD" -c "$CONFIG" affected --matrix --base "$BASE" --head "$HEAD")
-        if [[ -n "$BASE" && -n "$HEAD" ]]; then
-          changed_files=$(git -C "$CWD" diff --name-only "$BASE...$HEAD")
-          changed=$(awk 'NF {n++} END {print n+0}' <<<"$changed_files")
-          printf '  %s✓%s changed files: %s\n' "$green" "$reset" "$changed"
-          if (( changed )); then
-            printf '  %schanged paths:%s\n' "$dim" "$reset"
-            while IFS= read -r path; do echo "    · $path"; done <<<"$changed_files"
-          fi
-        fi
+        args=(-C "$CWD" -c "$CONFIG" affected --report --base "$BASE" --head "$HEAD")
+        printf -v command '%q ' nanoom "${args[@]}"
+        printf '  %snanoom command:%s %s\n' "$dim" "$reset" "${command% }"
         echo "::endgroup::"
-        matrix=$(nanoom "${args[@]}")
+        report=$(nanoom "${args[@]}")
+        matrix=$(jq -c .matrix <<<"$report")
         groups=$(jq -c 'with_entries(.value = {hasChange: ((.value.include | length) > 0), matrix: .value})' <<<"$matrix")
         has=$(jq -r 'any(to_entries[]; .value.include | length > 0)' <<<"$matrix")
         echo "has_change=$has" >> "$GITHUB_OUTPUT"
         echo "groups=$groups" >> "$GITHUB_OUTPUT"
+        echo "result=$report" >> "$GITHUB_OUTPUT"
         count=$(jq '[to_entries[].value.include[]] | length' <<<"$matrix")
         elapsed=$(( $(date +%s) - started ))
+        base_commit=$(jq -r .affected.diagnostics.comparison.baseCommit <<<"$report")
+        head_commit=$(jq -r .affected.diagnostics.comparison.headCommit <<<"$report")
+        mode=$(jq -r .affected.diagnostics.comparison.mode <<<"$report")
+        changed=$(jq '.affected.diagnostics.changedFiles | length' <<<"$report")
         echo "::notice title=Affected result::has_change=$has; $count matrix entries will run (${elapsed}s)"
-        printf '::group::%s◆ matrix plan (%s entries)%s\n' "$bold$cyan" "$count" "$reset"
+        printf '::group::%s◆ affected decision (%s entries)%s\n' "$bold$cyan" "$count" "$reset"
+        printf '  %s✓%s resolved base commit: %s\n' "$green" "$reset" "$base_commit"
+        printf '  %s✓%s resolved head commit: %s\n' "$green" "$reset" "$head_commit"
+        printf '  %s✓%s comparison mode: %s\n' "$green" "$reset" "$mode"
+        printf '  %s✓%s changed files: %s\n' "$green" "$reset" "$changed"
+        jq -r '.affected.diagnostics.changedFiles[] | "    · " + .' <<<"$report"
+        printf '  %sselection reasons:%s\n' "$dim" "$reset"
+        jq -r '.affected.diagnostics.reasons | to_entries[] | "    · \(.key): " + (if .value.kind == "direct" then "direct change: " + (.value.changedFiles | join(", ")) elif .value.kind == "globalDependency" then "global dependency: " + (.value.changedFiles | join(", ")) else "transitive dependency: " + (.value.dependencyPath | join(" -> ")) end)' <<<"$report"
+        printf '  %smatrix plan:%s\n' "$dim" "$reset"
         if (( count )); then
-          jq -r 'to_entries[] as $group | $group.value.include[] | "- \($group.key) / \(.name) / \(.task)" + (if .shard then " / shard \(.shard)/\(.totalShards)" else "" end) + (if .isolate then " / isolated" else "" end)' <<<"$matrix"
+          jq -r 'to_entries[] as $group | $group.value.include[] | "    · \($group.key) / \(.name) / \(.task)" + (if .shard then " / shard \(.shard)/\(.totalShards)" else "" end) + (if .isolate then " / isolated" else "" end)' <<<"$matrix"
         else
           printf '  %s─ no workspace tasks matched; downstream matrix will be skipped%s\n' "$yellow" "$reset"
         fi
         printf '  %s✓ matrix ready%s (%ss)\n' "$green" "$reset" "$elapsed"
+        echo "::endgroup::"
+        printf '::group::%s◆ final JSON%s\n' "$bold$cyan" "$reset"
+        jq . <<<"$report"
         echo "::endgroup::"
         {
           echo "### nanoom affected"
           echo
           echo "**Result:** \`has_change=$has\` — **$count** matrix entries across all groups"
           echo
-          echo "Comparison: \`${BASE:-event-derived}\` -> \`${HEAD:-event-derived}\`; groups: all configured groups."
+          echo "Comparison (\`$mode\`): \`$base_commit\` -> \`$head_commit\`; **$changed** changed files."
           echo
-          echo '| Group | Workspace | Task | Execution |'
-          echo '|---|---|---|---|'
-          jq -r 'to_entries[] as $group | $group.value.include[] | "| \($group.key) | \(.name) | \(.task) | " + (if .shard then "shard \(.shard)/\(.totalShards)" elif .isolate then "isolated" else "standard" end) + " |"' <<<"$matrix"
-          (( count )) || echo '| - | - | - | no work |'
+          echo '| Group | Workspace | Task | Execution | Why |'
+          echo '|---|---|---|---|---|'
+          jq -r --argjson reasons "$(jq -c .affected.diagnostics.reasons <<<"$report")" 'to_entries[] as $group | $group.value.include[] | . as $entry | "| \($group.key) | \(.name) | \(.task) | " + (if .shard then "shard \(.shard)/\(.totalShards)" elif .isolate then "isolated" else "standard" end) + " | " + ($reasons[$entry.name] | if .kind == "direct" then "direct: " + (.changedFiles | join(", ")) elif .kind == "globalDependency" then "global: " + (.changedFiles | join(", ")) else "transitive: " + (.dependencyPath | join(" -> ")) end) + " |"' <<<"$matrix"
+          (( count )) || echo '| - | - | - | no work | no matching change |'
         } >> "$GITHUB_STEP_SUMMARY"

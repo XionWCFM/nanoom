@@ -1,6 +1,6 @@
 [package]
 name = "nanoom"
-version = "0.2.4"
+version = "0.2.5"
 edition = "2021"
 description = "Monorepo task runner with affected project detection"
 license = "MIT OR Apache-2.0"

@@ -115,6 +115,7 @@ fn test_generate_matrix() {
             ),
         ]),
         has_change: true,
+        diagnostics: None,
     };
 
     let matrix = generate_matrix(&output);
@@ -152,6 +153,7 @@ fn test_generate_matrix_for_group() {
             },
         )]),
         has_change: true,
+        diagnostics: None,
     };
 
     let matrix = generate_matrix_for_group(&output, "ci");
@@ -166,6 +168,7 @@ fn test_generate_matrix_for_nonexistent_group() {
     let output = AffectedOutput {
         group: std::collections::HashMap::new(),
         has_change: false,
+        diagnostics: None,
     };
 
     let matrix = generate_matrix_for_group(&output, "nonexistent");
