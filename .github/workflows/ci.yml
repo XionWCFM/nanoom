@@ -30,7 +30,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Run tests
-        run: cargo test --all --all-features --verbose
+        run: cargo test --locked --all --all-features --verbose
 
   lint:
     name: Lint & Format
@@ -49,7 +49,19 @@ jobs:
         run: cargo fmt --all --check
 
       - name: Clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
+
+  docs:
+    name: Docs build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: corepack enable
+      - run: yarn --cwd docs install --immutable
+      - run: yarn --cwd docs build
 
   coverage:
     name: Coverage (90% minimum, 95% target)
@@ -66,7 +78,7 @@ jobs:
         run: cargo install cargo-llvm-cov --locked
 
       - name: Run coverage
-        run: mkdir -p coverage && cargo llvm-cov --workspace --all-features --cobertura --output-path coverage/cobertura.xml --fail-under-lines 90
+        run: mkdir -p coverage && cargo llvm-cov --locked --workspace --all-features --cobertura --output-path coverage/cobertura.xml --fail-under-lines 90
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
@@ -98,7 +110,7 @@ jobs:
           key: ${{ matrix.target }}
 
       - name: Build
-        run: cargo build --release --target ${{ matrix.target }}
+        run: cargo build --locked --release --target ${{ matrix.target }}
 
       - name: Smoke test CLI
         shell: bash
@@ -118,7 +130,7 @@ jobs:
           fetch-depth: 100
       - uses: dtolnay/rust-toolchain@stable
       - name: Build local CLI
-        run: cargo build --release
+        run: cargo build --locked --release
       - name: Create Yarn Berry + Turborepo fixture
         run: bash .github/test-fixtures/setup-fixture.sh --shards --isolate --change
       - id: affected
@@ -155,7 +167,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: corepack enable
       - name: Build local CLI
-        run: cargo build --release
+        run: cargo build --locked --release
       - name: Create Yarn Berry fixture
         run: bash .github/test-fixtures/setup-fixture.sh --shards --isolate --change
       - uses: ./.github/actions/install
@@ -188,11 +200,10 @@ jobs:
           fetch-depth: 1
       - uses: dtolnay/rust-toolchain@stable
       - name: Build local CLI
-        run: cargo build --release
+        run: cargo build --locked --release
       - name: Report direct matrix job result
         uses: ./.github/actions/status
         with:
-          version: local
           needs: ${{ toJSON(needs) }}
           affectedJob: fixture-affected
           matrixJob: fixture-run

@@ -22,4 +22,14 @@ for manifest in "$ROOT"/packages/cli-*/package.json; do
   ' "$manifest" "$VERSION"
 done
 
-echo "Cargo.toml version synced to ${VERSION}"
+node -e '
+  const fs = require("fs");
+  const [file, version] = process.argv.slice(1);
+  const pkg = JSON.parse(fs.readFileSync(file, "utf8"));
+  for (const name of Object.keys(pkg.optionalDependencies || {})) {
+    pkg.optionalDependencies[name] = version;
+  }
+  fs.writeFileSync(file, `${JSON.stringify(pkg, null, 2)}\n`);
+' "$ROOT/packages/cli/package.json" "$VERSION"
+
+echo "Cargo and npm package versions synced to ${VERSION}"

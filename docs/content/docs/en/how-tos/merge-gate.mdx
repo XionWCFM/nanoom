@@ -1,90 +1,28 @@
 ---
-title: Gate merges with a status check
-description: Add a final required check that fails the PR if any job failed
+title: Gate merges with status
+description: Require a consistent affected and matrix result
 ---
 
-The `nanoom-status` composite action reads job results from `$GITHUB_OUTPUT` and exits non-zero if anything failed. Make it the single required status check on your branch protection rule.
-
-## Prerequisites
-
-- Each job that should gate the merge writes `<job>_result=success|failure|cancelled|skipped` to `$GITHUB_OUTPUT`. The `nanoom-run` action does this automatically.
-
-## 1. Add the status job
+The `status` Action evaluates the workflow `needs` object directly. It does not use artifacts, `GITHUB_OUTPUT` result lines, or the CLI.
 
 ```yaml
-jobs:
-  # ... detect, install, test jobs ...
-
-  status:
-    needs: [test] # or [build, test, e2e] for multiple job names
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - uses: ./.github/actions/nanoom-status
-        with:
-          jobs: test
-          format: markdown # or json, text
+status:
+  if: always()
+  needs: [affected, run]
+  runs-on: ubuntu-latest
+  steps:
+    - uses: XionWCFM/nanoom/.github/actions/status@v0.2.3
+      with:
+        needs: ${{ toJSON(needs) }}
+        affectedJob: affected
+        matrixJob: run
+        group: ci
+        format: markdown
 ```
 
-| Input | Type | Default | Meaning |
-| --- | --- | --- | --- |
-| `jobs` | string | **required** | Comma-separated list of job names (e.g. `build,test,e2e`) |
-| `format` | string | `text` | Output format: `text`, `json`, `markdown` |
-| `version` | string | `latest` | nanoom version to install |
+The gate accepts exactly two states:
 
-## 2. What it does
+- `ci.hasChange=true` and the matrix job succeeded.
+- `ci.hasChange=false` and the matrix job was skipped.
 
-The action:
-1. Installs nanoom (cached).
-2. Reads `$GITHUB_OUTPUT` for each listed job: `test_result=success`, etc.
-3. Prints a summary table in the chosen format.
-4. **Exits 1 if any job reported `failure`** — this fails the workflow.
-
-Example markdown output:
-
-```
-| Job | Result |
-|-----|--------|
-| test | ✅ success |
-| test | ✅ success |
-| test | ❌ failure |
-```
-
-## 3. Set as required check
-
-In your repository settings → **Branches** → **Branch protection rules** for `main`:
-
-- Add `status` as a **required status check**.
-- **Do not** add the individual matrix jobs (they're dynamic). Only the aggregated `status` job is stable.
-
-## 4. Verify
-
-Open a PR that fails a test. The `status` job should show ❌ and the PR check fails. Fix the test, push again — `status` shows ✅ and the PR passes.
-
-## Multiple job types
-
-If you have separate workflows (or job names like `build`, `test`, `e2e`), list them all:
-
-```yaml
-with:
-  jobs: build,test,e2e
-```
-
-The action reads each one's `_result` line and fails if **any** is `failure`.
-
-## Troubleshooting
-
-**Status job always passes.** The upstream jobs must write `_result=` to `$GITHUB_OUTPUT`. The `nanoom-run` action does this. If you run tasks without it, add:
-
-```bash
-echo "test_result=success" >> $GITHUB_OUTPUT
-# or on failure:
-echo "test_result=failure" >> $GITHUB_OUTPUT
-```
-
-**Markdown format doesn't render.** GitHub Actions UI renders markdown in step summaries automatically. The action also prints to stdout for logs.
-
-## Related
-
-- [How-to: Run checks on PRs](/en/docs/how-tos/pr-checks) — full workflow context.
-- [CLI: nanoom status](/en/docs/reference/cli#nanoom-status) — flag reference.
+An affected failure, matrix failure/cancellation, missing job, invalid JSON, or inconsistent skipped state fails. Require the stable `status` job in branch protection and exercise both accepted states plus a deliberate failing matrix in regression testing.

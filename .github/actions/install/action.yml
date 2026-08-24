@@ -9,9 +9,14 @@ runs:
   using: composite
   steps:
     - name: Set up nanoom
-      uses: XionWCFM/nanoom/.github/actions/_setup@main
-      with:
-        version: ${{ inputs.version }}
+      shell: bash
+      env:
+        REQUESTED: ${{ inputs.version }}
+        API: ${{ github.api_url }}
+        SERVER: ${{ github.server_url }}
+        TOKEN: ${{ github.token }}
+        BINARY: ${{ env.NANOOM_LOCAL_BINARY }}
+      run: bash "$GITHUB_ACTION_PATH/../_setup/setup.sh"
     - name: Install focused dependencies
       shell: bash
       env:

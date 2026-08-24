@@ -66,7 +66,10 @@ pub async fn calculate_with_override(
     let base_commit = resolve_base_commit(&git, &event, mode)?;
 
     let head_ref = event.head_ref();
-    let changed_files = git.get_changed_files(&base_commit, Some(head_ref))?;
+    let changed_files = match mode {
+        ComparisonMode::MergeBase => git.get_changed_files(&base_commit, Some(head_ref))?,
+        ComparisonMode::Tip => git.get_changed_files_from_tip(&base_commit, Some(head_ref))?,
+    };
 
     let workspace = Workspace::discover(config, cwd)?;
 

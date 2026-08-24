@@ -1,212 +1,64 @@
 ---
 title: GitHub Actions 레퍼런스
-description: 복합 액션 — 입력, 출력, 사용 예시
+description: 공개 복합 Action 입력, 출력, 계약
 ---
 
-nanoom은 이 저장소에 다섯 개 복합 액션을 포함합니다. nanoom 저장소 안에선 로컬 경로로(`./.github/actions/...`), 포크를 게시했다면 `owner/repo/.github/actions/nanoom-affected@tag`로 쓰세요.
+공개 Action은 릴리스 태그로 고정하세요: `XionWCFM/nanoom/.github/actions/<name>@v0.2.3`. 내부 설치 스크립트도 같은 태그에서 로드되며 `main`을 따라가지 않습니다.
 
----
-
-## `nanoom-affected`
-
-영향 감지를 돌리고 잡 매트릭스를 내보냅니다.
-
-### 사용법
+## `affected`
 
 ```yaml
-- id: detect
-  uses: ./.github/actions/nanoom-affected
+- id: affected
+  uses: XionWCFM/nanoom/.github/actions/affected@v0.2.3
+  with:
+    cwd: .
+    config: nanoom.config.json
 ```
 
-### 입력
-
-| 입력 | 타입 | 필수 | 기본값 | 설명 |
-| --- | --- | --- | --- | --- |
-| `version` | string | 아니오 | `latest` | 설치할 nanoom 버전 (`latest` 또는 `v0.1.0`) |
-
-### 출력
-
-| 출력 | 타입 | 설명 |
+| 입력 | 기본값 | 설명 |
 | --- | --- | --- |
-| `has-change` | string | 영향 프로젝트 1개 이상이면 `"true"` |
-| `groups` | JSON | `{ "ci": { "has_change": true, "matrix": { "include": [...] } } }` |
+| `version` | `latest` | 릴리스 바이너리 태그. 저장소 테스트는 `local` |
+| `cwd` | `.` | 소비자 작업 디렉터리 |
+| `config` | `nanoom.config.json` | `cwd` 기준 설정 경로 |
+| `base`, `head` | 이벤트에서 계산 | 명시적 비교 리비전 |
 
-### 내부 동작
+출력은 `has_change`와 `groups`입니다. `groups`는 설정된 각 그룹을 `{hasChange, matrix}`로 매핑합니다. Action 경계에서 GitHub 표준 컨텍스트(`before`, `base_ref`, merge-group base SHA)를 해석한 뒤 CLI에 명시적인 리비전을 전달합니다.
 
-1. nanoom 바이너리 설치 (버전별 캐시).
-2. 이벤트 환경 변수를 읽으며 `nanoom affected --matrix`를 한 번 실행.
-3. 그룹별 `has_change`를 추가해 하나의 `groups` 출력으로 내보냄.
-4. 소비자는 `fromJSON(needs.affected.outputs.groups).ci.matrix`로 그룹을 선택.
-
----
-
-## `nanoom-run`
-
-현재 러너에서 `(프로젝트, 작업)` 쌍 하나를 실행합니다.
-
-### 사용법
+## `install`
 
 ```yaml
-- uses: ./.github/actions/nanoom-run
+- uses: XionWCFM/nanoom/.github/actions/install@v0.2.3
   with:
+    matrix: ${{ toJSON(matrix) }}
+    packageManager: yarn
+```
+
+`matrix`는 필수이며 단일 항목 또는 `include` 래퍼를 받을 수 있습니다. `packageManager`, `cwd`, `version`은 선택입니다. npm은 필요한 워크스페이스 의존성 폐쇄 집중 설치를 지원하지 않으므로 거부됩니다.
+
+## `run`
+
+```yaml
+- uses: XionWCFM/nanoom/.github/actions/run@v0.2.3
+  with:
+    matrix: ${{ toJSON(matrix) }}
+    packageManager: yarn
+    monorepoTool: turbo
+```
+
+필수 `matrix` 항목이 그룹, 워크스페이스, 작업, 샤드, 격리 정보를 제공합니다. `packageManager`, `monorepoTool`, `cwd`, `version`은 선택입니다.
+
+## `status`
+
+```yaml
+- uses: XionWCFM/nanoom/.github/actions/status@v0.2.3
+  with:
+    needs: ${{ toJSON(needs) }}
+    affectedJob: affected
+    matrixJob: run
     group: ci
-    task: ${{ matrix.task }}
-    filter: ${{ matrix.name }}
-    shard: ${{ matrix.shard }}
-```
-
-### 입력
-
-| 입력 | 타입 | 필수 | 설명 |
-| --- | --- | --- | --- |
-| `group` | string | **예** | 설정의 그룹 이름 |
-| `task` | string | **예** | 그룹의 `tasks`에 있는 작업 이름 |
-| `filter` | string | **예** | 실행할 프로젝트 이름 (`matrix.name`에서) |
-| `shard` | string | 아니오 | 샤드 인덱스 (`matrix.shard`에서) |
-| `version` | string | 아니오 | `latest` — 설치할 nanoom 버전 |
-
-### 내부 동작
-
-1. nanoom 설치.
-2. `nanoom run <그룹> <작업> --filter <필터> [--shard <샤드>]` 실행.
-3. 상태 게이트용 `<잡>_result=success|failure`를 `$GITHUB_OUTPUT`에 기록.
-
----
-
-## `nanoom-install`
-
-발견된 모든 프로젝트(선택적으로 루트)의 의존성을 설치합니다.
-
-### 사용법
-
-```yaml
-- uses: ./.github/actions/nanoom-install
-  with:
-    package-manager: auto # auto | pnpm | yarn | npm
-    root-install: 'true'
-```
-
-### 입력
-
-| 입력 | 타입 | 필수 | 기본값 | 설명 |
-| --- | --- | --- | --- | --- |
-| `package-manager` | string | 아니오 | `auto` | `auto`, `pnpm`, `yarn`, `npm` 중 하나 |
-| `root-install` | boolean | 아니오 | `false` | 저장소 루트에도 install 실행 |
-| `version` | string | 아니오 | `latest` | 설치할 nanoom 버전 |
-
-### 감지 (auto일 때)
-
-1. `pnpm-lock.yaml` → pnpm
-2. `yarn.lock` → yarn
-3. 그 외 → npm
-
----
-
-## `nanoom-status`
-
-잡 결과를 모아 실패가 있으면 실패시킵니다.
-
-### 사용법
-
-```yaml
-- uses: ./.github/actions/nanoom-status
-  with:
-    jobs: test
     format: markdown
 ```
 
-### 입력
+`needs`는 필수입니다. 나머지 기본값은 위와 같고 `format` 기본값만 `text`입니다. 이 Action은 CLI를 설치하지 않고 `jq`로 직접 판정합니다. `hasChange=true/matrix=success` 또는 `hasChange=false/matrix=skipped`만 성공하며, 불일치·취소·실패 조합은 모두 실패합니다.
 
-| 입력 | 타입 | 필수 | 기본값 | 설명 |
-| --- | --- | --- | --- | --- |
-| `jobs` | string | **예** | — | 콤마로 구분한 잡 이름들 (예: `test` 또는 `build,test,e2e`) |
-| `format` | string | 아니오 | `text` | `text`, `json`, `markdown` 중 하나 |
-| `version` | string | 아니오 | `latest` | 설치할 nanoom 버전 |
-
-### 하는 일
-
-1. nanoom 설치.
-2. 나열된 각 잡의 `$GITHUB_OUTPUT` 읽기: `<잡>_result=success|failure|cancelled|skipped`.
-3. 선택한 포맷으로 요약 표 출력.
-4. **어떤 잡이든 `failure`를 보고하면 1로 종료** — 필수 상태 체크로 쓰세요.
-
-### 출력 포맷
-
-**텍스트:**
-```
-test → success
-test → success
-test → failure
-```
-
-**마크다운:**
-```markdown
-| Job | Result |
-|-----|--------|
-| test | ✅ success |
-| test | ❌ failure |
-```
-
-**JSON:**
-```json
-{ "results": [ { "job": "test", "result": "failure" } ] }
-```
-
----
-
-## `setup-nanoom`
-
-nanoom 바이너리를 다운로드해 캐시하고 `$PATH`에 추가합니다.
-
-### 사용법
-
-```yaml
-- uses: ./.github/actions/setup-nanoom
-  with:
-    version: latest
-```
-
-### 입력
-
-| 입력 | 타입 | 필수 | 기본값 | 설명 |
-| --- | --- | --- | --- | --- |
-| `version` | string | 아니오 | `latest` | 설치할 버전 (`latest` 또는 `v0.1.0`) |
-
-### 용도
-
-자체 스텝에서 raw `nanoom` 명령어를 쓰고 싶을 때:
-
-```yaml
-- uses: ./.github/actions/setup-nanoom
-- run: nanoom affected --json
-- run: nanoom run ci test --filter @app/web
-```
-
----
-
-## 매트릭스 항목 필드
-
-`include` 배열의 모든 항목이 가집니다:
-
-| 필드 | 타입 | 있는 경우 | 설명 |
-| --- | --- | --- | --- |
-| `name` | string | 항상 | 프로젝트 이름 |
-| `path` | string | 항상 | 저장소 루트 기준 상대 경로 |
-| `task` | string | 항상 | 실행할 작업 이름 |
-| `shard` | integer | 샤딩 시 | 1-베이스 샤드 인덱스 |
-| `isolate` | string | 격리 시 | `"true"` — 전용 러너 |
-
----
-
-## 포크 풀 리퀘스트
-
-`GITHUB_HEAD_REPOSITORY`가 `GITHUB_REPOSITORY`와 다를 때 포크의 헤드 저장소 기준으로 병합 베이스를 풉니다. 신뢰할 수 없는 포크용 잡엔 시크릿을 넣지 마세요; nanoom 자체는 시크릿이 필요 없습니다.
-
----
-
-## 같이 보기
-
-- [가이드: PR 체크](/ko/docs/how-tos/pr-checks) — 전체 워크플로.
-- [가이드: 샤딩](/ko/docs/how-tos/sharding) — Actions에서 샤드.
-- [가이드: 병합 게이트](/ko/docs/how-tos/merge-gate) — 상태 게이트.
-- [CLI 레퍼런스](/ko/docs/reference/cli) — 기반 플래그들.
+각 매트릭스 항목은 `group`, `name`, `path`, `task`를 포함합니다. 샤드 항목은 `shard`, `totalShards`, 격리 항목은 `isolate: true`를 추가합니다. 브랜치 보호에는 최종 `status` 잡을 안정적인 필수 체크로 사용하세요.

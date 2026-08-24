@@ -6,14 +6,9 @@ inputs:
   matrixJob: {default: matrix}
   group: {default: ci}
   format: {default: text}
-  version: {default: latest}
 runs:
   using: composite
   steps:
-    - name: Set up nanoom
-      uses: XionWCFM/nanoom/.github/actions/_setup@main
-      with:
-        version: ${{ inputs.version }}
     - name: Evaluate workflow status
       shell: bash
       env:

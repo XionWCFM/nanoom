@@ -85,6 +85,7 @@ fn run_cli_parts(cwd: &Path, args: &[&str], envs: &[(&str, &str)]) -> (bool, Str
     cmd.current_dir(cwd).args(args);
 
     // Ensure no CI env leaks from parent process
+    cmd.env_remove("GITHUB_OUTPUT").env_remove("COMPARISON");
 
     for (key, value) in envs {
         cmd.env(key, value);
@@ -368,7 +369,8 @@ fn test_status_aggregates_from_github_output() {
     fs::write(&gh_output, "ci_result=success\ne2e_result=failure\n").unwrap();
 
     let envs = [("GITHUB_OUTPUT", gh_output.to_str().unwrap())];
-    let (success, output) = run_cli(dir.path(), &["status", "ci,e2e", "--format", "json"], &envs);
+    let (success, output, stderr) =
+        run_cli_parts(dir.path(), &["status", "ci,e2e", "--format", "json"], &envs);
 
     // e2e failed -> overall failure and non-zero exit
     assert!(
@@ -381,6 +383,7 @@ fn test_status_aggregates_from_github_output() {
 
     let jobs = parsed["jobs"].as_array().unwrap();
     assert_eq!(jobs.len(), 2);
+    assert!(stderr.contains("one or more jobs did not succeed"));
 }
 
 #[test]
@@ -394,6 +397,80 @@ fn test_status_all_success_exits_zero() {
     let envs = [("GITHUB_OUTPUT", gh_output.to_str().unwrap())];
     let (success, _output) = run_cli(dir.path(), &["status", "ci", "--format", "text"], &envs);
     assert!(success);
+}
+
+#[test]
+fn status_rejects_missing_and_unknown_results() {
+    let dir = tempdir().unwrap();
+    minimal_config(dir.path());
+
+    let (missing_success, missing_output) = run_cli(dir.path(), &["status", "ci"], &[]);
+    assert!(!missing_success);
+    assert!(missing_output.contains("GITHUB_OUTPUT"));
+
+    let (unknown_success, unknown_output) = run_cli(
+        dir.path(),
+        &["status", "ci", "--results", "ci=unknown"],
+        &[],
+    );
+    assert!(!unknown_success);
+    assert!(unknown_output.contains("invalid status 'unknown'"));
+
+    let (format_success, format_output) = run_cli(
+        dir.path(),
+        &["status", "ci", "--results", "ci=success", "--format", "xml"],
+        &[],
+    );
+    assert!(!format_success);
+    assert!(format_output.contains("invalid format 'xml'"));
+}
+
+#[test]
+fn status_markdown_and_cancelled_paths_are_observable() {
+    let dir = tempdir().unwrap();
+    minimal_config(dir.path());
+
+    let (markdown_success, markdown_output) = run_cli(
+        dir.path(),
+        &[
+            "status",
+            "ci",
+            "--results",
+            "ci=success",
+            "--format",
+            "markdown",
+        ],
+        &[],
+    );
+    assert!(markdown_success);
+    assert!(markdown_output.contains("| ci | ✅ |"));
+
+    let (cancelled_success, stdout, stderr) = run_cli_parts(
+        dir.path(),
+        &["status", "ci", "--results", "ci=cancelled", "--json"],
+        &[],
+    );
+    assert!(!cancelled_success);
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&stdout).unwrap()["overall"],
+        "failure"
+    );
+    assert!(stderr.contains("did not succeed"));
+}
+
+#[test]
+fn run_rejects_incomplete_shard_arguments() {
+    let dir = tempdir().unwrap();
+    setup_monorepo(dir.path());
+    init_git_repo(dir.path());
+
+    let (success, output) = run_cli(
+        dir.path(),
+        &["run", "ci", "test", "--all", "--shard", "1"],
+        &[],
+    );
+    assert!(!success);
+    assert!(output.contains("--shard and --total-shards must be provided together"));
 }
 
 #[test]

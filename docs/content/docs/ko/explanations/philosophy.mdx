@@ -25,7 +25,7 @@ nanoom은 딱 하나만 합니다: 변경이 어떤 프로젝트에 영향을 �
 
 ## GitHub Actions 네이티브
 
-출력이 Actions 방언입니다: `{ "include": [...] }` 매트릭스, `$GITHUB_OUTPUT` 결과 줄, Actions가 정확히 세팅하는 이벤트 환경 변수. nanoom은 플랫폼을 대체하지 않고 조합합니다.
+출력은 `{ "include": [...] }` 매트릭스와 status 게이트가 쓰는 `needs` 객체처럼 Actions 형식을 따릅니다. GitHub 이벤트 컨텍스트는 Action 경계에 두고 CLI에는 명시적 리비전을 전달합니다.
 
 ## 우아한 저하
 

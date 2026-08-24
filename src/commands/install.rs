@@ -11,10 +11,11 @@ pub struct InstallArgs {
     pub package_manager: Option<String>,
 
     #[arg(
-        long,
-        help = "Also run an install in each workspace (root install is always performed for a monorepo)"
+        long = "workspace-install",
+        alias = "root-install",
+        help = "Also run an install in each workspace (root install is always performed)"
     )]
-    pub root_install: bool,
+    pub workspace_install: bool,
 
     #[arg(long, help = "Install only this workspace and its dependency closure")]
     pub filter: Option<String>,
@@ -63,7 +64,7 @@ pub async fn execute(args: InstallArgs, config: &Config, base_cwd: &std::path::P
     eprintln!("Installing root dependencies...");
     run_install(&pm, cwd, args.json).await?;
 
-    if !args.root_install {
+    if !args.workspace_install {
         return Ok(());
     }
 
@@ -80,7 +81,7 @@ pub async fn execute(args: InstallArgs, config: &Config, base_cwd: &std::path::P
     if args.json {
         println!(
             "{}",
-            serde_json::json!({"package_manager": pm, "status": "success", "root_install": args.root_install})
+            serde_json::json!({"package_manager": pm, "status": "success", "workspace_install": args.workspace_install})
         );
     }
     Ok(())
@@ -284,9 +285,25 @@ fn is_yarn_berry(dir: &Path) -> bool {
 mod tests {
     use super::*;
     #[cfg(not(windows))]
-    use std::collections::HashMap;
-
+    use serial_test::serial;
+    #[cfg(not(windows))]
+    use std::os::unix::fs::PermissionsExt;
     use tempfile::tempdir;
+
+    #[cfg(not(windows))]
+    fn prepend_fake_managers(dir: &Path) -> std::ffi::OsString {
+        let bin = dir.join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        for manager in ["yarn", "pnpm", "npm"] {
+            let executable = bin.join(manager);
+            std::fs::write(&executable, "#!/bin/sh\nexit 0\n").unwrap();
+            std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let original = std::env::var_os("PATH").unwrap_or_default();
+        let paths = std::iter::once(bin).chain(std::env::split_paths(&original));
+        std::env::set_var("PATH", std::env::join_paths(paths).unwrap());
+        original
+    }
 
     #[test]
     fn focused_install_selects_root_and_dependency_closure_without_production_mode() {
@@ -369,21 +386,75 @@ mod tests {
         assert!(is_yarn_berry(config.path()));
     }
 
-    #[cfg(not(windows))]
-    #[tokio::test]
-    async fn test_run_install_yarn_berry() {
-        let dir = tempdir().unwrap();
-        std::fs::write(dir.path().join("package.json"), r#"{"name":"test"}"#).unwrap();
-        std::fs::write(dir.path().join("yarn.lock"), "").unwrap();
-        let result = run_install("yarn", dir.path(), false).await;
-        assert!(result.is_ok());
-    }
-
     #[tokio::test]
     async fn test_run_install_unknown_package_manager() {
         let dir = tempdir().unwrap();
         let result = run_install("bun", dir.path(), false).await;
         assert!(matches!(result, Err(Error::PackageManagerNotFound(pm)) if pm == "bun"));
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    #[serial]
+    async fn install_commands_cover_lockfile_specific_modes_without_network() {
+        let dir = tempdir().unwrap();
+        let original_path = prepend_fake_managers(dir.path());
+        std::fs::write(
+            dir.path().join("package.json"),
+            r#"{"name":"root","packageManager":"yarn@4.9.1"}"#,
+        )
+        .unwrap();
+
+        std::fs::write(dir.path().join("yarn.lock"), "").unwrap();
+        run_install("yarn", dir.path(), true).await.unwrap();
+        std::fs::remove_file(dir.path().join("yarn.lock")).unwrap();
+        std::fs::write(dir.path().join("pnpm-lock.yaml"), "").unwrap();
+        run_install("pnpm", dir.path(), true).await.unwrap();
+        std::fs::remove_file(dir.path().join("pnpm-lock.yaml")).unwrap();
+        std::fs::write(dir.path().join("package-lock.json"), "{}").unwrap();
+        run_install("npm", dir.path(), true).await.unwrap();
+
+        std::env::set_var("PATH", original_path);
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    #[serial]
+    async fn execute_can_run_root_and_opt_in_workspace_installs_without_network() {
+        let dir = tempdir().unwrap();
+        let original_path = prepend_fake_managers(dir.path());
+        std::fs::write(
+            dir.path().join("package.json"),
+            r#"{"name":"root","private":true,"workspaces":["packages/*"]}"#,
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("yarn.lock"), "").unwrap();
+        std::fs::create_dir_all(dir.path().join("packages/app")).unwrap();
+        std::fs::write(
+            dir.path().join("packages/app/package.json"),
+            r#"{"name":"app","version":"1.0.0"}"#,
+        )
+        .unwrap();
+
+        let config: Config = serde_json::from_value(serde_json::json!({
+            "group": {"ci": {"tasks": ["build"]}},
+            "workspace": {"include": ["packages/*"]}
+        }))
+        .unwrap();
+        execute(
+            InstallArgs {
+                package_manager: Some("yarn".into()),
+                workspace_install: true,
+                filter: None,
+                json: true,
+            },
+            &config,
+            dir.path(),
+        )
+        .await
+        .unwrap();
+
+        std::env::set_var("PATH", original_path);
     }
 
     #[cfg(not(windows))]
@@ -397,66 +468,15 @@ mod tests {
 
     #[cfg(not(windows))]
     #[tokio::test]
-    async fn test_run_install_command_failure() {
+    async fn test_run_command_reports_failure() {
         let dir = tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("package.json"),
-            r#"{"name":"test","dependencies":{"nanoom-test-package-that-does-not-exist":"1.0.0"}}"#,
-        )
-        .unwrap();
-        // An invalid lockfile forces the frozen install path to fail.
-        std::fs::write(dir.path().join("yarn.lock"), "\n").unwrap();
-        let result = run_install("yarn", dir.path(), false).await;
+        let result = run_command("false", vec![], dir.path(), false).await;
         match result {
             Err(Error::CommandFailed { command, code, .. }) => {
-                assert_eq!(command, "yarn");
+                assert_eq!(command, "false");
                 assert_ne!(code, 0);
             }
             other => panic!("expected CommandFailed, got {:?}", other),
         }
-    }
-
-    #[cfg(not(windows))]
-    #[tokio::test]
-    async fn test_execute_installs_root_and_projects() {
-        let dir = tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("package.json"),
-            r#"{"name":"root","private":true}"#,
-        )
-        .unwrap();
-        std::fs::write(dir.path().join("yarn.lock"), "").unwrap();
-        std::fs::create_dir_all(dir.path().join("packages/app")).unwrap();
-        std::fs::write(
-            dir.path().join("packages/app/package.json"),
-            r#"{"name":"app"}"#,
-        )
-        .unwrap();
-
-        let mut group = HashMap::new();
-        group.insert(
-            "ci".to_string(),
-            crate::config::GroupConfig {
-                tasks: vec!["build".to_string()],
-                rules: vec![],
-            },
-        );
-        let config = Config {
-            schema: None,
-            group,
-            global_dependencies: vec![],
-            workspace: crate::config::WorkspaceConfig {
-                include: vec!["packages/*".to_string()],
-                exclude: vec![],
-            },
-        };
-
-        let args = InstallArgs {
-            package_manager: Some("yarn".to_string()),
-            root_install: true,
-            filter: None,
-            json: true,
-        };
-        execute(args, &config, dir.path()).await.unwrap();
     }
 }

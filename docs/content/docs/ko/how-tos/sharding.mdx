@@ -1,111 +1,30 @@
 ---
-title: 느린 테스트 스위트 샤딩으로 나누기
-description: 큰 테스트 스위트를 여러 병렬 샤드로 쪼개 별도 러너에서 돌리기
+title: 느린 스위트 샤딩
+description: 서로 다른 매트릭스 샤드 생성과 실행
 ---
 
-샤딩은 한 프로젝트의 테스트 작업을 N개 병렬 잡으로 나눕니다. 각 잡은 같은 명령어를 실행하되 `NANOOM_SHARD_INDEX` / `NANOOM_SHARD_TOTAL` 환경 변수가 세팅되고, 테스트 러너가 자기 몫을 골라 실행합니다.
-
-## 사전 준비
-
-- 그룹에 속한 느린 테스트 작업이 있는 프로젝트 (예: `test:e2e`)
-- 샤딩을 지원하는 테스트 러너: Jest `--shard`, Playwright `--shard`, Vitest `--shard` 등
-
-## 1단계. 샤드 규칙 설정
-
-`nanoom.config.json`에 해당 프로젝트 규칙을 추가하세요:
-
-```jsonc
+```json
 {
   "group": {
     "ci": {
-      "tasks": ["lint", "test", "test:e2e"],
-      "concurrency": 12,
-      "rules": [
-        {
-          "name": "@app/web",
-          "shard": [{ "task": "test:e2e", "shard": 4 }]
-        }
-      ]
+      "tasks": ["test:e2e"],
+      "rules": [{
+        "name": "@repo/web",
+        "shard": [{ "task": "test:e2e", "shard": 4 }]
+      }]
     }
   }
 }
 ```
 
-| 필드 | 타입 | 의미 |
-| --- | --- | --- |
-| `task` | string | 샤딩할 작업 이름 (그룹의 `tasks`에 있어야 함) |
-| `shard` | integer | 샤드 개수 (≥2) |
-
-이렇게 하면 `@app/web`에 대해 `"shard": 1..4`를 가진 매트릭스 항목 4개가 생깁니다.
-
-## 2단계. 실행 단계에 샤드 전달
-
-`nanoom run`에 샤드 인덱스와 총 개수를 넘기세요:
+이 설정은 `shard: 1..4`, `totalShards: 4`인 네 항목을 생성합니다. 전체 항목을 Action에 전달하세요.
 
 ```yaml
-- uses: ./.github/actions/nanoom-run
+- uses: XionWCFM/nanoom/.github/actions/run@v0.2.3
   with:
-    group: ci
-    task: ${{ matrix.task }}
-    filter: ${{ matrix.name }}
-    shard: ${{ matrix.shard }}
+    matrix: ${{ toJSON(matrix) }}
 ```
 
-액션은 내부적으로 이렇게 실행합니다:
+작업은 `NANOOM_SHARD_INDEX`, `NANOOM_SHARD_TOTAL`을 받습니다. 테스트 러너의 샤드 플래그에 연결하세요. 두 CLI 샤드 플래그는 함께 사용하고 유효한 1 기반 범위여야 합니다.
 
-```bash
-NANOOM_SHARD_INDEX=2 NANOOM_SHARD_TOTAL=4 nanoom run ci test:e2e --filter @app/web
-```
-
-## 3단계. 테스트 명령에서 환경 변수 사용
-
-`package.json`에서 환경 변수를 읽게 하세요:
-
-```jsonc
-{
-  "scripts": {
-    "test:e2e": "playwright test --shard=$NANOOM_SHARD_INDEX/$NANOOM_SHARD_TOTAL"
-  }
-}
-```
-
-셸 래퍼로 써도 됩니다:
-
-```bash
-# test-e2e.sh
-playwright test --shard=$NANOOM_SHARD_INDEX/$NANOOM_SHARD_TOTAL
-```
-
-```jsonc
-{ "scripts": { "test:e2e": "./test-e2e.sh" } }
-```
-
-지원 러너:
-- **Jest**: `jest --shard=$NANOOM_SHARD_INDEX/$NANOOM_SHARD_TOTAL`
-- **Vitest**: `vitest --shard=$NANOOM_SHARD_INDEX/$NANOOM_SHARD_TOTAL`
-- **Playwright**: `playwright test --shard=$NANOOM_SHARD_INDEX/$NANOOM_SHARD_TOTAL`
-- **Cypress**: `cypress run --env shard=$NANOOM_SHARD_INDEX,totalShards=$NANOOM_SHARD_TOTAL`
-
-## 4단계. 확인
-
-샤딩된 프로젝트를 건드리는 PR을 올리면 Actions UI에 네 개 잡이 따로 뜹니다:
-
-```
-@ app/web → test:e2e [shard 1/4]
-@ app/web → test:e2e [shard 2/4]
-@ app/web → test:e2e [shard 3/4]
-@ app/web → test:e2e [shard 4/4]
-```
-
-각자 다른 부분집합을 실행하고, 해당 작업의 전체 CI 시간이 비례해서 줄어듭니다 (오버헤드 제외).
-
-## 팁
-
-- `shard: 2`로 시작해 러너가 놀면 늘리세요.
-- `concurrency`가 전체 그룹 매트릭스 항목 상한을 정합니다. 모든 샤드가 들어갈 만큼 충분히 크게 잡으세요.
-- 샤딩과 `isolate`를 같이 쓸 수 있습니다: 샤딩된 작업도 격리되면 샤드별로 전용 러너를 씁니다.
-
-## 관련 문서
-
-- [설정 레퍼런스: rules](/ko/docs/reference/configuration#rules) — 전체 필드 목록.
-- [CLI: nanoom run](/ko/docs/reference/cli#nanoom-run) — `--shard` / `--total-shards` 플래그.
+같은 규칙에서 한 작업을 샤드와 격리로 동시에 지정할 수 없습니다. 모호한 설정은 검증 단계에서 거부됩니다. 회귀 완료조건은 녹색으로 건너뛴 매트릭스가 아니라 예상한 모든 샤드 잡의 실제 실행과 성공입니다.

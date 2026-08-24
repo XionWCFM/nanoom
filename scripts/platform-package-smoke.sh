@@ -24,6 +24,14 @@ for target in linux-x64 linux-arm64 macos-x64 macos-arm64 windows-x64; do
   ' "$manifest" "$target" "$VERSION" "$os" "$cpu" "$binary"
 done
 
+node -e '
+  const fs = require("fs");
+  const [file, version] = process.argv.slice(1);
+  const pkg = JSON.parse(fs.readFileSync(file, "utf8"));
+  const mismatches = Object.entries(pkg.optionalDependencies || {}).filter(([, value]) => value !== version);
+  if (mismatches.length !== 0) throw new Error(`wrapper dependency versions do not match ${version}`);
+' "$ROOT/packages/cli/package.json" "$VERSION"
+
 node "$ROOT/.yarn/releases/yarn-4.9.1.cjs" --cwd "$ROOT" workspaces list --json | \
   jq -s -e '[.[].name] | contains(["@nanoom/cli", "@nanoom/cli-linux-x64", "@nanoom/cli-linux-arm64", "@nanoom/cli-macos-x64", "@nanoom/cli-macos-arm64", "@nanoom/cli-windows-x64"])' >/dev/null
 

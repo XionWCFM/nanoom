@@ -188,6 +188,27 @@ fn test_discover_yarn_workspaces_array_form() {
 }
 
 #[test]
+fn duplicate_workspace_names_are_rejected() {
+    let dir = tempdir().unwrap();
+    yarn_workspace_fixture(dir.path());
+    write_json(
+        &dir.path().join("packages/a/package.json"),
+        &package_json("duplicate", &[]),
+    );
+    write_json(
+        &dir.path().join("packages/b/package.json"),
+        &package_json("duplicate", &[]),
+    );
+
+    let error = Workspace::discover(&simple_config(&["packages/*"], &[]), dir.path())
+        .err()
+        .expect("duplicate package names must not overwrite graph nodes");
+    assert!(error
+        .to_string()
+        .contains("Duplicate workspace name 'duplicate'"));
+}
+
+#[test]
 fn test_discover_yarn_workspaces_object_form() {
     let dir = tempdir().unwrap();
     write_json(

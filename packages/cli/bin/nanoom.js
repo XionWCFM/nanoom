@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Entry point: resolves the platform-specific nanoom binary and execs it.
 const { spawn, spawnSync } = require('child_process');
+const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -45,31 +46,38 @@ function installedBinary(info) {
 
 function downloadBinary(info) {
   const version = process.env.NANOOM_VERSION || `v${require('../package.json').version}`;
+  if (!/^v[0-9A-Za-z.+-]+$/.test(version)) throw new Error(`Invalid nanoom version: ${version}`);
   const cache = path.join(os.homedir(), '.cache', 'nanoom', version, info.key);
   const exe = path.join(cache, process.platform === 'win32' ? 'nanoom.exe' : 'nanoom');
   if (fs.existsSync(exe)) return exe;
 
   fs.mkdirSync(cache, { recursive: true });
   const archive = path.join(cache, info.archive);
+  const temporaryArchive = `${archive}.tmp`;
+  const checksum = `${archive}.sha256`;
   const releaseBase = process.env.NANOOM_RELEASE_BASE_URL || `https://github.com/${repositorySlug()}/releases/download`;
   const url = `${releaseBase.replace(/\/$/, '')}/${version}/${info.archive}`;
-  const downloader = process.platform === 'win32' ? 'powershell' : 'curl';
-  const args = process.platform === 'win32'
-    ? ['-NoProfile', '-Command', `Invoke-WebRequest -Uri '${url}' -OutFile '${archive}'`]
-    : ['-fsSL', '--max-time', '30', url, '-o', archive];
-  const result = spawnSync(downloader, args, { stdio: 'inherit' });
+  const result = spawnSync('curl', ['-fsSL', '--max-time', '30', url, '-o', temporaryArchive], { stdio: 'inherit' });
   if (result.status !== 0) {
     throw new Error(`Unable to download nanoom binary from ${url}`);
   }
+  const checksumResult = spawnSync('curl', ['-fsSL', '--max-time', '30', `${url}.sha256`, '-o', checksum], { stdio: 'inherit' });
+  if (checksumResult.status !== 0) throw new Error(`Unable to download checksum from ${url}.sha256`);
 
-  if (process.platform === 'win32') {
-    const extracted = spawnSync('powershell', ['-NoProfile', '-Command', `Expand-Archive -Force '${archive}' '${cache}'`], { stdio: 'inherit' });
-    if (extracted.status !== 0) throw new Error('Unable to extract nanoom binary');
-  } else {
-    const extracted = spawnSync('tar', ['-xzf', archive, '-C', cache], { stdio: 'inherit' });
-    if (extracted.status !== 0) throw new Error('Unable to extract nanoom binary');
+  const expected = fs.readFileSync(checksum, 'utf8').trim().split(/\s+/)[0].toLowerCase();
+  const actual = crypto.createHash('sha256').update(fs.readFileSync(temporaryArchive)).digest('hex');
+  if (!/^[a-f0-9]{64}$/.test(expected) || actual !== expected) {
+    fs.rmSync(temporaryArchive, { force: true });
+    throw new Error(`Checksum verification failed for ${info.archive}`);
+  }
+  fs.renameSync(temporaryArchive, archive);
+
+  const extracted = spawnSync('tar', ['-xf', archive, '-C', cache], { stdio: 'inherit' });
+  if (extracted.status !== 0) throw new Error('Unable to extract nanoom binary');
+  if (process.platform !== 'win32') {
     fs.chmodSync(exe, 0o755);
   }
+  if (!fs.existsSync(exe)) throw new Error(`Archive did not contain ${path.basename(exe)}`);
   return exe;
 }
 

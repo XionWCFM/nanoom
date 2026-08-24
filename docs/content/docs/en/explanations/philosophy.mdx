@@ -27,7 +27,7 @@ We prefer false positives (run slightly more than needed) over false negatives (
 
 ## GitHub Actions native
 
-Outputs speak Actions dialect: `{ "include": [...] }` matrices, `$GITHUB_OUTPUT` result lines, event env vars exactly as Actions sets them. nanoom composes with the platform instead of replacing it.
+Outputs speak Actions dialect: `{ "include": [...] }` matrices and the `needs` object used by the status gate. GitHub event context stays at the Action boundary; the CLI receives explicit revisions.
 
 ## Graceful degradation
 

@@ -231,6 +231,33 @@ fn test_validate_shard_zero() {
 }
 
 #[test]
+fn test_validate_rejects_ambiguous_rules_and_invalid_globs() {
+    let duplicate_rule: Config = serde_json::from_value(serde_json::json!({
+        "group": {"ci": {"tasks": ["test"], "rules": [
+            {"name": "app"}, {"name": "app"}
+        ]}}
+    }))
+    .unwrap();
+    assert!(duplicate_rule.validate().is_err());
+
+    let conflicting_rule: Config = serde_json::from_value(serde_json::json!({
+        "group": {"ci": {"tasks": ["test"], "rules": [{
+            "name": "app", "isolate": ["test"],
+            "shard": [{"task": "test", "shard": 2}]
+        }]}}
+    }))
+    .unwrap();
+    assert!(conflicting_rule.validate().is_err());
+
+    let invalid_glob: Config = serde_json::from_value(serde_json::json!({
+        "group": {"ci": {"tasks": ["test"]}},
+        "globalDependencies": ["["]
+    }))
+    .unwrap();
+    assert!(invalid_glob.validate().is_err());
+}
+
+#[test]
 fn test_schema_generation() {
     let schema = nanoom::schema::generate().unwrap();
     let schema_str = serde_json::to_string(&schema).unwrap();

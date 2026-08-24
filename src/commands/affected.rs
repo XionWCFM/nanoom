@@ -1,7 +1,6 @@
 use crate::affected::{calculate_with_override, generate_matrix};
 use crate::error::Result;
 use clap::Args;
-use std::path::PathBuf;
 
 #[derive(Args, Debug, Clone)]
 pub struct AffectedArgs {
@@ -11,7 +10,7 @@ pub struct AffectedArgs {
     #[arg(long, help = "Head reference (defaults to HEAD)")]
     pub head: Option<String>,
 
-    #[arg(long, help = "Output format (json, text)")]
+    #[arg(long, value_parser = ["json", "text"], help = "Output format (json, text)")]
     pub format: Option<String>,
 
     #[arg(long, help = "Generate GitHub Actions matrices for all groups")]
@@ -19,9 +18,6 @@ pub struct AffectedArgs {
 
     #[arg(long, help = "Output matrix as JSON to stdout")]
     pub json: bool,
-
-    #[arg(long, help = "Config file path")]
-    pub config: Option<PathBuf>,
 }
 
 pub async fn execute(
@@ -73,7 +69,7 @@ pub async fn execute(
                 }
             }
         }
-        _ => {}
+        _ => unreachable!("clap validates affected output formats"),
     }
 
     Ok(())
@@ -145,11 +141,5 @@ mod tests {
         let result = mock_output();
         let json = serde_json::to_string_pretty(&result).unwrap();
         assert!(json.contains("has_change"));
-    }
-
-    #[test]
-    fn test_unknown_format_falls_through() {
-        // The _ => {} branch does nothing - test that it doesn't panic
-        let _ = ();
     }
 }
