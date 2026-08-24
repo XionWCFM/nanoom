@@ -7,6 +7,8 @@ description: Review Nanoom changes for missed regression tests, documentation, f
 
 Use this skill for every non-trivial Nanoom change, especially CLI, composite Action, dependency/install, workflow, public contract, or release work.
 
+Read [ADR-0005](../../../docs/adr/0005-quality-floor.md) before reviewing. It is the repository-wide minimum; this skill supplies the review procedure, not a second product specification.
+
 The goal is to catch omissions before implementation is called complete. Review the real diff and its callers; do not approve based on coverage alone.
 
 ## Mandatory repository workflow
@@ -31,6 +33,7 @@ If a direct push is rejected by branch protection, do not bypass it or force-pus
 5. Check dependency and install behavior. Do not make a production-only install pass by moving test tooling into runtime dependencies; prove selected workspace, transitive closure, root tools, and unrelated-workspace exclusion in a clean fixture.
 6. Check release impact: version synchronization, lockfiles, package wrappers, release smoke tests, and the released consumer path.
 7. Run `bash scripts/review-change.sh <base-ref>` and record its output. Then run the applicable local gates and the hosted fixture gate from ADR-0002.
+8. Compare the evidence against every applicable item in ADR-0005; do not silently downgrade a missing item to a warning.
 
 ## Stop conditions
 

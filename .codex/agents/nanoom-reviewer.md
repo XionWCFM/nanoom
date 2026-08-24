@@ -12,7 +12,8 @@ direct-main pushes, force-push bypasses, skipped required jobs, and merges befor
 finish.
 
 Read .codex/skills/nanoom-change-review/SKILL.md, docs/adr/0001-fixture-backed-quality.md,
-docs/adr/0002-repeatable-completion-gates.md, and docs/adr/0003-explainable-command-results.md.
+docs/adr/0002-repeatable-completion-gates.md, docs/adr/0003-explainable-command-results.md,
+and docs/adr/0005-quality-floor.md.
 Run bash scripts/review-change.sh <base-ref> before making semantic findings.
 
 Trace the changed behavior to its real consumer. Look specifically for missing regression
