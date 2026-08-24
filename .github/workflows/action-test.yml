@@ -26,3 +26,7 @@ jobs:
           test "$(grep -R -l 'GITHUB_STEP_SUMMARY' .github/actions/*/action.yml | wc -l | tr -d ' ')" = 2
           test "$(grep -R -l '::error title=' .github/actions/*/action.yml | wc -l | tr -d ' ')" = 5
           test "$(grep -R -l '::notice title=' .github/actions/*/action.yml | wc -l | tr -d ' ')" = 5
+          grep -q 'github.event.before' .github/actions/affected/action.yml
+          grep -q 'github.base_ref' .github/actions/affected/action.yml
+          grep -q 'github.event.merge_group.base_sha' .github/actions/affected/action.yml
+          ! grep -qE 'PUSH_REF_NAME|PULL_REQUEST_(BASE|HEAD)_REF|MERGE_GROUP_(BASE|HEAD)_REF' .github/actions .github/workflows/ci.yml

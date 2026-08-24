@@ -84,11 +84,6 @@ fn run_cli_parts(cwd: &Path, args: &[&str], envs: &[(&str, &str)]) -> (bool, Str
     cmd.current_dir(cwd).args(args);
 
     // Ensure no CI env leaks from parent process
-    cmd.env_remove("PUSH_REF_NAME");
-    cmd.env_remove("PULL_REQUEST_BASE_REF");
-    cmd.env_remove("PULL_REQUEST_HEAD_REF");
-    cmd.env_remove("MERGE_GROUP_BASE_REF");
-    cmd.env_remove("MERGE_GROUP_HEAD_REF");
 
     for (key, value) in envs {
         cmd.env(key, value);
@@ -201,6 +196,20 @@ fn test_affected_requires_config() {
 }
 
 #[test]
+fn test_affected_requires_explicit_base() {
+    let dir = tempdir().unwrap();
+    setup_monorepo(dir.path());
+    init_git_repo(dir.path());
+
+    let (success, output) = run_cli(dir.path(), &["affected", "--json"], &[]);
+    assert!(!success);
+    assert!(
+        output.contains("requires --base"),
+        "unexpected output: {output}"
+    );
+}
+
+#[test]
 fn test_affected_pull_request_event_with_changes() {
     let dir = tempdir().unwrap();
     setup_monorepo(dir.path());
@@ -228,11 +237,11 @@ fn test_affected_pull_request_event_with_changes() {
         .output()
         .unwrap();
 
-    let envs = [
-        ("PULL_REQUEST_BASE_REF", "main"),
-        ("PULL_REQUEST_HEAD_REF", "feature"),
-    ];
-    let (success, output) = run_cli(dir.path(), &["affected", "--json"], &envs);
+    let (success, output) = run_cli(
+        dir.path(),
+        &["affected", "--json", "--base", "main", "--head", "feature"],
+        &[],
+    );
 
     assert!(success, "command failed: {}", output);
 
@@ -260,11 +269,11 @@ fn test_affected_no_changes_between_same_ref() {
     setup_monorepo(dir.path());
     init_git_repo(dir.path());
 
-    let envs = [
-        ("PULL_REQUEST_BASE_REF", "main"),
-        ("PULL_REQUEST_HEAD_REF", "main"),
-    ];
-    let (success, output) = run_cli(dir.path(), &["affected"], &envs);
+    let (success, output) = run_cli(
+        dir.path(),
+        &["affected", "--base", "main", "--head", "main"],
+        &[],
+    );
     assert!(success, "command failed: {}", output);
     assert!(output.contains("Has changes: false") || output.contains("\"has_change\":false"));
 }
@@ -295,11 +304,13 @@ fn test_affected_matrix_output() {
         .output()
         .unwrap();
 
-    let envs = [
-        ("PULL_REQUEST_BASE_REF", "main"),
-        ("PULL_REQUEST_HEAD_REF", "feature"),
-    ];
-    let (success, output) = run_cli(dir.path(), &["affected", "--matrix", "ci"], &envs);
+    let (success, output) = run_cli(
+        dir.path(),
+        &[
+            "affected", "--matrix", "ci", "--base", "main", "--head", "feature",
+        ],
+        &[],
+    );
     assert!(success, "command failed: {}", output);
 
     let matrix: serde_json::Value =
@@ -318,8 +329,11 @@ fn test_affected_push_event_unknown_branch_fails_gracefully() {
     setup_monorepo(dir.path());
     init_git_repo(dir.path());
 
-    let envs = [("PUSH_REF_NAME", "nonexistent-branch")];
-    let (success, _output) = run_cli(dir.path(), &["affected"], &envs);
+    let (success, _output) = run_cli(
+        dir.path(),
+        &["affected", "--base", "nonexistent-branch"],
+        &[],
+    );
     assert!(!success, "unknown branch should produce an error");
 }
 
@@ -446,9 +460,7 @@ fn test_global_cwd_flag_works_from_outside_repo() {
     cmd.current_dir(elsewhere.path())
         .arg("-C")
         .arg(repo.path())
-        .args(["affected", "--json"])
-        .env("PULL_REQUEST_BASE_REF", "main")
-        .env("PULL_REQUEST_HEAD_REF", "feature");
+        .args(["affected", "--json", "--base", "main", "--head", "feature"]);
     let output = cmd.output().expect("failed to run nanoom binary");
 
     assert!(
@@ -523,11 +535,11 @@ fn test_affected_preserves_all_entries_when_exceeding_concurrency() {
         .output()
         .unwrap();
 
-    let envs = [
-        ("PULL_REQUEST_BASE_REF", "main"),
-        ("PULL_REQUEST_HEAD_REF", "feature"),
-    ];
-    let (success, output) = run_cli(dir.path(), &["affected", "--json"], &envs);
+    let (success, output) = run_cli(
+        dir.path(),
+        &["affected", "--json", "--base", "main", "--head", "feature"],
+        &[],
+    );
     assert!(success, "command failed: {}", output);
 
     let parsed: serde_json::Value =
@@ -598,11 +610,7 @@ fn test_run_executes_affected_workspace_script_end_to_end() {
         .output()
         .unwrap();
 
-    let envs = [
-        ("PULL_REQUEST_BASE_REF", "main"),
-        ("PULL_REQUEST_HEAD_REF", "feature"),
-    ];
-    let (success, output) = run_cli(dir.path(), &["run", "ci", "test"], &envs);
+    let (success, output) = run_cli(dir.path(), &["run", "ci", "test", "--all"], &[]);
     assert!(success, "run failed: {}", output);
     assert!(
         output.contains("pkg-a-e2e"),

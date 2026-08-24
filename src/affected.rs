@@ -45,15 +45,22 @@ pub async fn calculate_with_override(
     let git_root = crate::git::detect_git_root(cwd)?;
     let git = GitRepo::open(&git_root)?;
 
-    let event = match (base, head) {
-        (Some(base), Some(head)) => GitEvent::PullRequest {
-            base_ref: base.to_string(),
-            head_ref: head.to_string(),
+    let event = match base {
+        Some(base) => match head {
+            Some(head) => GitEvent::PullRequest {
+                base_ref: base.to_string(),
+                head_ref: head.to_string(),
+            },
+            None => GitEvent::Push {
+                ref_name: base.to_string(),
+            },
         },
-        (Some(base), None) => GitEvent::Push {
-            ref_name: base.to_string(),
-        },
-        (None, _) => GitEvent::from_env()?,
+        None => {
+            return Err(crate::error::Error::GitError(
+                "affected requires --base; GitHub event context must be resolved by the action"
+                    .into(),
+            ))
+        }
     };
     let mode = ComparisonMode::from_env();
     let base_commit = resolve_base_commit(&git, &event, mode)?;
