@@ -28,7 +28,8 @@ pub async fn execute(args: InstallArgs, config: &Config, base_cwd: &std::path::P
     let cwd = base_cwd;
 
     let pm = detect_package_manager(cwd, args.package_manager.as_deref())?;
-    eprintln!("Using package manager: {}", pm);
+    eprintln!("◆ nanoom install");
+    eprintln!("  Inputs: package manager={pm}, cwd={}", cwd.display());
 
     // Lockfiles belong to the monorepo root for pnpm, yarn, and npm workspaces.
     // Installing independently inside every package is both slower and fails
@@ -77,7 +78,8 @@ pub async fn execute(args: InstallArgs, config: &Config, base_cwd: &std::path::P
             "npm focused install is unsupported; use Yarn Berry or pnpm".into(),
         ));
     }
-    eprintln!("Installing root dependencies...");
+    eprintln!("  Why: install the root lockfile dependencies before workspace tasks");
+    eprintln!("  Scope: root dependencies");
     run_install(&pm, cwd, args.json).await?;
 
     if !args.workspace_install {

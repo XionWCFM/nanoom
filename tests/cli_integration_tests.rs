@@ -322,7 +322,7 @@ fn test_affected_no_changes_between_same_ref() {
         &[],
     );
     assert!(success, "command failed: {}", output);
-    assert!(output.contains("Has changes: false") || output.contains("\"has_change\":false"));
+    assert!(output.contains("Result: no changes found") || output.contains("\"has_change\":false"));
 }
 
 #[test]
@@ -550,7 +550,7 @@ fn test_affected_base_flag_overrides_missing_env() {
         "--base must work without event env vars: {}",
         output
     );
-    assert!(output.contains("Has changes: true") || output.contains("\"has_change\":true"));
+    assert!(output.contains("Result: changes found") || output.contains("\"has_change\":true"));
 }
 
 #[test]

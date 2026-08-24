@@ -40,9 +40,9 @@ nanoom --version
 
 ```bash
 curl -fsSL -o nanoom.tar.gz \
-  https://github.com/XionWCFM/nanoom/releases/download/v0.2.5/nanoom-macos-arm64.tar.gz
+  https://github.com/XionWCFM/nanoom/releases/download/v0.2.6/nanoom-macos-arm64.tar.gz
 curl -fsSL -o nanoom.tar.gz.sha256 \
-  https://github.com/XionWCFM/nanoom/releases/download/v0.2.5/nanoom-macos-arm64.tar.gz.sha256
+  https://github.com/XionWCFM/nanoom/releases/download/v0.2.6/nanoom-macos-arm64.tar.gz.sha256
 
 shasum -a 256 -c nanoom.tar.gz.sha256
 tar -xzf nanoom.tar.gz && chmod +x nanoom && ./nanoom --version
@@ -53,7 +53,7 @@ tar -xzf nanoom.tar.gz && chmod +x nanoom && ./nanoom --version
 릴리스 태그로 고정한 공개 명령 Action을 사용하세요. 릴리스 체크섬을 검증한 뒤 nanoom을 실행합니다:
 
 ```yaml
-- uses: XionWCFM/nanoom/.github/actions/affected@v0.2.5
+- uses: XionWCFM/nanoom/.github/actions/affected@v0.2.6
 ```
 
 ## 에디터 자동완성 켜기

@@ -126,7 +126,11 @@ pub async fn execute(args: RunArgs, config: &Config, cwd: &std::path::Path) -> R
                 })
             );
         } else {
-            println!("No projects to run task '{}' on", args.task);
+            println!("◆ nanoom run");
+            println!(
+                "  Result: no workspace matched group={}, task={}",
+                args.group, args.task
+            );
         }
         return Ok(());
     }
@@ -141,7 +145,8 @@ pub async fn execute(args: RunArgs, config: &Config, cwd: &std::path::Path) -> R
 
     if !args.json {
         eprintln!(
-            "Running task '{}' on {} project(s)",
+            "◆ nanoom run\n  Selection: group={}, task={}, projects={}",
+            args.group,
             args.task,
             projects.len()
         );

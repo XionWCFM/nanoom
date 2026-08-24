@@ -3,13 +3,13 @@ title: GitHub Actions reference
 description: Public composite Action inputs, outputs, and contracts
 ---
 
-Pin public Actions to a release tag: `XionWCFM/nanoom/.github/actions/<name>@v0.2.5`. The internal setup script is loaded from that same ref; it never follows `main`.
+Pin public Actions to a release tag: `XionWCFM/nanoom/.github/actions/<name>@v0.2.6`. The internal setup script is loaded from that same ref; it never follows `main`.
 
 ## `affected`
 
 ```yaml
 - id: affected
-  uses: XionWCFM/nanoom/.github/actions/affected@v0.2.5
+  uses: XionWCFM/nanoom/.github/actions/affected@v0.2.6
   with:
     cwd: .
     config: nanoom.config.json
@@ -27,7 +27,7 @@ Outputs are `has_change`, `groups`, and `result`. `groups` maps each configured 
 ## `install`
 
 ```yaml
-- uses: XionWCFM/nanoom/.github/actions/install@v0.2.5
+- uses: XionWCFM/nanoom/.github/actions/install@v0.2.6
   with:
     matrix: ${{ toJSON(matrix) }}
     packageManager: yarn
@@ -39,7 +39,7 @@ Outputs are `has_change`, `groups`, and `result`. `groups` maps each configured 
 ## `run`
 
 ```yaml
-- uses: XionWCFM/nanoom/.github/actions/run@v0.2.5
+- uses: XionWCFM/nanoom/.github/actions/run@v0.2.6
   with:
     matrix: ${{ toJSON(matrix) }}
     packageManager: yarn
@@ -51,7 +51,7 @@ The required `matrix` entry supplies group, workspace, task, shard, and isolate 
 ## `status`
 
 ```yaml
-- uses: XionWCFM/nanoom/.github/actions/status@v0.2.5
+- uses: XionWCFM/nanoom/.github/actions/status@v0.2.6
   with:
     needs: ${{ toJSON(needs) }}
     affectedJob: affected
@@ -62,7 +62,7 @@ The required `matrix` entry supplies group, workspace, task, shard, and isolate 
 
 `needs` is required. The other defaults are shown above except `format`, whose default is `text`. This Action uses `jq` directly and does not install the CLI. It succeeds only for `hasChange=true/matrix=success` or `hasChange=false/matrix=skipped`; all inconsistent, cancelled, or failed combinations fail. Its `result` output includes the observed and expected states and the decision reason.
 
-All four Actions print their canonical result as a final JSON log group and derive notices and Step Summaries from it.
+All four Actions print one always-visible, flat log in the order `Inputs → Resolved values → Why → Command → Result → Action outputs → Final JSON`. They derive notices and Step Summaries from the same canonical result. Custom `::group::` folding is not used.
 
 ## Matrix entry
 

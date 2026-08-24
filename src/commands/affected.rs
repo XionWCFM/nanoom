@@ -62,22 +62,29 @@ pub async fn execute(
             println!("{}", serde_json::to_string_pretty(&result)?);
         }
         "text" => {
-            println!("Has changes: {}", result.has_change);
+            println!("◆ nanoom affected");
+            println!(
+                "  Result: {}",
+                if result.has_change {
+                    "changes found"
+                } else {
+                    "no changes found"
+                }
+            );
             if let Some(diagnostics) = &result.diagnostics {
+                println!("  Comparison: {}", diagnostics.comparison.mode);
                 println!(
-                    "Comparison ({}): {} -> {}",
-                    diagnostics.comparison.mode,
-                    diagnostics.comparison.base_commit,
-                    diagnostics.comparison.head_commit
+                    "  Commits: {} -> {}",
+                    diagnostics.comparison.base_commit, diagnostics.comparison.head_commit
                 );
-                println!("Changed files: {}", diagnostics.changed_files.len());
+                println!("  Changed files: {}", diagnostics.changed_files.len());
                 for file in &diagnostics.changed_files {
                     println!("  - {file}");
                 }
             }
             for (group_name, group_output) in &result.group {
                 println!(
-                    "\nGroup: {} ({} entries)",
+                    "\n  Matrix group: {} ({} entries)",
                     group_name,
                     group_output.workspaces.len()
                 );
@@ -91,14 +98,14 @@ pub async fn execute(
                         .filter(|&b| b)
                         .map(|_| " [isolated]")
                         .unwrap_or_default();
-                    println!("  - {}: {} [{}]", ws.name, ws.task, ws.path);
+                    println!("    - {} / {} [{}]", ws.name, ws.task, ws.path);
                     if let Some(reason) = result
                         .diagnostics
                         .as_ref()
                         .and_then(|diagnostics| diagnostics.reasons.get(&ws.name))
                     {
                         println!(
-                            "    reason: {}",
+                            "      why: {}",
                             match reason.kind.as_str() {
                                 "direct" =>
                                     format!("direct change: {}", reason.changed_files.join(", ")),
@@ -179,12 +186,11 @@ mod tests {
     fn test_format_text_branch() {
         let result = mock_output();
         let output = format!(
-            "Has changes: {}\nGroup: ci ({} entries)",
-            result.has_change,
+            "◆ nanoom affected\n  Result: changes found\n  Matrix group: ci ({} entries)",
             result.group["ci"].workspaces.len()
         );
-        assert!(output.contains("Has changes: true"));
-        assert!(output.contains("Group: ci (1 entries)"));
+        assert!(output.contains("Result: changes found"));
+        assert!(output.contains("Matrix group: ci (1 entries)"));
     }
 
     #[test]

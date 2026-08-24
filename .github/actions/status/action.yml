@@ -32,9 +32,9 @@ runs:
         h=$(jq -r --arg n "$AFFECTED" --arg g "$GROUP" '.[$n].outputs.groups // "{}" | fromjson | .[$g].hasChange // false' <<<"$NEEDS")
         [[ "$FORMAT" == text || "$FORMAT" == markdown ]] || { echo "::error title=Invalid status format::format must be text or markdown, got '$FORMAT'."; exit 2; }
         printf '%s◆ nanoom status%s\n' "$bold$cyan" "$reset"
-        printf '  affected job: %s%s%s (%s.hasChange=%s)\n' "$green" "$a" "$reset" "$GROUP" "$h"
+        printf '  Observed values\n    affected job: %s (%s.hasChange=%s)\n' "$a" "$GROUP" "$h"
         if [[ "$m" == success ]]; then color=$green; else color=$red; fi
-        printf '  matrix job:   %s%s%s\n' "$color" "$m" "$reset"
+        printf '    matrix job: %s\n' "$m"
         expected=$([[ "$h" == true ]] && echo success || echo skipped)
         if [[ "$a" != success ]]; then reason="affected calculation failed"
         elif [[ "$m" == "$expected" ]]; then reason=$([[ "$h" == true ]] && echo 'changes required a matrix and every entry succeeded' || echo 'no changes required work and the matrix was correctly skipped')
@@ -42,10 +42,9 @@ runs:
         fi
         result=$(jq -cn --arg affectedJob "$AFFECTED" --arg affectedResult "$a" --arg matrixJob "$MATRIX" --arg matrixResult "$m" --arg group "$GROUP" --argjson hasChange "$h" --arg expectedMatrixResult "$expected" --arg reason "$reason" '{affectedJob:$affectedJob, affectedResult:$affectedResult, matrixJob:$matrixJob, matrixResult:$matrixResult, group:$group, hasChange:$hasChange, expectedMatrixResult:$expectedMatrixResult, reason:$reason, status:(if $affectedResult == "success" and $matrixResult == $expectedMatrixResult then "success" else "failure" end)}')
         echo "result=$result" >> "$GITHUB_OUTPUT"
-        printf '  reason:       %s\n' "$reason"
-        printf '::group::%s◆ final JSON%s\n' "$bold$cyan" "$reset"
+        printf '  Expected values\n    matrix job: %s\n  Why\n    %s\n  Final JSON\n' "$expected" "$reason"
         jq . <<<"$result"
-        echo "::endgroup::"
+        printf '  Action output\n    result=<same canonical JSON above>\n'
         {
           echo '### nanoom workflow status'
           echo

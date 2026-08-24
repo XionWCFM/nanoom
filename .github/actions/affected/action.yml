@@ -40,15 +40,14 @@ runs:
       run: |
         set -euo pipefail
         trap 'echo "::error title=Affected calculation failed::Review the error above. Verify cwd/config and the GitHub event comparison refs."' ERR
-        cyan=$'\033[36m'; green=$'\033[32m'; yellow=$'\033[33m'; bold=$'\033[1m'; dim=$'\033[2m'; reset=$'\033[0m'
+        cyan=$'\033[36m'; green=$'\033[32m'; yellow=$'\033[33m'; bold=$'\033[1m'; reset=$'\033[0m'
         started=$(date +%s)
-        printf '::group::%s◆ nanoom affected%s\n' "$bold$cyan" "$reset"
-        printf '  %sResolving changed workspaces%s\n' "$dim" "$reset"
-        printf '  %s✓%s working directory: %s\n' "$green" "$reset" "$CWD"
-        printf '  %s✓%s config: %s\n' "$green" "$reset" "$CONFIG"
-        printf '  %srequested comparison:%s %s -> %s\n' "$dim" "$reset" "${BASE:-event-derived}" "${HEAD:-event-derived}"
-        printf '  %s✓%s selection: all configured groups\n' "$green" "$reset"
-        printf '  %s✓%s mechanism: %schanged files → dependency graph → group rules/tasks → matrix%s\n' "$green" "$reset" "$dim" "$reset"
+        printf '%s◆ nanoom affected%s\n' "$bold$cyan" "$reset"
+        printf '  Inputs\n'
+        printf '    working directory: %s\n' "$CWD"
+        printf '    config: %s\n' "$CONFIG"
+        printf '    requested comparison: %s -> %s\n' "${BASE:-event-derived}" "${HEAD:-event-derived}"
+        printf '    selection: all configured groups\n'
         if [[ -z "$BASE" ]]; then BASE="$EVENT_BASE"; fi
         if [[ -z "$HEAD" ]]; then HEAD="$EVENT_HEAD"; fi
         [[ -n "$BASE" ]] || { echo '::error title=Missing comparison base::affected could not resolve a base revision from inputs or the GitHub event.'; exit 2; }
@@ -64,8 +63,7 @@ runs:
         fi
         args=(-C "$CWD" -c "$CONFIG" affected --report --base "$BASE" --head "$HEAD")
         printf -v command '%q ' nanoom "${args[@]}"
-        printf '  %snanoom command:%s %s\n' "$dim" "$reset" "${command% }"
-        echo "::endgroup::"
+        printf '  Command\n    %s\n' "${command% }"
         report=$(nanoom "${args[@]}")
         matrix=$(jq -c .matrix <<<"$report")
         groups=$(jq -c 'with_entries(.value = {hasChange: ((.value.include | length) > 0), matrix: .value})' <<<"$matrix")
@@ -80,25 +78,25 @@ runs:
         mode=$(jq -r .affected.diagnostics.comparison.mode <<<"$report")
         changed=$(jq '.affected.diagnostics.changedFiles | length' <<<"$report")
         echo "::notice title=Affected result::has_change=$has; $count matrix entries will run (${elapsed}s)"
-        printf '::group::%s◆ affected decision (%s entries)%s\n' "$bold$cyan" "$count" "$reset"
-        printf '  %s✓%s resolved base commit: %s\n' "$green" "$reset" "$base_commit"
-        printf '  %s✓%s resolved head commit: %s\n' "$green" "$reset" "$head_commit"
-        printf '  %s✓%s comparison mode: %s\n' "$green" "$reset" "$mode"
-        printf '  %s✓%s changed files: %s\n' "$green" "$reset" "$changed"
+        printf '%s◆ affected result (%s entries)%s\n' "$bold$cyan" "$count" "$reset"
+        printf '  Resolved values\n'
+        printf '    base commit: %s\n' "$base_commit"
+        printf '    head commit: %s\n' "$head_commit"
+        printf '    comparison mode: %s\n' "$mode"
+        printf '    changed files: %s\n' "$changed"
         jq -r '.affected.diagnostics.changedFiles[] | "    · " + .' <<<"$report"
-        printf '  %sselection reasons:%s\n' "$dim" "$reset"
+        printf '  Why these workspaces\n'
         jq -r '.affected.diagnostics.reasons | to_entries[] | "    · \(.key): " + (if .value.kind == "direct" then "direct change: " + (.value.changedFiles | join(", ")) elif .value.kind == "globalDependency" then "global dependency: " + (.value.changedFiles | join(", ")) else "transitive dependency: " + (.value.dependencyPath | join(" -> ")) end)' <<<"$report"
-        printf '  %smatrix plan:%s\n' "$dim" "$reset"
+        printf '  Matrix plan\n'
         if (( count )); then
           jq -r 'to_entries[] as $group | $group.value.include[] | "    · \($group.key) / \(.name) / \(.task)" + (if .shard then " / shard \(.shard)/\(.totalShards)" else "" end) + (if .isolate then " / isolated" else "" end)' <<<"$matrix"
         else
-          printf '  %s─ no workspace tasks matched; downstream matrix will be skipped%s\n' "$yellow" "$reset"
+          printf '    no workspace tasks matched; downstream matrix will be skipped\n'
         fi
-        printf '  %s✓ matrix ready%s (%ss)\n' "$green" "$reset" "$elapsed"
-        echo "::endgroup::"
-        printf '::group::%s◆ final JSON%s\n' "$bold$cyan" "$reset"
+        printf '  Result\n    has_change=%s; matrix entries=%s; elapsed=%ss\n' "$has" "$count" "$elapsed"
+        printf '  Final JSON\n'
         jq . <<<"$report"
-        echo "::endgroup::"
+        printf '  Action outputs\n    has_change=%s\n    groups=%s\n    result=<same canonical JSON above>\n' "$has" "$groups"
         {
           echo "### nanoom affected"
           echo
