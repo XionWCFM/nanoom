@@ -137,6 +137,8 @@ fn cache_key_json_is_a_single_json_object() {
         .as_str()
         .unwrap()
         .starts_with("nanoom-turbo-test-"));
+    assert_eq!(value["runner"], "turbo");
+    assert!(value["reason"].as_str().is_some());
     assert!(stderr.is_empty());
 }
 
@@ -215,6 +217,15 @@ fn test_affected_requires_explicit_base() {
 fn test_affected_pull_request_event_with_changes() {
     let dir = tempdir().unwrap();
     setup_monorepo(dir.path());
+    write_json(
+        &dir.path().join("packages/pkg-b/package.json"),
+        &serde_json::json!({
+            "name": "pkg-b",
+            "version": "1.0.0",
+            "dependencies": { "pkg-a": "^1.0.0" },
+            "scripts": { "test": "exit 0" }
+        }),
+    );
     init_git_repo(dir.path());
 
     // Simulate a PR: commit changes on a feature branch after base exists on main.
@@ -241,7 +252,9 @@ fn test_affected_pull_request_event_with_changes() {
 
     let (success, output) = run_cli(
         dir.path(),
-        &["affected", "--json", "--base", "main", "--head", "feature"],
+        &[
+            "affected", "--report", "--base", "main", "--head", "feature",
+        ],
         &[],
     );
 
@@ -250,8 +263,34 @@ fn test_affected_pull_request_event_with_changes() {
     let parsed: serde_json::Value =
         serde_json::from_str(output.trim()).expect("invalid JSON output");
 
-    assert_eq!(parsed["has_change"], true);
-    let workspaces = parsed["group"]["ci"]["workspaces"]
+    let affected = &parsed["affected"];
+    assert_eq!(affected["has_change"], true);
+    assert_eq!(
+        affected["diagnostics"]["comparison"]["baseCommit"]
+            .as_str()
+            .unwrap()
+            .len(),
+        40
+    );
+    assert_eq!(
+        affected["diagnostics"]["comparison"]["headCommit"]
+            .as_str()
+            .unwrap()
+            .len(),
+        40
+    );
+    assert_eq!(
+        affected["diagnostics"]["reasons"]["pkg-a"]["kind"],
+        "direct"
+    );
+    assert_eq!(
+        affected["diagnostics"]["reasons"]["pkg-b"],
+        serde_json::json!({
+            "kind": "transitiveDependent",
+            "dependencyPath": ["pkg-b", "pkg-a"]
+        })
+    );
+    let workspaces = affected["group"]["ci"]["workspaces"]
         .as_array()
         .expect("ci group missing");
     let names: Vec<&str> = workspaces
@@ -263,6 +302,12 @@ fn test_affected_pull_request_event_with_changes() {
         "pkg-a should be affected: {:?}",
         names
     );
+    assert!(
+        names.contains(&"pkg-b"),
+        "pkg-b should be transitively affected: {:?}",
+        names
+    );
+    assert!(parsed["matrix"]["ci"]["include"].is_array());
 }
 
 #[test]
@@ -689,8 +734,14 @@ fn test_run_executes_affected_workspace_script_end_to_end() {
         .output()
         .unwrap();
 
-    let (success, output) = run_cli(dir.path(), &["run", "ci", "test", "--all"], &[]);
+    let (success, stdout, stderr) =
+        run_cli_parts(dir.path(), &["run", "ci", "test", "--all", "--json"], &[]);
+    let output = format!("{stdout}{stderr}");
     assert!(success, "run failed: {}", output);
+    let result: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(result["status"], "success");
+    assert_eq!(result["selection"], "all");
+    assert!(result["reason"].as_str().is_some());
     assert!(
         output.contains("pkg-a-e2e"),
         "script did not execute: {}",
@@ -707,13 +758,62 @@ fn test_run_executes_affected_workspace_script_end_to_end() {
 fn test_install_handles_root_monorepo_without_workspace_lockfiles() {
     let dir = tempdir().unwrap();
     setup_monorepo(dir.path());
-    let (success, output) = run_cli(dir.path(), &["install"], &[]);
+    let (success, stdout, stderr) = run_cli_parts(dir.path(), &["install", "--json"], &[]);
+    let output = format!("{stdout}{stderr}");
     assert!(success, "install failed: {}", output);
+    let result: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(result["status"], "success");
+    assert_eq!(result["scope"]["root"], true);
+    assert!(result["reason"].as_str().is_some());
     assert!(dir.path().join("package-lock.json").exists());
     assert!(
         output.contains("Executing install command") && output.contains("npm"),
         "resolved install command was not logged: {}",
         output
+    );
+}
+
+#[test]
+fn test_affected_report_explains_global_dependency_selection() {
+    let dir = tempdir().unwrap();
+    setup_monorepo(dir.path());
+    init_git_repo(dir.path());
+    Command::new("git")
+        .arg("-C")
+        .arg(dir.path())
+        .args(["checkout", "-b", "feature"])
+        .output()
+        .unwrap();
+    fs::write(dir.path().join("global.lock"), "changed").unwrap();
+    Command::new("git")
+        .arg("-C")
+        .arg(dir.path())
+        .args(["add", "."])
+        .output()
+        .unwrap();
+    Command::new("git")
+        .arg("-C")
+        .arg(dir.path())
+        .args(["commit", "-m", "global change", "--no-gpg-sign"])
+        .output()
+        .unwrap();
+
+    let (success, stdout, stderr) = run_cli_parts(
+        dir.path(),
+        &[
+            "affected", "--report", "--base", "main", "--head", "feature",
+        ],
+        &[],
+    );
+    assert!(success, "affected failed: {stderr}");
+    let report: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(
+        report["affected"]["diagnostics"]["reasons"]["pkg-a"],
+        serde_json::json!({"kind": "globalDependency", "changedFiles": ["global.lock"]})
+    );
+    assert_eq!(
+        report["affected"]["diagnostics"]["reasons"]["pkg-b"]["kind"],
+        "globalDependency"
     );
 }
 

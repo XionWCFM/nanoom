@@ -11,7 +11,7 @@ steps:
   - uses: actions/checkout@v4
     with: { fetch-depth: 100 }
   - id: affected
-    uses: XionWCFM/nanoom/.github/actions/affected@v0.2.3
+    uses: XionWCFM/nanoom/.github/actions/affected@v0.2.5
 ```
 
 신뢰할 수 없는 포크 코드를 실행할 때 `pull_request_target`을 사용하지 마세요. 일반 포크 `pull_request`에는 저장소 시크릿이 전달되지 않습니다. install/run을 비공개 토큰 없이 실행하거나 시크릿이 필요한 잡을 동일 저장소 PR로 제한하세요.

@@ -16,10 +16,10 @@ Work is complete only when every gate below passes for the same source commit an
 | G1 deterministic local | `bash scripts/verify-completion.sh --local` passes twice from a clean checkout without changing tracked files | two command logs and commit SHA |
 | G2 producer CI | Test on Linux/macOS/Windows, lint/format, coverage, docs build, Action contract, build, and the in-repo fixture jobs all conclude `success` | nanoom workflow URL and commit SHA |
 | G3 release contract | tag equals Cargo, lockfile, wrapper, and all platform package versions; five archives, checksums, and Sigstore bundles verify; published binaries report that version; npm wrapper and optional packages use the exact same version | release URL, release workflow URL, npm version |
-| G4 real consumer | nanoom-fixtures uses the released Action/binary path; `affected` succeeds; at least four non-skipped `run` matrix jobs succeed; `status` succeeds | fixture run ID accepted by `NANOOM_FIXTURE_RUN_ID=<id> bash scripts/verify-completion.sh` |
+| G4 real consumer | nanoom-fixtures uses the released Action/binary path; a synthetic shared-workspace commit produces exactly shared, core shard 1/2, core shard 2/2, and app with direct/transitive reasons; every focused install proves root dev tools, selected workspace, dependency closure, and unrelated-workspace exclusion; all four `run` jobs and `status` succeed | fixture run ID accepted by `NANOOM_FIXTURE_RUN_ID=<id> bash scripts/verify-completion.sh` plus the fixture assertion logs |
 | G5 merge protection | the stable producer and consumer aggregate checks are required on `main`; the implementation PR is merged only after G1-G4 | branch-rule output and merged PR URL |
 
-The four fixture entries are specification-derived: shared, app, and two core shards. A fixture run with `run=skipped`, fewer than four run jobs, an unpublished branch binary, or a source-tree-only Action is not completion.
+The four fixture entries are specification-derived: shared, app, and two core shards. A fixture run with `run=skipped`, fewer than four run jobs, an unpublished branch binary, a source-tree-only Action, missing commit/reason diagnostics, or an unverified focused install is not completion.
 
 ## Failure and retry policy
 
@@ -37,6 +37,8 @@ The four fixture entries are specification-derived: shared, app, and two core sh
 | npm/GitHub binary mismatch | exact version synchronization, committed Cargo lockfile, checksum-before-extract smoke test |
 | Action resolves moving internal code | scripts loaded from the checked-out Action ref; contract check forbids `@main` self-reference |
 | matrix silently does no work | hosted gate requires at least four successful `run` jobs and successful aggregate status |
+| affected reason drifts from dependency graph | fixture asserts the exact direct and transitive dependency paths from a synthetic shared-only commit |
+| focused install accidentally becomes production-only or leaks all workspaces | each fixture matrix job asserts root dev tools, the selected dependency closure, and absence of an ignored unrelated workspace |
 | docs describe removed contracts | docs build is required; contract changes update reference pages in the same PR |
 
 ## Consequences

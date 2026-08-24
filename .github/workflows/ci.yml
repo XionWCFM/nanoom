@@ -122,6 +122,7 @@ jobs:
     outputs:
       has_change: ${{ steps.affected.outputs.has_change }}
       groups: ${{ steps.affected.outputs.groups }}
+      result: ${{ steps.affected.outputs.result }}
     env:
       NANOOM_LOCAL_BINARY: ${{ github.workspace }}/target/release/nanoom
     steps:
@@ -143,12 +144,20 @@ jobs:
       - name: Assert transitive affected matrix
         env:
           GROUPS: ${{ steps.affected.outputs.groups }}
+          RESULT: ${{ steps.affected.outputs.result }}
         run: |
           echo "$GROUPS" | jq -e '[.ci.matrix.include[].name] | sort == ["@fixture/app", "@fixture/core", "@fixture/shared", "@fixture/shared"]' >/dev/null
           echo "$GROUPS" | jq -e '.ci.hasChange == true' >/dev/null
           echo "$GROUPS" | jq -e '[.ci.matrix.include[] | select(.name == "@fixture/shared" and .shard == 1)] | length == 1' >/dev/null
           echo "$GROUPS" | jq -e '[.ci.matrix.include[] | select(.name == "@fixture/shared" and .shard == 2)] | length == 1' >/dev/null
           echo "$GROUPS" | jq -e '[.ci.matrix.include[] | select(.name == "@fixture/app" and .isolate == true)] | length == 1' >/dev/null
+          echo "$RESULT" | jq -e '
+            (.affected.diagnostics.comparison.baseCommit | length) == 40 and
+            (.affected.diagnostics.comparison.headCommit | length) == 40 and
+            .affected.diagnostics.reasons["@fixture/shared"].kind == "direct" and
+            .affected.diagnostics.reasons["@fixture/core"].dependencyPath == ["@fixture/core", "@fixture/shared"] and
+            .affected.diagnostics.reasons["@fixture/app"].dependencyPath == ["@fixture/app", "@fixture/core", "@fixture/shared"]
+          ' >/dev/null
 
   fixture-run:
     name: Fixture ${{ matrix.name }} ${{ matrix.task }} shard-${{ matrix.shard || 0 }}
@@ -170,7 +179,8 @@ jobs:
         run: cargo build --locked --release
       - name: Create Yarn Berry fixture
         run: bash .github/test-fixtures/setup-fixture.sh --shards --isolate --change
-      - uses: ./.github/actions/install
+      - id: install
+        uses: ./.github/actions/install
         with:
           version: local
           cwd: .fixture
@@ -179,13 +189,22 @@ jobs:
       - name: Verify root and workspace dependencies
         shell: bash
         run: node .fixture/verify-install.js "$(jq -r .name <<< '${{ toJSON(matrix) }}')"
-      - uses: ./.github/actions/run
+      - name: Verify install result
+        env:
+          RESULT: ${{ steps.install.outputs.result }}
+        run: jq -e '.status == "success" and .cli.scope.dependencyClosure and .cli.scope.devDependencies and .command != ""' <<< "$RESULT"
+      - id: task
+        uses: ./.github/actions/run
         with:
           version: local
           cwd: .fixture
           packageManager: yarn
           monorepoTool: turbo
           matrix: ${{ toJSON(matrix) }}
+      - name: Verify run result
+        env:
+          RESULT: ${{ steps.task.outputs.result }}
+        run: jq -e '.status == "success" and .cli.status == "success" and .command != "" and .reason != ""' <<< "$RESULT"
 
   fixture-aggregate:
     name: Fixture aggregate status
@@ -202,6 +221,7 @@ jobs:
       - name: Build local CLI
         run: cargo build --locked --release
       - name: Report direct matrix job result
+        id: aggregate
         uses: ./.github/actions/status
         with:
           needs: ${{ toJSON(needs) }}
@@ -209,3 +229,7 @@ jobs:
           matrixJob: fixture-run
           group: ci
           format: markdown
+      - name: Verify status result
+        env:
+          RESULT: ${{ steps.aggregate.outputs.result }}
+        run: jq -e '.status == "success" and .hasChange and .matrixResult == "success" and .reason != ""' <<< "$RESULT"

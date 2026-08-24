@@ -38,21 +38,37 @@ pub async fn execute(args: InstallArgs, config: &Config, base_cwd: &std::path::P
     if let Some(filter) = &args.filter {
         if pm == "yarn" && is_yarn_berry(cwd) {
             let root = root_workspace_name(cwd)?;
-            run_command("yarn", yarn_focused_args(&root, filter), cwd, args.json).await?;
+            let command_args = yarn_focused_args(&root, filter);
+            run_command("yarn", command_args.clone(), cwd, args.json).await?;
             if args.json {
                 println!(
                     "{}",
-                    serde_json::json!({"package_manager": pm, "filter": filter, "status": "success"})
+                    serde_json::json!({
+                        "status": "success",
+                        "packageManager": pm,
+                        "command": crate::commands::display_command("yarn", &command_args),
+                        "cwd": cwd,
+                        "scope": {"root": root, "workspace": filter, "dependencyClosure": true, "devDependencies": true},
+                        "reason": "focused install includes root tooling, the selected workspace, and its dependency closure"
+                    })
                 );
             }
             return Ok(());
         }
         if pm == "pnpm" {
-            run_command("pnpm", pnpm_focused_args(filter), cwd, args.json).await?;
+            let command_args = pnpm_focused_args(filter);
+            run_command("pnpm", command_args.clone(), cwd, args.json).await?;
             if args.json {
                 println!(
                     "{}",
-                    serde_json::json!({"package_manager": pm, "filter": filter, "status": "success"})
+                    serde_json::json!({
+                        "status": "success",
+                        "packageManager": pm,
+                        "command": crate::commands::display_command("pnpm", &command_args),
+                        "cwd": cwd,
+                        "scope": {"root": ".", "workspace": filter, "dependencyClosure": true, "devDependencies": true},
+                        "reason": "focused install includes root tooling, the selected workspace, and its dependency closure"
+                    })
                 );
             }
             return Ok(());
@@ -65,6 +81,18 @@ pub async fn execute(args: InstallArgs, config: &Config, base_cwd: &std::path::P
     run_install(&pm, cwd, args.json).await?;
 
     if !args.workspace_install {
+        if args.json {
+            println!(
+                "{}",
+                serde_json::json!({
+                    "status": "success",
+                    "packageManager": pm,
+                    "cwd": cwd,
+                    "scope": {"root": true, "workspaceInstall": false},
+                    "reason": "installed the monorepo root from its lockfile"
+                })
+            );
+        }
         return Ok(());
     }
 
@@ -81,7 +109,13 @@ pub async fn execute(args: InstallArgs, config: &Config, base_cwd: &std::path::P
     if args.json {
         println!(
             "{}",
-            serde_json::json!({"package_manager": pm, "status": "success", "workspace_install": args.workspace_install})
+            serde_json::json!({
+                "status": "success",
+                "packageManager": pm,
+                "cwd": cwd,
+                "scope": {"root": true, "workspaceInstall": args.workspace_install},
+                "reason": "installed the monorepo root and every workspace requested by --workspace-install"
+            })
         );
     }
     Ok(())
@@ -453,6 +487,53 @@ mod tests {
         )
         .await
         .unwrap();
+
+        std::env::set_var("PATH", original_path);
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    #[serial]
+    async fn execute_focused_install_reports_yarn_and_pnpm_scope_without_network() {
+        let dir = tempdir().unwrap();
+        let original_path = prepend_fake_managers(dir.path());
+        std::fs::write(
+            dir.path().join("package.json"),
+            r#"{"name":"root","packageManager":"yarn@4.9.1"}"#,
+        )
+        .unwrap();
+        let config: Config = serde_json::from_value(serde_json::json!({
+            "group": {"ci": {"tasks": ["build"]}}
+        }))
+        .unwrap();
+
+        for manager in ["yarn", "pnpm"] {
+            execute(
+                InstallArgs {
+                    package_manager: Some(manager.into()),
+                    workspace_install: false,
+                    filter: Some("@repo/app".into()),
+                    json: true,
+                },
+                &config,
+                dir.path(),
+            )
+            .await
+            .unwrap();
+        }
+        let error = execute(
+            InstallArgs {
+                package_manager: Some("npm".into()),
+                workspace_install: false,
+                filter: Some("@repo/app".into()),
+                json: true,
+            },
+            &config,
+            dir.path(),
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(error, Error::ConfigValidation(_)));
 
         std::env::set_var("PATH", original_path);
     }

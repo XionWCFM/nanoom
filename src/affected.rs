@@ -3,13 +3,45 @@ use crate::error::Result;
 use crate::git::{resolve_base_commit, ComparisonMode, GitEvent, GitRepo};
 use crate::workspace::{apply_rules, calculate_affected, Workspace};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::path::Path;
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AffectedOutput {
     pub group: HashMap<String, GroupOutput>,
     pub has_change: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub diagnostics: Option<AffectedDiagnostics>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AffectedDiagnostics {
+    pub comparison: ComparisonDetails,
+    #[serde(rename = "changedFiles")]
+    pub changed_files: Vec<String>,
+    pub reasons: BTreeMap<String, AffectedReason>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ComparisonDetails {
+    pub mode: String,
+    #[serde(rename = "requestedBase")]
+    pub requested_base: String,
+    #[serde(rename = "requestedHead")]
+    pub requested_head: String,
+    #[serde(rename = "baseCommit")]
+    pub base_commit: String,
+    #[serde(rename = "headCommit")]
+    pub head_commit: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AffectedReason {
+    pub kind: String,
+    #[serde(rename = "changedFiles", skip_serializing_if = "Vec::is_empty")]
+    pub changed_files: Vec<String>,
+    #[serde(rename = "dependencyPath", skip_serializing_if = "Vec::is_empty")]
+    pub dependency_path: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -66,12 +98,14 @@ pub async fn calculate_with_override(
     let base_commit = resolve_base_commit(&git, &event, mode)?;
 
     let head_ref = event.head_ref();
+    let head_commit = git.resolve_commit(head_ref)?;
     let changed_files = match mode {
         ComparisonMode::MergeBase => git.get_changed_files(&base_commit, Some(head_ref))?,
         ComparisonMode::Tip => git.get_changed_files_from_tip(&base_commit, Some(head_ref))?,
     };
 
     let workspace = Workspace::discover(config, cwd)?;
+    let reasons = explain_affected(&workspace, &changed_files, &config.global_dependencies, cwd);
 
     let mut group_outputs = HashMap::new();
     let mut has_any_change = false;
@@ -158,7 +192,128 @@ pub async fn calculate_with_override(
     Ok(AffectedOutput {
         group: group_outputs,
         has_change: has_any_change,
+        diagnostics: Some(AffectedDiagnostics {
+            comparison: ComparisonDetails {
+                mode: match mode {
+                    ComparisonMode::MergeBase => "merge-base".into(),
+                    ComparisonMode::Tip => "tip".into(),
+                },
+                requested_base: event.base_ref().into(),
+                requested_head: head_ref.into(),
+                base_commit,
+                head_commit,
+            },
+            changed_files: relative_paths(&changed_files, cwd),
+            reasons,
+        }),
     })
+}
+
+fn explain_affected(
+    workspace: &Workspace,
+    changed_files: &[PathBuf],
+    global_dependencies: &[String],
+    cwd: &Path,
+) -> BTreeMap<String, AffectedReason> {
+    let global_files =
+        crate::workspace::matching_global_files(changed_files, global_dependencies, cwd);
+    if !global_files.is_empty() {
+        let files = relative_paths(&global_files, cwd);
+        return workspace
+            .all_projects()
+            .iter()
+            .map(|project| {
+                (
+                    project.name.clone(),
+                    AffectedReason {
+                        kind: "globalDependency".into(),
+                        changed_files: files.clone(),
+                        dependency_path: vec![],
+                    },
+                )
+            })
+            .collect();
+    }
+
+    let direct: BTreeMap<String, Vec<String>> = workspace
+        .all_projects()
+        .iter()
+        .filter_map(|project| {
+            let files: Vec<PathBuf> = changed_files
+                .iter()
+                .filter(|file| file.starts_with(&project.path))
+                .cloned()
+                .collect();
+            (!files.is_empty()).then(|| (project.name.clone(), relative_paths(&files, cwd)))
+        })
+        .collect();
+    let direct_names: HashSet<&str> = direct.keys().map(String::as_str).collect();
+    let affected = calculate_affected(workspace, changed_files, global_dependencies, cwd, true);
+
+    affected
+        .into_iter()
+        .filter_map(|project| {
+            if let Some(files) = direct.get(&project.name) {
+                return Some((
+                    project.name,
+                    AffectedReason {
+                        kind: "direct".into(),
+                        changed_files: files.clone(),
+                        dependency_path: vec![],
+                    },
+                ));
+            }
+            dependency_path(workspace, &project.name, &direct_names).map(|path| {
+                (
+                    project.name,
+                    AffectedReason {
+                        kind: "transitiveDependent".into(),
+                        changed_files: vec![],
+                        dependency_path: path,
+                    },
+                )
+            })
+        })
+        .collect()
+}
+
+fn dependency_path(
+    workspace: &Workspace,
+    start: &str,
+    direct: &HashSet<&str>,
+) -> Option<Vec<String>> {
+    let mut queue = VecDeque::from([(start.to_string(), vec![start.to_string()])]);
+    let mut seen = HashSet::from([start.to_string()]);
+    while let Some((name, path)) = queue.pop_front() {
+        let mut dependencies = workspace.get_project_by_name(&name)?.dependencies.clone();
+        dependencies.sort();
+        for dependency in dependencies {
+            if workspace.get_project_by_name(&dependency).is_none()
+                || !seen.insert(dependency.clone())
+            {
+                continue;
+            }
+            let mut next = path.clone();
+            next.push(dependency.clone());
+            if direct.contains(dependency.as_str()) {
+                return Some(next);
+            }
+            queue.push_back((dependency, next));
+        }
+    }
+    None
+}
+
+fn relative_paths(files: &[PathBuf], cwd: &Path) -> Vec<String> {
+    files
+        .iter()
+        .map(|file| {
+            file.strip_prefix(cwd)
+                .unwrap_or(file)
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect()
 }
 
 pub fn generate_matrix(output: &AffectedOutput) -> serde_json::Value {

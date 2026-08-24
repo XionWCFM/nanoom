@@ -37,7 +37,7 @@ Generate the schema with `nanoom schema --output nanoom.schema.json`. Unknown fi
 ## CLI
 
 ```text
-nanoom affected --base <revision> [--head <revision>] [--matrix]
+nanoom affected --base <revision> [--head <revision>] [--matrix|--report]
 nanoom run <group> <task> [--filter <workspace>] [--all]
            [--shard N --total-shards N] [--isolate] [--continue-on-error]
 nanoom install [--package-manager auto|pnpm|yarn|npm]
@@ -54,19 +54,21 @@ nanoom version [--json]
 
 `status` treats `failure` and `cancelled` as failure. Missing or unknown results are errors; `skipped` is accepted only when explicitly reported.
 
+JSON mode keeps stdout machine-readable. `affected --report` includes resolved full commit hashes, changed paths, direct/transitive/global reasons, and matrices. Every public Action prints and exports a canonical `result` JSON containing its resolved values, exact command where applicable, decision reason, and final status.
+
 ## GitHub Actions
 
 Four public composite Actions live under `.github/actions`: `affected`, `install`, `run`, and `status`. Pin consumers to a release tag:
 
 ```yaml
 - id: affected
-  uses: XionWCFM/nanoom/.github/actions/affected@v0.2.3
+  uses: XionWCFM/nanoom/.github/actions/affected@v0.2.5
 
-- uses: XionWCFM/nanoom/.github/actions/install@v0.2.3
+- uses: XionWCFM/nanoom/.github/actions/install@v0.2.5
   with:
     matrix: ${{ toJSON(matrix) }}
 
-- uses: XionWCFM/nanoom/.github/actions/run@v0.2.3
+- uses: XionWCFM/nanoom/.github/actions/run@v0.2.5
   with:
     matrix: ${{ toJSON(matrix) }}
 ```
@@ -74,7 +76,7 @@ Four public composite Actions live under `.github/actions`: `affected`, `install
 The `status` Action evaluates the workflow's `needs` JSON directly and does not download the CLI:
 
 ```yaml
-- uses: XionWCFM/nanoom/.github/actions/status@v0.2.3
+- uses: XionWCFM/nanoom/.github/actions/status@v0.2.5
   with:
     needs: ${{ toJSON(needs) }}
     matrixJob: run

@@ -28,18 +28,21 @@ pub fn execute(args: CacheKeyArgs, cwd: &Path) -> Result<()> {
     hasher.update(args.filter.as_bytes());
     hasher.update([0]);
 
-    for file in [
+    let inputs = [
         "nanoom.config.json",
         "package.json",
         "pnpm-lock.yaml",
         "yarn.lock",
         "package-lock.json",
-    ] {
+    ];
+    let mut existing_inputs = Vec::new();
+    for file in inputs {
         let path = cwd.join(file);
         hasher.update(file.as_bytes());
         hasher.update([0]);
         if let Ok(bytes) = std::fs::read(path) {
             hasher.update(bytes);
+            existing_inputs.push(file);
         }
         hasher.update([0]);
     }
@@ -47,8 +50,26 @@ pub fn execute(args: CacheKeyArgs, cwd: &Path) -> Result<()> {
     let digest = format!("{:x}", hasher.finalize());
     let key = format!("nanoom-{}-{}-{}", args.runner, args.task, &digest[..16]);
     if args.json {
-        println!("{}", serde_json::json!({"key": key}));
+        println!(
+            "{}",
+            serde_json::json!({
+                "key": key, "runner": args.runner, "task": args.task,
+                "filter": args.filter, "cwd": cwd, "hashedFiles": existing_inputs,
+                "reason": "SHA-256 over runner, task, filter, configuration, manifests, and supported lockfiles"
+            })
+        );
     } else {
+        eprintln!(
+            "Cache key inputs: runner={} task={} filter={} files={}",
+            args.runner,
+            args.task,
+            if args.filter.is_empty() {
+                "<none>"
+            } else {
+                &args.filter
+            },
+            existing_inputs.join(",")
+        );
         println!("{key}");
     }
     Ok(())

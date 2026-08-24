@@ -6,6 +6,8 @@ cd "$root"
 
 for action in affected install run status; do
   test -f ".github/actions/$action/action.yml"
+  grep -q '^  result:' ".github/actions/$action/action.yml"
+  grep -q '◆ final JSON' ".github/actions/$action/action.yml"
 done
 test -f .github/actions/_setup/setup.sh
 for action in affected install run _setup; do
@@ -18,6 +20,8 @@ grep -q 'github.event.before' .github/actions/affected/action.yml
 grep -q 'github.base_ref' .github/actions/affected/action.yml
 grep -q 'github.event.merge_group.base_sha' .github/actions/affected/action.yml
 grep -q '^  groups:' .github/actions/affected/action.yml
+grep -q 'baseCommit' .github/actions/affected/action.yml
+grep -q 'selection reasons:' .github/actions/affected/action.yml
 grep -q 'matrix JSON:' .github/actions/install/action.yml
 grep -q 'matrix JSON:' .github/actions/run/action.yml
 grep -q 'GITHUB_STEP_SUMMARY' .github/actions/status/action.yml
