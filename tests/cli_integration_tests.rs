@@ -85,6 +85,7 @@ fn run_cli_parts(cwd: &Path, args: &[&str], envs: &[(&str, &str)]) -> (bool, Str
     cmd.current_dir(cwd).args(args);
 
     // Ensure no CI env leaks from parent process
+    cmd.env_remove("GITHUB_OUTPUT").env_remove("COMPARISON");
 
     for (key, value) in envs {
         cmd.env(key, value);
