@@ -34,8 +34,7 @@ git init -b main && git add . && git commit -m init
 
 # 패키지 하나 수정 후 커밋한 뒤:
 nanoom affected --format text
-nanoom affected --matrix ci        # GitHub Actions strategy.matrix에 바로 붙이는 JSON
-nanoom affected --matrix e2e --json
+nanoom affected --matrix           # 모든 그룹의 matrix 객체를 출력
 nanoom run ci test                 # 영향받은 프로젝트만 순서대로 실행
 
 # 샤드 나눠 실행 (GitHub Actions의 각 잡에서)
@@ -58,17 +57,17 @@ jobs:
   matrix:
     runs-on: ubuntu-latest
     outputs:
-      matrix: ${{ steps.affected.outputs.matrix }}
+      groups: ${{ steps.affected.outputs.groups }}
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
       - id: affected
-        run: echo "matrix=$(nanoom affected --matrix ci)" >> "$GITHUB_OUTPUT"
+        uses: XionWCFM/nanoom/.github/actions/affected@main
 
   test:
     needs: matrix
     strategy:
-      matrix: ${{ fromJSON(needs.matrix.outputs.matrix) }}
+      matrix: ${{ fromJSON(needs.matrix.outputs.groups).ci.matrix }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

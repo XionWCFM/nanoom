@@ -2,7 +2,6 @@ name: nanoom affected
 description: Calculate the authoritative flattened matrix
 inputs:
   version: {default: latest}
-  group: {default: ''}
   config: {default: nanoom.config.json}
   cwd: {default: '.'}
   base: {default: ''}
@@ -10,8 +9,8 @@ inputs:
 outputs:
   has_change:
     value: ${{ steps.out.outputs.has_change }}
-  matrix:
-    value: ${{ steps.out.outputs.matrix }}
+  groups:
+    value: ${{ steps.out.outputs.groups }}
 runs:
   using: composite
   steps:
@@ -23,7 +22,6 @@ runs:
       id: out
       shell: bash
       env:
-        GROUP: ${{ inputs.group }}
         CWD: ${{ inputs.cwd }}
         CONFIG: ${{ inputs.config }}
         BASE: ${{ inputs.base }}
@@ -41,7 +39,7 @@ runs:
         printf '  %s✓%s working directory: %s\n' "$green" "$reset" "$CWD"
         printf '  %s✓%s config: %s\n' "$green" "$reset" "$CONFIG"
         printf '  %s✓%s comparison: %s -> %s\n' "$green" "$reset" "${BASE:-event-derived}" "${HEAD:-event-derived}"
-        printf '  %s✓%s selection: %s\n' "$green" "$reset" "${GROUP:-all groups}"
+        printf '  %s✓%s selection: all configured groups\n' "$green" "$reset"
         printf '  %s✓%s mechanism: %schanged files → dependency graph → group rules/tasks → matrix%s\n' "$green" "$reset" "$dim" "$reset"
         if [[ -z "$BASE" ]]; then BASE="$EVENT_BASE"; fi
         if [[ -z "$HEAD" ]]; then HEAD="$EVENT_HEAD"; fi
@@ -57,7 +55,7 @@ runs:
           fi
         fi
         printf '  %s✓%s resolved comparison: %s -> %s\n' "$green" "$reset" "$BASE" "$HEAD"
-        args=(-C "$CWD" -c "$CONFIG" affected --json --base "$BASE" --head "$HEAD")
+        args=(-C "$CWD" -c "$CONFIG" affected --matrix --base "$BASE" --head "$HEAD")
         if [[ -n "$BASE" && -n "$HEAD" ]]; then
           changed_files=$(git -C "$CWD" diff --name-only "$BASE...$HEAD")
           changed=$(awk 'NF {n++} END {print n+0}' <<<"$changed_files")
@@ -68,16 +66,17 @@ runs:
           fi
         fi
         echo "::endgroup::"
-        json=$(nanoom "${args[@]}"); has=$(jq -r .has_change <<<"$json"); echo "has_change=$has" >> "$GITHUB_OUTPUT"
-        if [[ -n "$GROUP" ]]; then matrix=$(jq -c --arg g "$GROUP" '{include: [.group[$g].workspaces[] | . + {group:$g}]} ' <<<"$json")
-        else matrix=$(jq -c '{include: [.group[] | .workspaces[]]}' <<<"$json"); fi
-        echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
-        count=$(jq '.include | length' <<<"$matrix")
+        matrix=$(nanoom "${args[@]}")
+        groups=$(jq -c 'with_entries(.value = {has_change: ((.value.include | length) > 0), matrix: .value})' <<<"$matrix")
+        has=$(jq -r 'any(to_entries[]; .value.include | length > 0)' <<<"$matrix")
+        echo "has_change=$has" >> "$GITHUB_OUTPUT"
+        echo "groups=$groups" >> "$GITHUB_OUTPUT"
+        count=$(jq '[to_entries[].value.include[]] | length' <<<"$matrix")
         elapsed=$(( $(date +%s) - started ))
         echo "::notice title=Affected result::has_change=$has; $count matrix entries will run (${elapsed}s)"
         printf '::group::%s◆ matrix plan (%s entries)%s\n' "$bold$cyan" "$count" "$reset"
         if (( count )); then
-          jq -r '.include[] | "- \(.group) / \(.name) / \(.task)" + (if .shard then " / shard \(.shard)/\(.totalShards)" else "" end) + (if .isolate then " / isolated" else "" end)' <<<"$matrix"
+          jq -r 'to_entries[] as $group | $group.value.include[] | "- \($group.key) / \(.name) / \(.task)" + (if .shard then " / shard \(.shard)/\(.totalShards)" else "" end) + (if .isolate then " / isolated" else "" end)' <<<"$matrix"
         else
           printf '  %s─ no workspace tasks matched; downstream matrix will be skipped%s\n' "$yellow" "$reset"
         fi
@@ -86,12 +85,12 @@ runs:
         {
           echo "### nanoom affected"
           echo
-          echo "**Result:** \`has_change=$has\` — **$count** matrix entries"
+          echo "**Result:** \`has_change=$has\` — **$count** matrix entries across all groups"
           echo
-          echo "Comparison: \`${BASE:-event-derived}\` -> \`${HEAD:-event-derived}\`; group: \`${GROUP:-all}\`."
+          echo "Comparison: \`${BASE:-event-derived}\` -> \`${HEAD:-event-derived}\`; groups: all configured groups."
           echo
           echo '| Group | Workspace | Task | Execution |'
           echo '|---|---|---|---|'
-          jq -r '.include[] | "| \(.group) | \(.name) | \(.task) | " + (if .shard then "shard \(.shard)/\(.totalShards)" elif .isolate then "isolated" else "standard" end) + " |"' <<<"$matrix"
+          jq -r 'to_entries[] as $group | $group.value.include[] | "| \($group.key) | \(.name) | \(.task) | " + (if .shard then "shard \(.shard)/\(.totalShards)" elif .isolate then "isolated" else "standard" end) + " |"' <<<"$matrix"
           (( count )) || echo '| - | - | - | no work |'
         } >> "$GITHUB_STEP_SUMMARY"

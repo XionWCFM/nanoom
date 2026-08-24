@@ -87,14 +87,14 @@ jobs:
   affected:
     runs-on: ubuntu-latest
     outputs:
-      matrix: ${{ steps.detect.outputs.matrix }}
-      has-change: ${{ steps.detect.outputs.has-change }}
+      groups: ${{ steps.detect.outputs.groups }}
+      has-change: ${{ steps.detect.outputs.has_change }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - id: detect
-        run: nanoom affected --json
+        uses: ./.github/actions/affected
 ```
 
 ## Configuration reference
@@ -114,7 +114,7 @@ jobs:
 ## CLI
 
 ```
-nanoom affected [--json|--matrix <group>|--format json|text]
+nanoom affected [--json|--matrix|--format json|text]
 nanoom run <group> <task> [--filter <ws>] [--shard N] [--total-shards N]
             [--isolate] [--all] [--continue-on-error]
 nanoom install [--package-manager auto|pnpm|yarn|npm] [--root-install]

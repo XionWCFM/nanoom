@@ -23,14 +23,20 @@ runs:
         trap 'echo "::error title=Focused install failed::Review the package-manager output above. Verify the matrix JSON, workspace name, lockfile, and packageManager input."' ERR
         cyan=$'\033[36m'; green=$'\033[32m'; bold=$'\033[1m'; dim=$'\033[2m'; reset=$'\033[0m'
         started=$(date +%s)
-        name=$(jq -er '(.include[0] // .).name | select(type == "string" and length > 0)' <<<"$MATRIX")
+        entry=$(jq -ce '(.include[0] // .) | select(.name)' <<<"$MATRIX")
+        matrix_json=$(jq -c '{group, label, name, path, task, shard, totalShards, isolate} | with_entries(select(.value != null))' <<<"$entry")
+        name=$(jq -er '.name | select(type == "string" and length > 0)' <<<"$entry")
         [[ "$PM" == npm ]] && { echo '::error title=Unsupported package manager::npm cannot perform a focused workspace install. Use Yarn Berry or pnpm.'; exit 2; }
+        args=(-C "$CWD" install --package-manager "$PM" --filter "$name")
+        printf -v command '%q ' nanoom "${args[@]}"
         printf '::group::%s◆ nanoom install%s\n' "$bold$cyan" "$reset"
+        printf '  %smatrix JSON:%s %s\n' "$dim" "$reset" "$matrix_json"
         printf '  %sworkspace:%s %s\n' "$dim" "$reset" "$name"
         printf '  %spackage manager:%s %s\n' "$dim" "$reset" "$PM"
         printf '  %scwd:%s %s\n' "$dim" "$reset" "$CWD"
+        printf '  %snanoom command:%s %s\n' "$dim" "$reset" "${command% }"
         printf '  %s✓ installing focused dependency closure%s\n' "$green" "$reset"
-        nanoom -C "$CWD" install --package-manager "$PM" --filter "$name"
+        nanoom "${args[@]}"
         elapsed=$(( $(date +%s) - started ))
         printf '  %s✓ dependencies ready%s (%ss)\n' "$green" "$reset" "$elapsed"
         echo "::endgroup::"

@@ -109,7 +109,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       has_change: ${{ steps.affected.outputs.has_change }}
-      matrix: ${{ steps.affected.outputs.matrix }}
+      groups: ${{ steps.affected.outputs.groups }}
     env:
       NANOOM_LOCAL_BINARY: ${{ github.workspace }}/target/release/nanoom
     steps:
@@ -125,18 +125,18 @@ jobs:
         uses: ./.github/actions/affected
         with:
           version: local
-          group: ci
           cwd: .fixture
           base: main
           head: HEAD
       - name: Assert transitive affected matrix
         env:
-          MATRIX: ${{ steps.affected.outputs.matrix }}
+          GROUPS: ${{ steps.affected.outputs.groups }}
         run: |
-          echo "$MATRIX" | jq -e '[.include[].name] | sort == ["@fixture/app", "@fixture/core", "@fixture/shared", "@fixture/shared"]' >/dev/null
-          echo "$MATRIX" | jq -e '[.include[] | select(.name == "@fixture/shared" and .shard == 1)] | length == 1' >/dev/null
-          echo "$MATRIX" | jq -e '[.include[] | select(.name == "@fixture/shared" and .shard == 2)] | length == 1' >/dev/null
-          echo "$MATRIX" | jq -e '[.include[] | select(.name == "@fixture/app" and .isolate == true)] | length == 1' >/dev/null
+          echo "$GROUPS" | jq -e '[.ci.matrix.include[].name] | sort == ["@fixture/app", "@fixture/core", "@fixture/shared", "@fixture/shared"]' >/dev/null
+          echo "$GROUPS" | jq -e '.ci.has_change == true' >/dev/null
+          echo "$GROUPS" | jq -e '[.ci.matrix.include[] | select(.name == "@fixture/shared" and .shard == 1)] | length == 1' >/dev/null
+          echo "$GROUPS" | jq -e '[.ci.matrix.include[] | select(.name == "@fixture/shared" and .shard == 2)] | length == 1' >/dev/null
+          echo "$GROUPS" | jq -e '[.ci.matrix.include[] | select(.name == "@fixture/app" and .isolate == true)] | length == 1' >/dev/null
 
   fixture-run:
     name: Fixture ${{ matrix.name }} ${{ matrix.task }} shard-${{ matrix.shard || 0 }}
@@ -144,7 +144,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.fixture-affected.outputs.matrix) }}
+      matrix: ${{ fromJSON(needs.fixture-affected.outputs.groups).ci.matrix }}
     env:
       NANOOM_LOCAL_BINARY: ${{ github.workspace }}/target/release/nanoom
       FIXTURE_LOG: ${{ github.workspace }}/.fixture/result.log

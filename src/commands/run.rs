@@ -254,7 +254,13 @@ async fn run_task(
             cmd.env("PATH", path);
         }
     }
-    cmd.args(args);
+    cmd.args(&args);
+
+    eprintln!(
+        "Executing task command (cwd={}): {}",
+        cmd.as_std().get_current_dir().unwrap_or(root).display(),
+        crate::commands::display_command(&program, &args)
+    );
 
     for (key, value) in &task.env {
         cmd.env(key, value);

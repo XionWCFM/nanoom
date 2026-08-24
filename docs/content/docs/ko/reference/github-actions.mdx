@@ -16,15 +16,12 @@ nanoom은 이 저장소에 다섯 개 복합 액션을 포함합니다. nanoom �
 ```yaml
 - id: detect
   uses: ./.github/actions/nanoom-affected
-  with:
-    group: ci # 선택: 한 그룹 매트릭스만 내보냄
 ```
 
 ### 입력
 
 | 입력 | 타입 | 필수 | 기본값 | 설명 |
 | --- | --- | --- | --- | --- |
-| `group` | string | 아니오 | — | 단일 그룹 매트릭스만 내보냄 (예: `ci`) |
 | `version` | string | 아니오 | `latest` | 설치할 nanoom 버전 (`latest` 또는 `v0.1.0`) |
 
 ### 출력
@@ -32,14 +29,14 @@ nanoom은 이 저장소에 다섯 개 복합 액션을 포함합니다. nanoom �
 | 출력 | 타입 | 설명 |
 | --- | --- | --- |
 | `has-change` | string | 영향 프로젝트 1개 이상이면 `"true"` |
-| `matrix` | JSON | `{ "include": [...] }` — `strategy.matrix` 바로 사용 |
+| `groups` | JSON | `{ "ci": { "has_change": true, "matrix": { "include": [...] } } }` |
 
 ### 내부 동작
 
 1. nanoom 바이너리 설치 (버전별 캐시).
-2. 이벤트 환경 변수 읽으며 `nanoom affected --json` (또는 `--matrix <group>`) 실행.
-3. JSON을 `concurrency` 상한 적용해 매트릭스로 변환.
-4. `has-change`와 `matrix` 출력 설정.
+2. 이벤트 환경 변수를 읽으며 `nanoom affected --matrix`를 한 번 실행.
+3. 그룹별 `has_change`를 추가해 하나의 `groups` 출력으로 내보냄.
+4. 소비자는 `fromJSON(needs.affected.outputs.groups).ci.matrix`로 그룹을 선택.
 
 ---
 
