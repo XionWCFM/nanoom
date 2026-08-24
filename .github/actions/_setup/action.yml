@@ -15,5 +15,6 @@ runs:
         API: ${{ github.api_url }}
         REPOSITORY: ${{ inputs.repository }}
         SERVER: ${{ github.server_url }}
+        TOKEN: ${{ github.token }}
         BINARY: ${{ env.NANOOM_LOCAL_BINARY }}
       run: bash "$GITHUB_ACTION_PATH/setup.sh"

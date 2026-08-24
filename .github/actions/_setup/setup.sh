@@ -18,7 +18,9 @@ if [[ "$requested" == local ]]; then
 fi
 
 if [[ "$requested" == latest ]]; then
-  version=$(curl -fsSL "$api/repos/$repository/releases/latest" | jq -er .tag_name)
+  curl_args=(-fsSL)
+  [[ -n ${TOKEN:-} ]] && curl_args+=(-H "Authorization: Bearer $TOKEN")
+  version=$(curl "${curl_args[@]}" "$api/repos/$repository/releases/latest" | jq -er .tag_name)
 else
   version=$requested
 fi

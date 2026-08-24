@@ -20,6 +20,7 @@ runs:
         REQUESTED: ${{ inputs.version }}
         API: ${{ github.api_url }}
         SERVER: ${{ github.server_url }}
+        TOKEN: ${{ github.token }}
         BINARY: ${{ env.NANOOM_LOCAL_BINARY }}
       run: bash "$GITHUB_ACTION_PATH/../_setup/setup.sh"
     - name: Calculate affected workspaces

@@ -8,6 +8,10 @@ for action in affected install run status; do
   test -f ".github/actions/$action/action.yml"
 done
 test -f .github/actions/_setup/setup.sh
+for action in affected install run _setup; do
+  grep -q 'TOKEN:.*github.token' ".github/actions/$action/action.yml"
+done
+grep -q 'Authorization: Bearer' .github/actions/_setup/setup.sh
 ! grep -R -n 'XionWCFM/nanoom/.github/actions/_setup@main' .github/actions
 ! grep -R -nE 'PUSH_REF_NAME|PULL_REQUEST_(BASE|HEAD)_REF|MERGE_GROUP_(BASE|HEAD)_REF' .github/actions .github/workflows/ci.yml
 grep -q 'github.event.before' .github/actions/affected/action.yml
