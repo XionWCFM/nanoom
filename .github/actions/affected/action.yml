@@ -67,7 +67,7 @@ runs:
         fi
         echo "::endgroup::"
         matrix=$(nanoom "${args[@]}")
-        groups=$(jq -c 'with_entries(.value = {has_change: ((.value.include | length) > 0), matrix: .value})' <<<"$matrix")
+        groups=$(jq -c 'with_entries(.value = {hasChange: ((.value.include | length) > 0), matrix: .value})' <<<"$matrix")
         has=$(jq -r 'any(to_entries[]; .value.include | length > 0)' <<<"$matrix")
         echo "has_change=$has" >> "$GITHUB_OUTPUT"
         echo "groups=$groups" >> "$GITHUB_OUTPUT"

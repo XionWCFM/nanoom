@@ -133,7 +133,7 @@ jobs:
           GROUPS: ${{ steps.affected.outputs.groups }}
         run: |
           echo "$GROUPS" | jq -e '[.ci.matrix.include[].name] | sort == ["@fixture/app", "@fixture/core", "@fixture/shared", "@fixture/shared"]' >/dev/null
-          echo "$GROUPS" | jq -e '.ci.has_change == true' >/dev/null
+          echo "$GROUPS" | jq -e '.ci.hasChange == true' >/dev/null
           echo "$GROUPS" | jq -e '[.ci.matrix.include[] | select(.name == "@fixture/shared" and .shard == 1)] | length == 1' >/dev/null
           echo "$GROUPS" | jq -e '[.ci.matrix.include[] | select(.name == "@fixture/shared" and .shard == 2)] | length == 1' >/dev/null
           echo "$GROUPS" | jq -e '[.ci.matrix.include[] | select(.name == "@fixture/app" and .isolate == true)] | length == 1' >/dev/null
@@ -196,4 +196,5 @@ jobs:
           needs: ${{ toJSON(needs) }}
           affectedJob: fixture-affected
           matrixJob: fixture-run
+          group: ci
           format: markdown
