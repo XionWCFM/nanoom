@@ -1,4 +1,4 @@
-use crate::affected::{calculate_with_override, generate_matrix_for_group};
+use crate::affected::{calculate_with_override, generate_matrix};
 use crate::error::Result;
 use clap::Args;
 use std::path::PathBuf;
@@ -14,8 +14,8 @@ pub struct AffectedArgs {
     #[arg(long, help = "Output format (json, text)")]
     pub format: Option<String>,
 
-    #[arg(long, help = "Generate GitHub Actions matrix for specific group")]
-    pub matrix: Option<String>,
+    #[arg(long, help = "Generate GitHub Actions matrices for all groups")]
+    pub matrix: bool,
 
     #[arg(long, help = "Output matrix as JSON to stdout")]
     pub json: bool,
@@ -37,8 +37,8 @@ pub async fn execute(
         return Ok(());
     }
 
-    if let Some(group) = args.matrix {
-        let matrix = generate_matrix_for_group(&result, &group);
+    if args.matrix {
+        let matrix = generate_matrix(&result);
         println!("{}", serde_json::to_string(&matrix)?);
         return Ok(());
     }
@@ -123,7 +123,7 @@ mod tests {
     #[test]
     fn test_execute_matrix_option() {
         let result = mock_output();
-        let matrix = crate::affected::generate_matrix_for_group(&result, "ci");
+        let matrix = crate::affected::generate_matrix(&result);
         let json = serde_json::to_string(&matrix).unwrap();
         assert!(json.contains("include"));
     }

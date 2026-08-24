@@ -29,7 +29,7 @@ fn init_git_repo(path: &Path) {
 }
 
 /// Builds a monorepo fixture: root package.json with yarn workspaces,
-/// two packages, and a nanoom.config.json with one group.
+/// two packages, and a nanoom.config.json with two groups.
 fn setup_monorepo(dir: &Path) {
     write_json(
         &dir.join("package.json"),
@@ -55,7 +55,8 @@ fn setup_monorepo(dir: &Path) {
         &dir.join("nanoom.config.json"),
         &serde_json::json!({
             "group": {
-                "ci": { "tasks": ["test"] }
+                "ci": { "tasks": ["test"] },
+                "build": { "tasks": ["build"] }
             },
             "globalDependencies": ["*.lock"]
         }),
@@ -307,7 +308,7 @@ fn test_affected_matrix_output() {
     let (success, output) = run_cli(
         dir.path(),
         &[
-            "affected", "--matrix", "ci", "--base", "main", "--head", "feature",
+            "affected", "--matrix", "--base", "main", "--head", "feature",
         ],
         &[],
     );
@@ -315,12 +316,13 @@ fn test_affected_matrix_output() {
 
     let matrix: serde_json::Value =
         serde_json::from_str(output.trim()).expect("invalid matrix JSON");
-    let include = matrix["include"]
+    let include = matrix["ci"]["include"]
         .as_array()
         .expect("matrix include missing");
 
     let names: Vec<&str> = include.iter().filter_map(|e| e["name"].as_str()).collect();
     assert!(names.contains(&"pkg-b"));
+    assert!(matrix["build"]["include"].is_array());
 }
 
 #[test]
@@ -617,6 +619,11 @@ fn test_run_executes_affected_workspace_script_end_to_end() {
         "script did not execute: {}",
         output
     );
+    assert!(
+        output.contains("Executing task command") && output.contains("npm"),
+        "resolved task command was not logged: {}",
+        output
+    );
 }
 
 #[test]
@@ -626,6 +633,11 @@ fn test_install_handles_root_monorepo_without_workspace_lockfiles() {
     let (success, output) = run_cli(dir.path(), &["install"], &[]);
     assert!(success, "install failed: {}", output);
     assert!(dir.path().join("package-lock.json").exists());
+    assert!(
+        output.contains("Executing install command") && output.contains("npm"),
+        "resolved install command was not logged: {}",
+        output
+    );
 }
 
 #[test]

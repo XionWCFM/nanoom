@@ -61,13 +61,13 @@ Group: e2e (0 entries)
 }
 ```
 
-**Matrix (`--matrix ci`)** — ready for `strategy.matrix`:
+**Matrix (`--matrix`)** — all groups, keyed by group name:
 
 ```json
-{ "include": [
+{ "ci": { "include": [
   { "name": "@app/web", "path": "apps/web", "task": "test" },
   { "name": "@lib/ui", "path": "packages/ui", "task": "test" }
-] }
+] } }
 ```
 
 ### Event context (environment variables)

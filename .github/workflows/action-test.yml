@@ -29,4 +29,10 @@ jobs:
           grep -q 'github.event.before' .github/actions/affected/action.yml
           grep -q 'github.base_ref' .github/actions/affected/action.yml
           grep -q 'github.event.merge_group.base_sha' .github/actions/affected/action.yml
+          grep -q '^  groups:' .github/actions/affected/action.yml
+          ! grep -q 'group: {default' .github/actions/affected/action.yml
+          grep -q 'matrix JSON:' .github/actions/install/action.yml
+          grep -q 'matrix JSON:' .github/actions/run/action.yml
+          grep -q 'nanoom command:' .github/actions/install/action.yml
+          grep -q 'nanoom command:' .github/actions/run/action.yml
           ! grep -qE 'PUSH_REF_NAME|PULL_REQUEST_(BASE|HEAD)_REF|MERGE_GROUP_(BASE|HEAD)_REF' .github/actions .github/workflows/ci.yml

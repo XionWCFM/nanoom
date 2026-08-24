@@ -122,6 +122,11 @@ fn pnpm_focused_args(filter: &str) -> Vec<String> {
 }
 
 async fn run_command(cmd: &str, args: Vec<String>, dir: &Path, json: bool) -> Result<()> {
+    eprintln!(
+        "Executing install command (cwd={}): {}",
+        dir.display(),
+        crate::commands::display_command(cmd, &args)
+    );
     let mut command = Command::new(package_manager_executable(cmd));
     command.current_dir(dir).args(&args);
     let status = if json {
@@ -233,6 +238,11 @@ async fn run_install(pm: &str, dir: &Path, json: bool) -> Result<()> {
     let mut command = Command::new(executable);
     command.current_dir(dir);
     command.args(&args);
+    eprintln!(
+        "Executing install command (cwd={}): {}",
+        dir.display(),
+        crate::commands::display_command(cmd, &args)
+    );
 
     let status = if json {
         let output = command
@@ -374,6 +384,15 @@ mod tests {
         let dir = tempdir().unwrap();
         let result = run_install("bun", dir.path(), false).await;
         assert!(matches!(result, Err(Error::PackageManagerNotFound(pm)) if pm == "bun"));
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn test_run_command_executes_requested_command() {
+        let dir = tempdir().unwrap();
+        run_command("true", vec![], dir.path(), false)
+            .await
+            .unwrap();
     }
 
     #[cfg(not(windows))]

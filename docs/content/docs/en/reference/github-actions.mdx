@@ -16,15 +16,12 @@ Runs affected detection and emits a job matrix.
 ```yaml
 - id: detect
   uses: ./.github/actions/nanoom-affected
-  with:
-    group: ci # optional: emit matrix for one group only
 ```
 
 ### Inputs
 
 | Input | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `group` | string | No | — | Emit matrix for a single group (e.g. `ci`) |
 | `version` | string | No | `latest` | nanoom version to install (`latest` or `v0.1.0`) |
 
 ### Outputs
@@ -32,14 +29,14 @@ Runs affected detection and emits a job matrix.
 | Output | Type | Description |
 | --- | --- | --- |
 | `has-change` | string | `"true"` when at least one project is affected |
-| `matrix` | JSON | `{ "include": [...] }` ready for `strategy.matrix` |
+| `groups` | JSON | `{ "ci": { "has_change": true, "matrix": { "include": [...] } } }` |
 
 ### What it does internally
 
 1. Installs nanoom binary (cached by version).
-2. Runs `nanoom affected --json` (or `--matrix <group>`) reading event env vars.
-2. Converts the JSON to a matrix capped by `concurrency`.
-3. Sets outputs `has-change` and `matrix`.
+2. Runs `nanoom affected --matrix` once for all configured groups.
+3. Adds per-group `has_change` values and exposes one `groups` output.
+4. Consumers select a group with `fromJSON(needs.affected.outputs.groups).ci.matrix`.
 
 ---
 

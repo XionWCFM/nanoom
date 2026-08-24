@@ -24,8 +24,8 @@ jobs:
   detect:
     runs-on: ubuntu-latest
     outputs:
-      has-change: ${{ steps.detect.outputs.has-change }}
-      matrix: ${{ steps.detect.outputs.matrix }}
+      has-change: ${{ steps.detect.outputs.has_change }}
+      groups: ${{ steps.detect.outputs.groups }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -43,7 +43,7 @@ GitHub Actions는 **외부 기여자의 포크 PR로 트리거된 잡엔 시크�
 ```yaml
   test:
     needs: [detect]
-    if: ${{ needs.detect.outputs.has-change == 'true' }}
+    if: ${{ fromJson(needs.detect.outputs.groups).ci.has_change == true }}
     # 시크릿 불필요 — 의존성은 퍼블릭 레지스트리에서 설치
     steps:
       - uses: actions/checkout@v4
@@ -55,7 +55,7 @@ GitHub Actions는 **외부 기여자의 포크 PR로 트리거된 잡엔 시크�
 
 ```yaml
   test:
-    if: ${{ needs.detect.outputs.has-change == 'true' && github.event.pull_request.head.repo.full_name == github.repository }}
+    if: ${{ fromJson(needs.detect.outputs.groups).ci.has_change == true && github.event.pull_request.head.repo.full_name == github.repository }}
 ```
 
 ## 3단계. 로컬에서 검증
