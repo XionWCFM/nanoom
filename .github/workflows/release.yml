@@ -27,10 +27,15 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.version || github.ref }}
 
       - name: Extract version from tag
         id: tag
         run: echo "version=${{ inputs.version || github.ref_name }}" >> "$GITHUB_OUTPUT"
+
+      - name: Validate tag and package versions
+        run: bash scripts/version-consistency.sh '${{ inputs.version || github.ref_name }}'
 
       - name: Create release
         uses: softprops/action-gh-release@v2
@@ -69,6 +74,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.version || github.ref }}
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -84,11 +91,11 @@ jobs:
 
       - name: Build (cross)
         if: matrix.cross
-        run: cross build --release --target ${{ matrix.target }}
+        run: cross build --locked --release --target ${{ matrix.target }}
 
       - name: Build (native)
         if: '!matrix.cross'
-        run: cargo build --release --target ${{ matrix.target }}
+        run: cargo build --locked --release --target ${{ matrix.target }}
 
       - name: Package (unix tar.gz)
         if: runner.os != 'Windows'
@@ -132,6 +139,8 @@ jobs:
     needs: publish-assets
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.version || github.ref }}
       - uses: actions/download-artifact@v4
         with:
           pattern: release-*
@@ -186,6 +195,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.version || github.ref }}
 
       - uses: actions/setup-node@v4
         with:

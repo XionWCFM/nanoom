@@ -1,144 +1,43 @@
 ---
 title: Configuration reference
-description: Complete field reference for nanoom.config.json with types, defaults, and descriptions
+description: nanoom.config.json fields and validation
 ---
 
-The config lives at the repo root as `nanoom.config.json`. Generate the JSON schema for editor autocomplete:
+Generate an editor schema with `nanoom schema --output nanoom.schema.json`. Unknown fields are rejected.
 
-```bash
-nanoom schema --output nanoom.schema.json
-```
-
-Then add to your config:
-
-```jsonc
+```json
 {
-  "$schema": "./nanoom.schema.json"
-}
-```
-
-Unknown fields are rejected with a clear error.
-
-## Top-level fields
-
-| Field | Type | Default | Required | Description |
-| --- | --- | --- | --- | --- |
-| `$schema` | string | — | No | Path or URL to the JSON schema |
-| `group` | object | — | **Yes** | One or more named task groups |
-| `globalDependencies` | string[] | `[]` | No | Globs that affect every project when changed |
-| `workspace` | object | — | No | Override automatic workspace discovery |
-
-## Groups
-
-Each key under `group` is a group name (e.g. `ci`, `e2e`, `release`). Groups are independent — a project can appear in multiple groups with different rules.
-
-```jsonc
-{
+  "$schema": "./nanoom.schema.json",
   "group": {
     "ci": {
-      "tasks": ["lint", "test", "build"],
-      "concurrency": 6,
-      "rules": [{ "name": "@app/web", "isolate": ["test"] }]
+      "tasks": ["lint", "test"],
+      "rules": [
+        { "name": "@repo/app", "isolate": ["test"] },
+        { "name": "@repo/e2e", "shard": [{ "task": "test", "shard": 2 }] }
+      ]
     }
-  }
+  },
+  "globalDependencies": ["yarn.lock"],
+  "workspace": { "include": ["packages/*"], "exclude": [] }
 }
 ```
 
-### Group fields
-
-| Field | Type | Required | Description |
-| --- | --- | --- | --- |
-| `tasks` | string[] | **Yes** | Package.json script names this group may run |
-| `concurrency` | integer (>0) | **Yes** | Maximum matrix entries for this group. Excess projects are batched onto shared jobs |
-| `rules` | Rule[] | No | Per-project overrides (see below) |
-
-## Rules
-
-Rules target a specific project by name and modify its behavior in the group.
-
-| Field | Type | Description |
+| Field | Required | Contract |
 | --- | --- | --- |
-| `name` | string | **Required**. Project name this rule applies to |
-| `ignore` | boolean | Remove the project from this group entirely |
-| `isolate` | string[] | Tasks of this project get dedicated matrix entries (no batching) |
-| `shard` | ShardRule[] | Split a task into N shards for this project |
+| `$schema` | No | Schema path or URL |
+| `group` | Yes | At least one named group |
+| `group.<name>.tasks` | Yes | Non-empty, unique task names |
+| `group.<name>.rules` | No | Unique project-name rules |
+| `rule.name` | Yes | Non-empty workspace name |
+| `rule.ignore` | No | Exclude the workspace from the group |
+| `rule.isolate` | No | Group tasks that require isolated entries |
+| `rule.shard` | No | `{task, shard}` entries; count must be greater than zero |
+| `globalDependencies` | No | Valid globs that affect all workspaces |
+| `workspace.include` | No | Discovery globs; defaults to `packages/*`, `apps/*` |
+| `workspace.exclude` | No | Discovery exclusion globs |
 
-### ShardRule
+A task cannot be both isolated and sharded by the same rule. Rule task names must exist in the group's task list. Duplicate workspace package names are rejected.
 
-| Field | Type | Description |
-| --- | --- | --- |
-| `task` | string | Task name to shard (must be in the group's `tasks`) |
-| `shard` | integer (≥2) | Number of shards |
+Dependency edges include dependencies, devDependencies, peerDependencies, and optionalDependencies. `workspace:`, `link:`, and `file:` declarations are local edges. Registry declarations are local only when the workspace version satisfies npm-compatible semver syntax, including unions, comparators, prereleases, and hyphen ranges.
 
-Example:
-
-```jsonc
-{
-  "name": "@slow/e2e",
-  "ignore": false,
-  "isolate": ["test:e2e"],
-  "shard": [{ "task": "test:e2e", "shard": 4 }]
-}
-```
-
-Sharding emits matrix entries carrying `"shard": 1..N`. Inside the job, `nanoom run` exports `NANOOM_SHARD_INDEX` and `NANOOM_SHARD_TOTAL`; feed them to your runner (e.g. Jest `--shard=$INDEX/$TOTAL`, Playwright `--shard=x/y`).
-
-## Workspace discovery
-
-By default nanoom scans for workspace configs in this order:
-
-1. `pnpm-workspace.yaml`
-2. `turbo.json`
-3. `nx.json`
-4. Root `package.json` → `workspaces` field (array or `{ packages: [] }`)
-
-Each candidate directory must contain a `package.json`; its `name` becomes the project name (falling back to the directory name).
-
-### Override with globs
-
-```jsonc
-{
-  "workspace": {
-    "include": ["packages/*", "apps/*", "services/**"],
-    "exclude": ["**/deprecated/**"]
-  }
-}
-```
-
-| Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `include` | glob[] | `["packages/*", "apps/*"]` | Candidate directories |
-| `exclude` | glob[] | `[]` | Directories to drop |
-
-Globs are matched against paths relative to the repo root. Syntax: `*`, `**`, `?`, `[abc]`, `{a,b}`.
-
-## Dependency graph
-
-Edges between projects are derived from all four dependency kinds (`dependencies`, `devDependencies`, `peerDependencies`, `optionalDependencies`) using pnpm-style resolution:
-
-| Specifier | Internal edge? | Condition |
-| --- | --- | --- |
-| `workspace:*`, `workspace:^x.y.z`, `workspace:~x.y.z` | ✅ Always | Workspace protocol |
-| `link:…`, `file:…` | ✅ Always | Local link/file |
-| Plain semver (`^1.0.0`, `~2.1.0`, `>=1 <3`, `1.0.0`, `||` unions) | ✅ If local version satisfies range | Resolves to local package |
-| Unresolvable / registry range | ❌ No | Points to npm registry |
-
-Affected expansion walks **reverse edges transitively**: change a leaf lib and every direct or indirect dependent is included.
-
-## Error handling
-
-Validation errors include actionable messages:
-
-- Unknown top-level field → "Unknown field 'typo', did you mean 'group'?"
-- Zero or missing `concurrency` → "concurrency must be a positive integer"
-- Empty `tasks` array → "group 'ci' must have at least one task"
-- Rule without `name` → "rule must have a 'name' field"
-- Unknown project in rule → "rule references unknown project 'x'"
-
-All errors include the JSON path (e.g. `group.ci.rules[0].name`).
-
-## Related
-
-- [Quickstart](/en/docs/quickstart) — minimal config walkthrough.
-- [How-to: Sharding](/en/docs/how-tos/sharding) — `shard` rule in action.
-- [Explanation: Affected graph](/en/docs/explanations/affected-graph) — edge classification details.
+Changed workspaces expand transitively to dependents. A `globalDependencies` match affects every discovered workspace.

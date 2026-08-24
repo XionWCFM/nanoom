@@ -50,6 +50,15 @@ struct TaskConfig {
 }
 
 pub async fn execute(args: RunArgs, config: &Config, cwd: &std::path::Path) -> Result<()> {
+    match (args.shard, args.total_shards) {
+        (Some(shard), Some(total)) if shard > 0 && shard <= total => {}
+        (None, None) => {}
+        _ => return Err(Error::ConfigValidation(
+            "--shard and --total-shards must be provided together with 1 <= shard <= total-shards"
+                .into(),
+        )),
+    }
+
     let group_config = config
         .get_group(&args.group)
         .ok_or_else(|| Error::ConfigValidation(format!("Group '{}' not found", args.group)))?;
@@ -148,6 +157,7 @@ pub async fn execute(args: RunArgs, config: &Config, cwd: &std::path::Path) -> R
         );
     }
 
+    let mut first_error = None;
     for project in ordered_projects {
         if !args.json {
             eprintln!("\n--- {} ---", project.name);
@@ -166,7 +176,14 @@ pub async fn execute(args: RunArgs, config: &Config, cwd: &std::path::Path) -> R
             if !args.continue_on_error {
                 return Err(e);
             }
+            if first_error.is_none() {
+                first_error = Some(e);
+            }
         }
+    }
+
+    if let Some(error) = first_error {
+        return Err(error);
     }
 
     if args.json {
@@ -228,7 +245,7 @@ async fn run_task(
             vec!["run".to_string(), task.command.clone()],
         ),
         "auto" => {
-            let script_runner = resolve_script_runner(&project.path, &task.command);
+            let script_runner = resolve_script_runner(&project.path, &task.command, root);
             match script_runner {
                 Some(pm) => (pm, vec!["run".to_string(), task.command.clone()]),
                 None => (task.command.clone(), task.args.clone()),
@@ -306,7 +323,11 @@ fn package_manager_executable(program: &str) -> &str {
     program
 }
 
-fn resolve_script_runner(project_path: &std::path::Path, task: &str) -> Option<String> {
+fn resolve_script_runner(
+    project_path: &std::path::Path,
+    task: &str,
+    root: &std::path::Path,
+) -> Option<String> {
     let manifest = std::fs::read_to_string(project_path.join("package.json")).ok()?;
     let scripts: HashMap<String, serde_json::Value> =
         serde_json::from_str::<serde_json::Value>(&manifest)
@@ -321,8 +342,7 @@ fn resolve_script_runner(project_path: &std::path::Path, task: &str) -> Option<S
         return None;
     }
 
-    let cwd = std::env::current_dir().ok()?;
-    crate::commands::install::detect_package_manager(&cwd, None).ok()
+    crate::commands::install::detect_package_manager(root, None).ok()
 }
 
 #[cfg(test)]
@@ -570,7 +590,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn test_execute_continue_on_error_swallows_failures() {
+    async fn test_execute_continue_on_error_reports_failures() {
         let dir = tempdir().unwrap();
         setup_workspace(dir.path());
         let config = make_config(vec!["packages/*".to_string()]);
@@ -592,7 +612,7 @@ mod tests {
         )
         .await;
 
-        result.unwrap();
+        assert!(matches!(result, Err(Error::TaskFailed { .. })));
     }
 
     #[test]
@@ -603,27 +623,28 @@ mod tests {
             r#"{"name":"test","scripts":{"test":"echo test"}}"#,
         )
         .unwrap();
-        let runner = resolve_script_runner(dir.path(), "test");
-        assert_eq!(runner.as_deref(), Some("yarn"));
+        std::fs::write(dir.path().join("pnpm-lock.yaml"), "").unwrap();
+        let runner = resolve_script_runner(dir.path(), "test", dir.path());
+        assert_eq!(runner.as_deref(), Some("pnpm"));
     }
 
     #[test]
     fn test_resolve_script_runner_no_script() {
         let dir = tempdir().unwrap();
         std::fs::write(dir.path().join("package.json"), r#"{"name":"test"}"#).unwrap();
-        assert!(resolve_script_runner(dir.path(), "test").is_none());
+        assert!(resolve_script_runner(dir.path(), "test", dir.path()).is_none());
     }
 
     #[test]
     fn test_resolve_script_runner_missing_package_json() {
         let dir = tempdir().unwrap();
-        assert!(resolve_script_runner(dir.path(), "test").is_none());
+        assert!(resolve_script_runner(dir.path(), "test", dir.path()).is_none());
     }
 
     #[test]
     fn test_resolve_script_runner_invalid_json() {
         let dir = tempdir().unwrap();
         std::fs::write(dir.path().join("package.json"), "invalid").unwrap();
-        assert!(resolve_script_runner(dir.path(), "test").is_none());
+        assert!(resolve_script_runner(dir.path(), "test", dir.path()).is_none());
     }
 }

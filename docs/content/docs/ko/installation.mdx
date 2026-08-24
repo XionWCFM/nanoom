@@ -40,7 +40,9 @@ nanoom --version
 
 ```bash
 curl -fsSL -o nanoom.tar.gz \
-  https://github.com/XionWCFM/nanoom/releases/download/v0.1.0/nanoom-macos-arm64.tar.gz
+  https://github.com/XionWCFM/nanoom/releases/download/v0.2.3/nanoom-macos-arm64.tar.gz
+curl -fsSL -o nanoom.tar.gz.sha256 \
+  https://github.com/XionWCFM/nanoom/releases/download/v0.2.3/nanoom-macos-arm64.tar.gz.sha256
 
 shasum -a 256 -c nanoom.tar.gz.sha256
 tar -xzf nanoom.tar.gz && chmod +x nanoom && ./nanoom --version
@@ -48,12 +50,10 @@ tar -xzf nanoom.tar.gz && chmod +x nanoom && ./nanoom --version
 
 ## GitHub Actions에서 설치
 
-이 저장소에 있는 복합 액션을 쓰세요. 바이너리를 다운로드해 캐시하고 `$PATH`에 노출합니다:
+릴리스 태그로 고정한 공개 명령 Action을 사용하세요. 릴리스 체크섬을 검증한 뒤 nanoom을 실행합니다:
 
 ```yaml
-- uses: ./.github/actions/setup-nanoom
-  with:
-    version: latest # 고정하려면 예: v0.1.0
+- uses: XionWCFM/nanoom/.github/actions/affected@v0.2.3
 ```
 
 ## 에디터 자동완성 켜기

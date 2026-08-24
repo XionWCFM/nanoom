@@ -45,13 +45,25 @@ impl GitRepo {
 
     pub fn get_changed_files(&self, base: &str, head: Option<&str>) -> Result<Vec<PathBuf>> {
         let head_rev = head.unwrap_or("HEAD");
+        self.get_changed_files_for_range(&format!("{}...{}", base, head_rev))
+    }
 
+    pub fn get_changed_files_from_tip(
+        &self,
+        base: &str,
+        head: Option<&str>,
+    ) -> Result<Vec<PathBuf>> {
+        let head_rev = head.unwrap_or("HEAD");
+        self.get_changed_files_for_range(&format!("{}..{}", base, head_rev))
+    }
+
+    fn get_changed_files_for_range(&self, range: &str) -> Result<Vec<PathBuf>> {
         let output = Command::new("git")
             .arg("-C")
             .arg(&self.workdir)
             .arg("diff")
             .arg("--name-only")
-            .arg(format!("{}...{}", base, head_rev))
+            .arg(range)
             .output()?;
 
         if !output.status.success() {
@@ -395,6 +407,28 @@ mod tests {
             .map(|f| f.file_name().unwrap().to_string_lossy().to_string())
             .collect();
         assert_eq!(names, vec!["a.txt".to_string(), "new.txt".to_string()]);
+    }
+
+    #[test]
+    fn tip_comparison_includes_base_branch_divergence() {
+        let dir = init_repo();
+        git(dir.path(), &["checkout", "-b", "feature"]);
+        git(dir.path(), &["checkout", "main"]);
+        std::fs::write(dir.path().join("main.txt"), "main").unwrap();
+        git(dir.path(), &["add", "."]);
+        git(dir.path(), &["commit", "-m", "main change"]);
+        git(dir.path(), &["checkout", "feature"]);
+        std::fs::write(dir.path().join("feature.txt"), "feature").unwrap();
+        git(dir.path(), &["add", "."]);
+        git(dir.path(), &["commit", "-m", "feature change"]);
+
+        let repo = GitRepo::open(dir.path()).unwrap();
+        let merge_base_files = repo.get_changed_files("main", Some("feature")).unwrap();
+        let tip_files = repo
+            .get_changed_files_from_tip("main", Some("feature"))
+            .unwrap();
+        assert_eq!(merge_base_files.len(), 1);
+        assert_eq!(tip_files.len(), 2);
     }
 
     #[test]

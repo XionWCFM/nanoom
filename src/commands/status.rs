@@ -44,7 +44,7 @@ pub async fn execute(args: StatusArgs, _config: &crate::Config) -> Result<()> {
 
     for job_name in &job_names {
         let result = read_job_result(job_name, args.results.as_deref())?;
-        has_failure |= result.status == JobStatus::Failure;
+        has_failure |= matches!(result.status, JobStatus::Failure | JobStatus::Cancelled);
         results.push(result);
     }
 
@@ -95,11 +95,17 @@ pub async fn execute(args: StatusArgs, _config: &crate::Config) -> Result<()> {
                 if has_failure { "FAILURE" } else { "SUCCESS" }
             );
         }
-        _ => {}
+        invalid => {
+            return Err(crate::error::Error::StatusAggregation(format!(
+                "invalid format '{invalid}'; expected text, json, or markdown"
+            )))
+        }
     }
 
     if has_failure {
-        std::process::exit(1);
+        return Err(crate::error::Error::ReportedFailure(
+            "one or more jobs did not succeed".into(),
+        ));
     }
 
     Ok(())
@@ -113,23 +119,38 @@ fn read_job_result(job_name: &str, explicit_results: Option<&str>) -> Result<Job
             .filter_map(|entry| entry.split_once('='))
             .find(|(name, _)| name.trim() == job_name)
         {
+            let status = match status.trim() {
+                "success" => JobStatus::Success,
+                "failure" => JobStatus::Failure,
+                "cancelled" => JobStatus::Cancelled,
+                "skipped" => JobStatus::Skipped,
+                invalid => {
+                    return Err(crate::error::Error::StatusAggregation(format!(
+                        "invalid status '{invalid}' for job '{job_name}'"
+                    )))
+                }
+            };
             return Ok(JobResult {
                 name: job_name.to_string(),
-                status: match status.trim() {
-                    "success" => JobStatus::Success,
-                    "failure" => JobStatus::Failure,
-                    "cancelled" => JobStatus::Cancelled,
-                    "skipped" => JobStatus::Skipped,
-                    _ => JobStatus::Failure,
-                },
+                status,
                 duration_ms: None,
                 url: None,
             });
         }
+        return Err(crate::error::Error::StatusAggregation(format!(
+            "missing result for job '{job_name}'"
+        )));
     }
-    let output_file =
-        std::env::var("GITHUB_OUTPUT").unwrap_or_else(|_| "/tmp/nanoom-output".to_string());
-    let content = std::fs::read_to_string(&output_file).unwrap_or_default();
+    let output_file = std::env::var("GITHUB_OUTPUT").map_err(|_| {
+        crate::error::Error::StatusAggregation(
+            "status requires --results or a GITHUB_OUTPUT file".into(),
+        )
+    })?;
+    let content = std::fs::read_to_string(&output_file).map_err(|error| {
+        crate::error::Error::StatusAggregation(format!(
+            "cannot read GITHUB_OUTPUT '{output_file}': {error}"
+        ))
+    })?;
 
     let status = if content.contains(&format!("{}_result=failure", job_name)) {
         JobStatus::Failure
@@ -140,7 +161,9 @@ fn read_job_result(job_name: &str, explicit_results: Option<&str>) -> Result<Job
     } else if content.contains(&format!("{}_result=skipped", job_name)) {
         JobStatus::Skipped
     } else {
-        JobStatus::Success
+        return Err(crate::error::Error::StatusAggregation(format!(
+            "missing result for job '{job_name}'"
+        )));
     };
 
     Ok(JobResult {
@@ -218,12 +241,11 @@ mod tests {
 
     #[test]
     #[serial]
-    fn test_read_job_result_missing_defaults_to_success() {
+    fn test_read_job_result_missing_is_an_error() {
         let file = temp_output_file("missing");
         std::env::set_var("GITHUB_OUTPUT", &file);
         std::fs::write(&file, "other=value").unwrap();
-        let result = read_job_result("test", None).unwrap();
-        assert_eq!(result.status, JobStatus::Success);
+        assert!(read_job_result("test", None).is_err());
     }
 
     #[test]

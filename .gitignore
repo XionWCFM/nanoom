@@ -1,6 +1,5 @@
 /target
 **/*.rs.bk
-Cargo.lock
 .env
 .env.local
 *.swp
@@ -20,3 +19,4 @@ node_modules/
 docs/.next/
 docs/.source/
 docs/node_modules/
+**/.yarn/install-state.gz

@@ -1,268 +1,53 @@
 ---
 title: CLI reference
-description: Every subcommand, flag, environment variable, and exit code
+description: Commands, inputs, outputs, and failure behavior
 ---
 
-Global flags work on every subcommand:
+Global options are `--config/-c`, `--cwd/-C`, and repeatable `--verbose/-v`. Machine-readable commands keep JSON on stdout and diagnostics on stderr.
 
-| Flag | Short | Description |
-| --- | --- | --- |
-| `--config <path>` | `-c` | Config file (default: `nanoom.config.json` in cwd) |
-| `--cwd <dir>` | `-C` | Working directory (default: current directory) |
-| `--verbose` | `-v` | Increase verbosity (repeatable: `-v`, `-vv`, `-vvv`) |
-| `--help` | `-h` | Show help for the command |
-| `--version` | `-V` | Print version |
-
----
-
-## `nanoom affected`
-
-Calculate affected projects and print the matrix.
+## `affected`
 
 ```bash
-nanoom affected [options]
+nanoom affected --base <branch|tag|commit> [--head HEAD] [--matrix]
 ```
 
-### Options
+The CLI requires `--base`; `--head` defaults to `HEAD`. `--matrix` prints all group matrices as JSON. Otherwise use `--format text|json` or `--json`. Comparisons use the merge base by default; set `COMPARISON=tip` for a direct base-tip comparison. GitHub event context is deliberately resolved by the composite Action, not inferred inside this platform-agnostic command.
 
-| Option | Description |
-| --- | --- |
-| `--json` | Full structured output (`group`, `has_change`) — used by the composite action |
-| `--format json\|text` | Output format (default: `text`) |
-| `--matrix <group>` | GitHub Actions matrix for one group: `{ "include": [...] }` |
-
-### Output formats
-
-**Text (default)** — human-readable summary:
-
-```
-Has changes: true
-
-Group: ci (2 entries)
-  - @app/web      → test
-  - @lib/ui       → test
-
-Group: e2e (0 entries)
-```
-
-**JSON (`--json` or `--format json`)** — machine-readable:
-
-```json
-{
-  "has_change": true,
-  "groups": {
-    "ci": {
-      "include": [
-        { "name": "@app/web", "path": "apps/web", "task": "test" },
-        { "name": "@lib/ui", "path": "packages/ui", "task": "test" }
-      ]
-    }
-  }
-}
-```
-
-**Matrix (`--matrix`)** — all groups, keyed by group name:
-
-```json
-{ "ci": { "include": [
-  { "name": "@app/web", "path": "apps/web", "task": "test" },
-  { "name": "@lib/ui", "path": "packages/ui", "task": "test" }
-] } }
-```
-
-### Event context (environment variables)
-
-nanoom reads the event from these variables, exactly as GitHub Actions sets them:
-
-| Variable | Event | Description |
-| --- | --- | --- |
-| `PUSH_REF_NAME` | push | Branch or tag ref that was pushed |
-| `PULL_REQUEST_BASE_REF`, `PULL_REQUEST_HEAD_REF` | pull_request | Base and head branch refs |
-| `MERGE_GROUP_BASE_REF`, `MERGE_GROUP_HEAD_REF` | merge_group | Merge queue base/head |
-| `COMPARISON` | all | `merge-base` (default) or `tip` — which commit to diff against |
-| `GITHUB_HEAD_REPOSITORY`, `GITHUB_REPOSITORY` | pull_request | Fork detection |
-
-### Shallow clone handling
-
-Shallow clones are deepened automatically (`--depth 128`, doubling on failure) until a common ancestor is found. Fork PRs resolve against the head repository.
-
-### Exit codes
-
-| Code | Meaning |
-| --- | --- |
-| 0 | Success (even if `has_change: false`) |
-| 1 | Error (config, git, workspace discovery) |
-| 2 | No common ancestor found after deepening |
-
----
-
-## `nanoom run`
-
-Run a task on affected projects in dependency order.
+## `run`
 
 ```bash
-nanoom run <group> <task> [options]
+nanoom run <group> <task> [--all] [--filter <workspace>]
+  [--runner auto|pnpm|yarn|npm|turbo|nx]
+  [--shard N --total-shards N] [--isolate] [--continue-on-error]
 ```
 
-### Arguments
+Shard flags must be supplied together and satisfy `1 <= shard <= total-shards`. Shard execution exports `NANOOM_SHARD_INDEX` and `NANOOM_SHARD_TOTAL`. `--continue-on-error` runs the remaining projects but still exits non-zero after any failure.
 
-| Argument | Description |
-| --- | --- |
-| `<group>` | Group name from config (e.g. `ci`) |
-| `<task>` | Task name from the group's `tasks` (e.g. `test`) |
-
-### Options
-
-| Option | Description |
-| --- | --- |
-| `--filter <name>` | Run only this project (by name) |
-| `--shard <n>` | Shard index (1-based) — requires `--total-shards` |
-| `--total-shards <n>` | Total shards; sets `NANOOM_SHARD_INDEX`/`NANOOM_SHARD_TOTAL` |
-| `--isolate` | Run only isolated entries from the matrix |
-| `--all` | Ignore affectedness; run on every project in the group |
-| `--continue-on-error` | Keep going after a failure; exit with the last non-zero code |
-
-### Task execution
-
-- If the task exists as a script in the project's `package.json`, it runs via the detected package manager: `pnpm run test`, `yarn test`, or `npm run test`.
-- Otherwise it runs as a raw shell command in the project directory.
-
-### Environment variables set by nanoom
-
-| Variable | Set when | Value |
-| --- | --- | --- |
-| `NANOOM_SHARD_INDEX` | `--shard` used | 1-based shard index |
-| `NANOOM_SHARD_TOTAL` | `--shard` + `--total-shards` | Total shards |
-| `NANOOM_PROJECT_NAME` | always | Current project name |
-| `NANOOM_PROJECT_PATH` | always | Current project absolute path |
-
-### Exit codes
-
-| Code | Meaning |
-| --- | --- |
-| 0 | All tasks succeeded |
-| 1..127 | Task exit code (first failure if not `--continue-on-error`) |
-| 128+ | Signal (e.g. 130 = SIGINT) |
-
----
-
-## `nanoom install`
-
-Install dependencies for every discovered project.
+## `install`
 
 ```bash
-nanoom install [options]
+nanoom install [--package-manager auto|pnpm|yarn|npm]
+  [--filter <workspace>] [--workspace-install]
 ```
 
-### Options
+The root install always runs. `--filter` installs the selected workspace dependency closure with Yarn Berry or pnpm; npm focused install is rejected. `--workspace-install` additionally runs the legacy install in each workspace.
 
-| Option | Description |
-| --- | --- |
-| `--package-manager auto\|pnpm\|yarn\|npm` | Package manager (default: `auto` — detected from lockfiles) |
-| `--root-install` | Also run install at the repo root (for root `package.json`) |
-
-### Detection order
-
-1. `pnpm-lock.yaml` → pnpm
-2. `yarn.lock` → yarn
-3. otherwise → npm
-
-### Exit codes
-
-| Code | Meaning |
-| --- | --- |
-| 0 | All installs succeeded |
-| 1+ | First non-zero install exit code |
-
----
-
-## `nanoom status`
-
-Aggregate job results written to `$GITHUB_OUTPUT`.
+## `status`
 
 ```bash
-nanoom status "<job1,job2,...>" [options]
+nanoom status <job,...> [--results job=status,...] [--format text|json|markdown]
 ```
 
-### Arguments
+Without `--results`, the command reads exact `<job>_result=<status>` entries from `GITHUB_OUTPUT`. Supported statuses are `success`, `failure`, `cancelled`, and `skipped`. Missing/unknown entries are errors; failure or cancellation prints the requested summary and exits non-zero. JSON mode emits exactly one JSON document on stdout.
 
-| Argument | Description |
-| --- | --- |
-| `<jobs>` | **Required**. Comma-separated job names (e.g. `test` or `build,test,e2e`) |
-
-### Options
-
-| Option | Description |
-| --- | --- |
-| `--format text\|json\|markdown` | Output format (default: `text`) |
-
-### How it works
-
-Each upstream job must write a line to `$GITHUB_OUTPUT`:
-
-```
-test_result=success
-test_result=failure
-build_result=cancelled
-e2e_result=skipped
-```
-
-The action reads these lines, prints a summary, and **exits non-zero if any job reported `failure`**.
-
-### Exit codes
-
-| Code | Meaning |
-| --- | --- |
-| 0 | All listed jobs `success` or `skipped` |
-| 1 | At least one job `failure` |
-| 2 | No result lines found for listed jobs |
-| 3 | Parse error |
-
----
-
-## `nanoom schema`
+## Other commands
 
 ```bash
-nanoom schema [--output <path>]
+nanoom cache-key --runner <runner> --task <task> [--filter <workspace>] [--json]
+nanoom schema [--output <file>]
+nanoom version [--json]
 ```
 
-### Options
+`cache-key` hashes supported lockfiles, configuration, runner/task/filter, and existing relevant files into a deterministic key. `schema` emits the current JSON Schema. `version --json` emits `{name, version}`.
 
-| Option | Description |
-| --- | --- |
-| `--output <path>` | Write schema to file (default: stdout) |
-
-Prints a draft-07 JSON Schema for `nanoom.config.json`. Use with editor `$schema` for autocomplete.
-
----
-
-## Common workflow patterns
-
-### Local preview before push
-
-```bash
-# simulate PR against main
-PULL_REQUEST_BASE_REF=main PULL_REQUEST_HEAD_REF=HEAD \
-  nanoom affected --json
-```
-
-### Debug the dependency graph
-
-```bash
-nanoom affected --json | jq '.groups[].projects[] | {name, dependents, dependencies}'
-```
-
-### Run one task locally with sharding
-
-```bash
-NANOOM_SHARD_INDEX=2 NANOOM_SHARD_TOTAL=4 \
-  nanoom run ci test:e2e --filter @app/web
-```
-
----
-
-## See also
-
-- [How-to: PR checks](/en/docs/how-tos/pr-checks) — wiring into Actions.
-- [How-to: Sharding](/en/docs/how-tos/sharding) — shard flags in practice.
-- [Configuration reference](/en/docs/reference/configuration) — rule fields.
+Use `nanoom <command> --help` as the executable source of truth for flags.

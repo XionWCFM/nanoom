@@ -53,17 +53,11 @@ pub enum Error {
         code: i32,
     },
 
-    #[error("No common ancestor found between {base} and {head}. Try fetching more history or use --comparison=tip")]
+    #[error("No common ancestor found between {base} and {head}. Try fetching more history or set COMPARISON=tip")]
     NoCommonAncestor { base: String, head: String },
 
     #[error("Shallow repository: need to fetch more history. Run 'git fetch --unshallow' or increase fetch depth")]
     ShallowRepository,
-
-    #[error("Fork repository detected: {0}")]
-    ForkRepository(String),
-
-    #[error("Invalid base commit: {0}")]
-    InvalidBaseCommit(String),
 
     #[error("Schema generation error: {0}")]
     SchemaGeneration(String),
@@ -82,6 +76,9 @@ pub enum Error {
 
     #[error("Status aggregation error: {0}")]
     StatusAggregation(String),
+
+    #[error("{0}")]
+    ReportedFailure(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

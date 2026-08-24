@@ -1,84 +1,19 @@
 ---
-title: 포크 풀 리퀘스트에서 실행하기
-description: 포크에서 온 풀 리퀘스트에도 안전하게 영향 감지 돌리기
+title: 포크 풀 리퀘스트 안전 실행
+description: 시크릿 노출 없이 표준 이벤트 리비전 사용
 ---
 
-풀 리퀘스트가 포크에서 오면 nanoom은 병합 베이스를 **베이스 저장소가 아니라 포크의 헤드 저장소** 기준으로 풉니다. 이렇게 하면 신뢰할 수 없는 잡에 시크릿이 새는 걸 막으면서도 영향 감지는 여전히 작동합니다.
-
-## 작동 원리
-
-nanoom은 `GITHUB_HEAD_REPOSITORY`와 `GITHUB_REPOSITORY`를 읽습니다. 둘이 다르면:
-
-1. 포크의 헤드 저장소를 클론합니다.
-2. 포크의 브랜치와 베이스 브랜치 사이 병합 베이스를 계산합니다.
-3. 그 병합 베이스를 기준으로 감지를 돌립니다.
-
-시크릿이 필요 없습니다 — 포크는 퍼블릭이니까요. 일반 PR과 똑같은 잡이 돌되, 디프 베이스만 다릅니다.
-
-## 1단계. 감지 액션 그대로 쓰기
-
-`nanoom-affected` 액션이 포크 해결을 내부에서 처리합니다. 감지 잡은 그대로 두세요:
+일반 풀 리퀘스트와 같은 태그 고정 워크플로를 사용합니다. `affected` Action은 `github.base_ref`, `github.sha`를 해석하고, base ref가 없으면 읽기 전용 저장소 권한으로 가져온 뒤 CLI에 명시적인 리비전을 전달합니다.
 
 ```yaml
-jobs:
-  detect:
-    runs-on: ubuntu-latest
-    outputs:
-      has-change: ${{ steps.detect.outputs.has_change }}
-      groups: ${{ steps.detect.outputs.groups }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - id: detect
-        uses: ./.github/actions/nanoom-affected
-        with:
-          group: ci
+permissions: { contents: read }
+steps:
+  - uses: actions/checkout@v4
+    with: { fetch-depth: 100 }
+  - id: affected
+    uses: XionWCFM/nanoom/.github/actions/affected@v0.2.3
 ```
 
-## 2단계. 포크 잡에서 시크릿 빼기 (중요)
+신뢰할 수 없는 포크 코드를 실행할 때 `pull_request_target`을 사용하지 마세요. 일반 포크 `pull_request`에는 저장소 시크릿이 전달되지 않습니다. install/run을 비공개 토큰 없이 실행하거나 시크릿이 필요한 잡을 동일 저장소 PR로 제한하세요.
 
-GitHub Actions는 **외부 기여자의 포크 PR로 트리거된 잡엔 시크릿을 넘기지 않습니다**. 이게 플랫폼 보호 장치입니다. 워크플로에서 `test`(또는 하류) 잡이 시크릿을 요구하지 않게 하세요:
-
-```yaml
-  test:
-    needs: [detect]
-    if: ${{ fromJson(needs.detect.outputs.groups).ci.has_change == true }}
-    # 시크릿 불필요 — 의존성은 퍼블릭 레지스트리에서 설치
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/nanoom-install
-      - uses: ./.github/actions/nanoom-run
-```
-
-테스트가 프라이빗 레지스트리 토큰을 쓰려면, 베이스 저장소의 **레포지토리 시크릿**에 넣고 `github.event.pull_request.head.repo.full_name == github.repository`일 때만 주입하세요. 아니면 포크에선 잡을 건너뛰게 하세요:
-
-```yaml
-  test:
-    if: ${{ fromJson(needs.detect.outputs.groups).ci.has_change == true && github.event.pull_request.head.repo.full_name == github.repository }}
-```
-
-## 3단계. 로컬에서 검증
-
-포크 PR을 로컬에서 시뮬레이션하세요:
-
-```bash
-# origin이 내 포크, upstream이 베이스 저장소라고 가정
-git fetch upstream main
-git fetch origin your-branch
-PULL_REQUEST_BASE_REF=main PULL_REQUEST_HEAD_REF=origin/your-branch \
-  GITHUB_HEAD_REPOSITORY=your-username/your-fork \
-  GITHUB_REPOSITORY=org/base-repo \
-  nanoom affected
-```
-
-## 자주 겪는 문제
-
-**"공통 조상 없음" 에러.** 포크가 리베이스했거나 히스토리를 잃었을 수 있습니다. 기여자에게 베이스 브랜치 최신으로 리베이스해 달라고 하세요.
-
-**잘못된 디프 베이스.** 체크아웃에 `fetch-depth: 0`을 줘야 전체 히스토리를 쓸 수 있습니다.
-
-## 관련 문서
-
-- [설정: globalDependencies](/ko/docs/reference/configuration#global-dependencies) — 포크에서도 록파일 변경은 전체를 트리거.
-- [CLI: nanoom affected](/ko/docs/reference/cli#nanoom-affected) — 쓰는 환경 변수들.
+비교 히스토리가 없으면 `fetch-depth`를 늘리거나 base 브랜치를 가져오세요. 로컬 재현은 `nanoom affected --base origin/main --head HEAD --matrix`를 사용합니다. CLI 자체는 GitHub 이벤트 환경변수를 추론하지 않습니다.

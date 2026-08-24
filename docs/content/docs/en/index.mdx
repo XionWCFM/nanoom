@@ -25,12 +25,12 @@ detect → matrix → compose → aggregate
 1. **Detect** — map changed files (from `git diff`) onto workspace projects, then expand through the dependency graph: change `lib`, and every project that links `lib` is affected too.
 2. **Matrix** — emit `{ "include": [...] }` JSON that `strategy.matrix` consumes directly.
 3. **Compose** — each matrix job runs one `(project, task)` pair via `nanoom run`.
-4. **Aggregate** — a final `nanoom status` step fails the workflow if anything failed.
+4. **Aggregate** — the final `status` Action rejects failed or inconsistent matrix results.
 
 ## Quick taste
 
 ```bash
-$ PULL_REQUEST_BASE_REF=main nanoom affected
+nanoom affected --base main --head HEAD
 
 Has changes: true
 

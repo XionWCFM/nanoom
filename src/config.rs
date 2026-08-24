@@ -1,7 +1,7 @@
 use crate::error::{Error, Result};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -94,6 +94,15 @@ impl Config {
                     name
                 )));
             }
+            let mut tasks = HashSet::new();
+            for task in &group.tasks {
+                if task.is_empty() || !tasks.insert(task) {
+                    return Err(Error::ConfigValidation(format!(
+                        "Group '{name}' has an empty or duplicate task '{task}'"
+                    )));
+                }
+            }
+            let mut rules = HashSet::new();
             for rule in &group.rules {
                 if rule.name.is_empty() {
                     return Err(Error::ConfigValidation(format!(
@@ -101,15 +110,52 @@ impl Config {
                         name
                     )));
                 }
+                if !rules.insert(&rule.name) {
+                    return Err(Error::ConfigValidation(format!(
+                        "Group '{name}' has duplicate rule '{}'",
+                        rule.name
+                    )));
+                }
+                for task in &rule.isolate {
+                    if !tasks.contains(task) {
+                        return Err(Error::ConfigValidation(format!(
+                            "Group '{name}' rule '{}' isolates unknown task '{task}'",
+                            rule.name
+                        )));
+                    }
+                }
                 for shard in &rule.shard {
+                    if !tasks.contains(&shard.task) {
+                        return Err(Error::ConfigValidation(format!(
+                            "Group '{name}' rule '{}' shards unknown task '{}'",
+                            rule.name, shard.task
+                        )));
+                    }
                     if shard.shard == 0 {
                         return Err(Error::ConfigValidation(format!(
                             "Group '{}' rule '{}' has shard count 0",
                             name, rule.name
                         )));
                     }
+                    if rule.isolate.contains(&shard.task) {
+                        return Err(Error::ConfigValidation(format!(
+                            "Group '{name}' rule '{}' cannot isolate and shard task '{}'",
+                            rule.name, shard.task
+                        )));
+                    }
                 }
             }
+        }
+
+        for pattern in self
+            .global_dependencies
+            .iter()
+            .chain(&self.workspace.include)
+            .chain(&self.workspace.exclude)
+        {
+            globset::Glob::new(pattern).map_err(|error| {
+                Error::ConfigValidation(format!("Invalid glob '{pattern}': {error}"))
+            })?;
         }
 
         Ok(())

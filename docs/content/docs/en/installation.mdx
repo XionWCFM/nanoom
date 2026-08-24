@@ -40,7 +40,9 @@ Download an archive from [GitHub Releases](https://github.com/XionWCFM/nanoom/re
 
 ```bash
 curl -fsSL -o nanoom.tar.gz \
-  https://github.com/XionWCFM/nanoom/releases/download/v0.1.0/nanoom-macos-arm64.tar.gz
+  https://github.com/XionWCFM/nanoom/releases/download/v0.2.3/nanoom-macos-arm64.tar.gz
+curl -fsSL -o nanoom.tar.gz.sha256 \
+  https://github.com/XionWCFM/nanoom/releases/download/v0.2.3/nanoom-macos-arm64.tar.gz.sha256
 
 shasum -a 256 -c nanoom.tar.gz.sha256
 tar -xzf nanoom.tar.gz && chmod +x nanoom && ./nanoom --version
@@ -48,12 +50,10 @@ tar -xzf nanoom.tar.gz && chmod +x nanoom && ./nanoom --version
 
 ## Install in GitHub Actions
 
-Use the composite action from this repository. It downloads and caches the binary, then exposes it on `$PATH`:
+Use a public command Action pinned to a release tag. It verifies the release checksum before invoking nanoom:
 
 ```yaml
-- uses: ./.github/actions/setup-nanoom
-  with:
-    version: latest # or pin e.g. v0.1.0
+- uses: XionWCFM/nanoom/.github/actions/affected@v0.2.3
 ```
 
 ## Enable editor autocomplete

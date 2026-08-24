@@ -33,6 +33,12 @@ impl Workspace {
         let mut path_to_index = HashMap::new();
 
         for (idx, ws) in workspaces.iter().enumerate() {
+            if name_to_index.contains_key(&ws.name) {
+                return Err(crate::error::Error::ConfigValidation(format!(
+                    "Duplicate workspace name '{}'",
+                    ws.name
+                )));
+            }
             let project = Project {
                 name: ws.name.clone(),
                 path: ws.path.clone(),
@@ -176,16 +182,12 @@ fn discover_pnpm_workspaces(cwd: &Path) -> Result<Vec<DiscoveredWorkspace>> {
         let glob = Glob::new(&pattern)?;
         let matcher = glob.compile_matcher();
 
-        for entry in WalkDir::new(cwd)
-            .follow_links(true)
-            .into_iter()
-            .filter_map(|e| e.ok())
-        {
-            let path = entry.path();
+        for entry in WalkDir::new(cwd).follow_links(false) {
+            let path = entry?.path().to_path_buf();
             if path.join("package.json").exists() {
-                let relative = path.strip_prefix(cwd).unwrap_or(path);
+                let relative = path.strip_prefix(cwd).unwrap_or(&path);
                 if matcher.is_match(relative) {
-                    workspaces.push(read_workspace(path, cwd)?);
+                    workspaces.push(read_workspace(&path, cwd)?);
                 }
             }
         }
@@ -282,16 +284,12 @@ fn discover_yarn_workspaces(cwd: &Path) -> Result<Vec<DiscoveredWorkspace>> {
         let glob = Glob::new(pattern)?;
         let matcher = glob.compile_matcher();
 
-        for entry in WalkDir::new(cwd)
-            .follow_links(true)
-            .into_iter()
-            .filter_map(|e| e.ok())
-        {
-            let path = entry.path();
+        for entry in WalkDir::new(cwd).follow_links(false) {
+            let path = entry?.path().to_path_buf();
             if path.join("package.json").exists() {
-                let relative = path.strip_prefix(cwd).unwrap_or(path);
+                let relative = path.strip_prefix(cwd).unwrap_or(&path);
                 if matcher.is_match(relative) {
-                    workspaces.push(read_workspace(path, cwd)?);
+                    workspaces.push(read_workspace(&path, cwd)?);
                 }
             }
         }

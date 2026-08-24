@@ -47,10 +47,10 @@ enum Commands {
     Schema {
         #[arg(long, help = "Write schema to file instead of stdout")]
         output: Option<PathBuf>,
-        #[arg(long, help = "Output a JSON result (schema is JSON by default)")]
-        json: bool,
     },
+    #[command(about = "Generate a deterministic cache key")]
     CacheKey(CacheKeyArgs),
+    #[command(about = "Print the nanoom version")]
     Version {
         #[arg(long, help = "Output a JSON result")]
         json: bool,
@@ -61,7 +61,7 @@ enum Commands {
 async fn main() {
     let json = std::env::args().any(|arg| arg == "--json");
     if let Err(error) = run().await {
-        if json {
+        if json && !matches!(&error, nanoom::Error::ReportedFailure(_)) {
             println!(
                 "{}",
                 serde_json::json!({"status": "failure", "error": error.to_string()})
@@ -81,6 +81,15 @@ async fn run() -> Result<()> {
     let cwd = cli
         .cwd
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+
+    if cli.verbose > 0 {
+        eprintln!(
+            "nanoom: cwd={} config={} command={:?}",
+            cwd.display(),
+            config_path.display(),
+            cli.command
+        );
+    }
 
     // Schema command does not require a config file; all others do.
     if let Commands::Version { json } = &cli.command {

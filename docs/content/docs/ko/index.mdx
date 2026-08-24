@@ -25,12 +25,12 @@ nanoom은 모노레포 CI에서 **"이 변경이 어떤 프로젝트에 영향�
 1. **감지** — `git diff`로 바뀐 파일을 워크스페이스 프로젝트에 매핑한 뒤, 의존성 그래프를 따라 역방향으로 확장합니다. `lib`이 바뀌면 `lib`을 링크하는 모든 프로젝트가 영향받습니다.
 2. **매트릭스** — `{ "include": [...] }` JSON을 내보내 `strategy.matrix`가 바로 소비하게 합니다.
 3. **구성** — 매트릭스 잡 하나가 `(프로젝트, 작업)` 쌍 하나를 `nanoom run`으로 실행합니다.
-4. **집계** — 마지막 `nanoom status` 단계가 아무 잡이나 실패하면 워크플로를 실패시킵니다.
+4. **집계** — 마지막 `status` Action이 실패하거나 일관되지 않은 매트릭스 결과를 거부합니다.
 
 ## 빠르게 맛보기
 
 ```bash
-$ PULL_REQUEST_BASE_REF=main nanoom affected
+nanoom affected --base main --head HEAD
 
 Has changes: true
 

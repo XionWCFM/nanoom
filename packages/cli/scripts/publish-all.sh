@@ -18,6 +18,10 @@ for index in "${!TARGETS[@]}"; do
 
   mkdir -p "$dir"
   curl -fsSL "$REPO_URL/$artifact" -o "$dir/$artifact"
+  curl -fsSL "$REPO_URL/$artifact.sha256" -o "$dir/$artifact.sha256"
+  expected=$(awk '{print $1}' "$dir/$artifact.sha256")
+  actual=$(sha256sum "$dir/$artifact" | awk '{print $1}')
+  [[ "$expected" == "$actual" ]]
 
   case "$artifact" in
     *.tar.gz) tar -xzf "$dir/$artifact" -C "$dir" ;;
@@ -30,8 +34,8 @@ for index in "${!TARGETS[@]}"; do
       ;;
   esac
 
-  yarn workspace "$pkg" npm publish --access public --tolerate-republish
+  yarn workspace "$pkg" npm publish --access public
 done
 
-yarn workspace @nanoom/cli npm publish --access public --tolerate-republish
+yarn workspace @nanoom/cli npm publish --access public
 echo "Published @nanoom/cli@$VERSION and all platform packages."

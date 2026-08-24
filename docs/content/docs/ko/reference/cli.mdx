@@ -1,268 +1,51 @@
 ---
 title: CLI 레퍼런스
-description: 모든 서브커맨드, 플래그, 환경 변수, 종료 코드
+description: 명령, 입력, 출력, 실패 동작
 ---
 
-전역 플래그는 모든 서브커맨드에 적용됩니다:
+전역 옵션은 `--config/-c`, `--cwd/-C`, 반복 가능한 `--verbose/-v`입니다. 기계 판독 명령은 JSON을 stdout에, 진단을 stderr에 유지합니다.
 
-| 플래그 | 단축 | 설명 |
-| --- | --- | --- |
-| `--config <경로>` | `-c` | 설정 파일 (기본: 현재 디렉터리의 `nanoom.config.json`) |
-| `--cwd <디렉터리>` | `-C` | 작업 디렉터리 (기본: 현재 디렉터리) |
-| `--verbose` | `-v` | 상세도 높이기 (반복 가능: `-v`, `-vv`, `-vvv`) |
-| `--help` | `-h` | 해당 명령어 도움말 보기 |
-| `--version` | `-V` | 버전 출력 |
-
----
-
-## `nanoom affected`
-
-영향받는 프로젝트를 계산해 매트릭스를 출력합니다.
+## `affected`
 
 ```bash
-nanoom affected [옵션]
+nanoom affected --base <브랜치|태그|커밋> [--head HEAD] [--matrix]
 ```
 
-### 옵션
+CLI는 `--base`가 필수이며 `--head` 기본값은 `HEAD`입니다. `--matrix`는 모든 그룹 매트릭스를 JSON으로 출력합니다. 그 외에는 `--format text|json` 또는 `--json`을 사용합니다. 기본 비교는 merge base를 사용하며 직접 base tip 비교는 `COMPARISON=tip`으로 선택합니다. GitHub 이벤트 컨텍스트는 플랫폼 독립 CLI 내부에서 추론하지 않고 복합 Action 경계에서 해석합니다.
 
-| 옵션 | 설명 |
-| --- | --- |
-| `--json` | 전체 구조화 출력 (`group`, `has_change`) — 복합 액션이 씀 |
-| `--format json\|text` | 출력 포맷 (기본: `text`) |
-| `--matrix <그룹>` | 한 그룹의 GitHub Actions 매트릭스: `{ "include": [...] }` |
-
-### 출력 포맷
-
-**텍스트 (기본)** — 사람이 읽기 좋은 요약:
-
-```
-Has changes: true
-
-Group: ci (2 entries)
-  - @app/web      → test
-  - @lib/ui       → test
-
-Group: e2e (0 entries)
-```
-
-**JSON (`--json` 또는 `--format json`)** — 기계 판독용:
-
-```json
-{
-  "has_change": true,
-  "groups": {
-    "ci": {
-      "include": [
-        { "name": "@app/web", "path": "apps/web", "task": "test" },
-        { "name": "@lib/ui", "path": "packages/ui", "task": "test" }
-      ]
-    }
-  }
-}
-```
-
-**매트릭스 (`--matrix`)** — 모든 그룹을 그룹명으로 묶어 출력:
-
-```json
-{ "ci": { "include": [
-  { "name": "@app/web", "path": "apps/web", "task": "test" },
-  { "name": "@lib/ui", "path": "packages/ui", "task": "test" }
-] } }
-```
-
-### 이벤트 컨텍스트 (환경 변수)
-
-nanoom은 GitHub Actions가 설정하는 그대로 이 환경 변수들로 이벤트를 읽습니다:
-
-| 변수 | 이벤트 | 설명 |
-| --- | --- | --- |
-| `PUSH_REF_NAME` | push | 푸시된 브랜치/태그 ref |
-| `PULL_REQUEST_BASE_REF`, `PULL_REQUEST_HEAD_REF` | pull_request | 베이스/헤드 브랜치 ref |
-| `MERGE_GROUP_BASE_REF`, `MERGE_GROUP_HEAD_REF` | merge_group | 머지 큐 베이스/헤드 |
-| `COMPARISON` | 모두 | `merge-base`(기본) 또는 `tip` — 어느 커밋과 비교할지 |
-| `GITHUB_HEAD_REPOSITORY`, `GITHUB_REPOSITORY` | pull_request | 포크 감지 |
-
-### 얕은 클론 처리
-
-얕은 클론은 자동으로 깊어집니다 (`--depth 128`, 실패 시 두 배씩). 공통 조상을 찾을 때까지. 포크 PR은 헤드 저장소 기준으로 풉니다.
-
-### 종료 코드
-
-| 코드 | 의미 |
-| --- | --- |
-| 0 | 성공 (`has_change: false`여도) |
-| 1 | 에러 (설정, git, 워크스페이스 발견) |
-| 2 | 공통 조상 못 찾음 (깊이기 후에도) |
-
----
-
-## `nanoom run`
-
-영향받은 프로젝트들에서 작업을 의존성 순서로 실행합니다.
+## `run`
 
 ```bash
-nanoom run <그룹> <작업> [옵션]
+nanoom run <group> <task> [--all] [--filter <workspace>]
+  [--runner auto|pnpm|yarn|npm|turbo|nx]
+  [--shard N --total-shards N] [--isolate] [--continue-on-error]
 ```
 
-### 인자
+샤드 플래그는 함께 제공해야 하며 `1 <= shard <= total-shards`를 만족해야 합니다. 샤드 실행은 `NANOOM_SHARD_INDEX`, `NANOOM_SHARD_TOTAL`을 내보냅니다. `--continue-on-error`는 나머지 프로젝트를 실행하지만 하나라도 실패하면 최종 종료 코드는 비정상입니다.
 
-| 인자 | 설명 |
-| --- | --- |
-| `<그룹>` | 설정의 그룹 이름 (예: `ci`) |
-| `<작업>` | 그룹의 `tasks`에 있는 작업 이름 (예: `test`) |
-
-### 옵션
-
-| 옵션 | 설명 |
-| --- | --- |
-| `--filter <이름>` | 이 프로젝트만 실행 (이름 기준) |
-| `--shard <n>` | 샤드 인덱스 (1-베이스) — `--total-shards` 필요 |
-| `--total-shards <n>` | 총 샤드 수; `NANOOM_SHARD_INDEX`/`NANOOM_SHARD_TOTAL` 설정 |
-| `--isolate` | 매트릭스에서 격리된 항목만 실행 |
-| `--all` | 영향도 무시; 그룹의 모든 프로젝트에서 실행 |
-| `--continue-on-error` | 실패 후 계속; 마지막 비-0 코드로 종료 |
-
-### 작업 실행 방식
-
-- 작업이 프로젝트 `package.json`의 스크립트로 있으면, 감지된 패키지 매니저로 실행: `pnpm run test`, `yarn test`, `npm run test`.
-- 없으면 프로젝트 디렉터리에서 로우 셸 명령어로 실행.
-
-### nanoom이 설정하는 환경 변수
-
-| 변수 | 설정 조건 | 값 |
-| --- | --- | --- |
-| `NANOOM_SHARD_INDEX` | `--shard` 사용 시 | 1-베이스 샤드 인덱스 |
-| `NANOOM_SHARD_TOTAL` | `--shard` + `--total-shards` | 총 샤드 수 |
-| `NANOOM_PROJECT_NAME` | 항상 | 현재 프로젝트 이름 |
-| `NANOOM_PROJECT_PATH` | 항상 | 현재 프로젝트 절대 경로 |
-
-### 종료 코드
-
-| 코드 | 의미 |
-| --- | --- |
-| 0 | 모든 작업 성공 |
-| 1..127 | 작업 종료 코드 (`--continue-on-error` 없으면 첫 실패) |
-| 128+ | 시그널 (예: 130 = SIGINT) |
-
----
-
-## `nanoom install`
-
-발견된 모든 프로젝트의 의존성을 설치합니다.
+## `install`
 
 ```bash
-nanoom install [옵션]
+nanoom install [--package-manager auto|pnpm|yarn|npm]
+  [--filter <workspace>] [--workspace-install]
 ```
 
-### 옵션
+루트 install은 항상 실행합니다. `--filter`는 Yarn Berry 또는 pnpm으로 선택 워크스페이스의 의존성 폐쇄를 설치하며 npm 집중 설치는 거부됩니다. `--workspace-install`은 레거시 워크스페이스별 install도 추가 실행합니다.
 
-| 옵션 | 설명 |
-| --- | --- |
-| `--package-manager auto\|pnpm\|yarn\|npm` | 패키지 매니저 (기본: `auto` — 록파일에서 감지) |
-| `--root-install` | 저장소 루트에도 install 실행 (루트 `package.json`용) |
-
-### 감지 순서
-
-1. `pnpm-lock.yaml` → pnpm
-2. `yarn.lock` → yarn
-3. 그 외 → npm
-
-### 종료 코드
-
-| 코드 | 의미 |
-| --- | --- |
-| 0 | 모든 설치 성공 |
-| 1+ | 첫 비-0 설치 종료 코드 |
-
----
-
-## `nanoom status`
-
-`$GITHUB_OUTPUT`에 기록된 잡 결과를 집계합니다.
+## `status`
 
 ```bash
-nanoom status "<잡1,잡2,...>" [옵션]
+nanoom status <job,...> [--results job=status,...] [--format text|json|markdown]
 ```
 
-### 인자
+`--results`가 없으면 `GITHUB_OUTPUT`에서 정확한 `<job>_result=<status>` 항목을 읽습니다. 상태는 `success`, `failure`, `cancelled`, `skipped`입니다. 누락되거나 알 수 없는 값은 오류이며, 실패 또는 취소는 요청한 요약을 출력한 뒤 비정상 종료합니다. JSON 모드는 stdout에 JSON 문서 하나만 출력합니다.
 
-| 인자 | 설명 |
-| --- | --- |
-| `<잡들>` | **필수**. 콤마로 구분한 잡 이름들 (예: `test` 또는 `build,test,e2e`) |
-
-### 옵션
-
-| 옵션 | 설명 |
-| --- | --- |
-| `--format text\|json\|markdown` | 출력 포맷 (기본: `text`) |
-
-### 작동 방식
-
-각 상류 잡이 `$GITHUB_OUTPUT`에 줄을 써야 합니다:
-
-```
-test_result=success
-test_result=failure
-build_result=cancelled
-e2e_result=skipped
-```
-
-액션이 이 줄들을 읽어 요약 표를 출력하고, **어떤 잡이든 `failure`를 보고하면 0이 아닌 코드로 종료**합니다.
-
-### 종료 코드
-
-| 코드 | 의미 |
-| --- | --- |
-| 0 | 나열된 잡 모두 `success` 또는 `skipped` |
-| 1 | 최소 한 개 잡 `failure` |
-| 2 | 나열된 잡의 결과 줄을 못 찾음 |
-| 3 | 파싱 에러 |
-
----
-
-## `nanoom schema`
+## 기타 명령
 
 ```bash
-nanoom schema [--output <경로>]
+nanoom cache-key --runner <runner> --task <task> [--filter <workspace>] [--json]
+nanoom schema [--output <file>]
+nanoom version [--json]
 ```
 
-### 옵션
-
-| 옵션 | 설명 |
-| --- | --- |
-| `--output <경로>` | 스키마를 파일에 씀 (기본: stdout) |
-
-`nanoom.config.json`용 draft-07 JSON Schema를 출력합니다. 에디터 `$schema`에 넣어 자동완성 쓰세요.
-
----
-
-## 자주 쓰는 워크플로 패턴
-
-### 푸시 전 로컬 미리보기
-
-```bash
-# main 대상 PR 시뮬레이션
-PULL_REQUEST_BASE_REF=main PULL_REQUEST_HEAD_REF=HEAD \
-  nanoom affected --json
-```
-
-### 의존성 그래프 디버깅
-
-```bash
-nanoom affected --json | jq '.groups[].projects[] | {name, dependents, dependencies}'
-```
-
-### 샤딩으로 로컬에서 한 작업 돌리기
-
-```bash
-NANOOM_SHARD_INDEX=2 NANOOM_SHARD_TOTAL=4 \
-  nanoom run ci test:e2e --filter @app/web
-```
-
----
-
-## 같이 보기
-
-- [가이드: PR 체크](/ko/docs/how-tos/pr-checks) — Actions 연결.
-- [가이드: 샤딩](/ko/docs/how-tos/sharding) — 샤드 플래그 실전.
-- [설정 레퍼런스](/ko/docs/reference/configuration) — 규칙 필드들.
+`cache-key`는 지원 lockfile, 설정, runner/task/filter, 존재하는 관련 파일을 결정론적으로 해시합니다. `schema`는 현재 JSON Schema를, `version --json`은 `{name, version}`을 출력합니다. 플래그의 실행 가능한 기준은 `nanoom <command> --help`입니다.

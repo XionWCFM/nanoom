@@ -1,144 +1,26 @@
 ---
-title: 퀵스타트
-description: 영향-인지 GitHub Actions 파이프라인을 5단계로 완성하기
+title: 빠른 시작
+description: 영향받은 워크스페이스 실행 설정과 검증
 ---
 
-이 튜토리얼에서는 nanoom을 JS/TS 모노레포에 연결해, 풀 리퀘스트가 실제로 영향을 주는 프로젝트만 테스트하는 파이프라인을 만듭니다. npm, yarn, pnpm 워크스페이스를 가정합니다.
+`nanoom.config.json`을 만드세요.
 
-## 이 튜토리얼을 마치면 얻는 것
-
-- CI 작업 그룹을 정의하는 `nanoom.config.json`
-- 푸시 전에 영향받을 프로젝트를 미리 보는 로컬 워크플로
-- 동적 매트릭스와 상태 게이트가 있는 GitHub Actions 워크플로
-
-## 사전 준비
-
-- npm/yarn/pnpm 워크스페이스를 쓰는 모노레포 (지원 레이아웃은 [워크스페이스 발견](/ko/docs/reference/configuration#workspace-discovery) 참고)
-- nanoom 설치 — 안 했다면 [설치](/ko/docs/installation) 참고
-- `main` 브랜치에 최소 한 개 이상의 커밋이 있는 Git 히스토리
-
-## 1단계. 설정 파일 만들기
-
-저장소 루트에 `nanoom.config.json`을 만드세요:
-
-```jsonc
+```json
 {
   "$schema": "./nanoom.schema.json",
-  "group": {
-    "ci": {
-      "tasks": ["lint", "test", "build"],
-      "concurrency": 6
-    }
-  },
-  "globalDependencies": ["pnpm-lock.yaml", "tsconfig.base.json"]
+  "group": { "ci": { "tasks": ["lint", "test", "build"] } },
+  "globalDependencies": ["yarn.lock", "tsconfig.json"]
 }
 ```
 
-각 필드 의미:
-
-- **`tasks`** — 이 그룹이 실행할 package.json 스크립트 이름들
-- **`concurrency`** — 그룹당 최대 매트릭스 항목 수. 영향받는 프로젝트가 더 많으면 공유 잡에 묶여 들어갑니다.
-- **`globalDependencies`** — 바뀌면 *모든* 프로젝트를 영향받음으로 표시하는 글로브. 록파일과 공용 tsconfig가 여기 들어갑니다.
-
-## 2단계. 로컬에서 미리 보기
-
-`main` 브랜치 대상 풀 리퀘스트를 시뮬레이션하세요:
+스키마를 만들고 실제 비교를 미리 확인합니다.
 
 ```bash
-# 어떤 프로젝트가 실행될까?
-PULL_REQUEST_BASE_REF=main PULL_REQUEST_HEAD_REF=HEAD \
-  nanoom affected
-
-# 영향받은 프로젝트만 test 작업 실행
-nanoom run ci test
+nanoom schema --output nanoom.schema.json
+nanoom affected --base main --head HEAD --matrix
+nanoom run ci test --all
 ```
 
-`run`은 록파일에서 패키지 매니저를 감지해 각 프로젝트 디렉터리에서 `pnpm test`, `yarn test`, `npm test`를 실행합니다 — 의존성 순서대로.
+CLI의 `affected`는 명시적 base가 필요합니다. GitHub Actions에서는 공개 `affected` Action이 이벤트 리비전을 해석해 명시적으로 전달합니다.
 
-## 3단계. GitHub Actions 연결
-
-`.github/workflows/ci.yml`을 만드세요:
-
-```yaml
-name: CI
-on:
-  pull_request:
-  push:
-    branches: [main]
-
-jobs:
-  detect:
-    runs-on: ubuntu-latest
-    outputs:
-      has-change: ${{ steps.detect.outputs.has_change }}
-      groups: ${{ steps.detect.outputs.groups }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # 병합 베이스 계산을 위해 전체 히스토리 필요
-      - id: detect
-        uses: ./.github/actions/nanoom-affected
-
-  install:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/nanoom-install
-        with:
-          root-install: 'true'
-
-  test:
-    needs: [detect, install]
-    if: ${{ fromJson(needs.detect.outputs.groups).ci.has_change == true }}
-    strategy:
-      matrix: ${{ fromJson(needs.detect.outputs.groups).ci.matrix }}
-      fail-fast: false
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/nanoom-run
-        with:
-          group: ci
-          task: ${{ matrix.task }}
-          filter: ${{ matrix.name }}
-          shard: ${{ matrix.shard }}
-
-  status:
-    needs: [test]
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - uses: ./.github/actions/nanoom-status
-        with:
-          jobs: test
-```
-
-## 4단계. 동작 확인
-
-풀 리퀘스트를 열고 결과를 이 표와 비교해 보세요:
-
-| 변경 내용 | 예상 결과 |
-| --- | --- |
-| README만 수정 | 테스트 잡 0개, 워크플로는 통과 |
-| 리프 라이브러리 수정 | 해당 라이브러리와 링크된 모든 앱만 테스트 |
-| 록파일 수정 | 전체 실행 |
-
-## 자주 묻는 질문
-
-### 로컬 테스트에서 아무것도 감지되지 않아요
-
-`affected`는 병합 베이스를 기준으로 비교합니다. 테스트 중인 브랜치가 비교 대상 ref와 히스토리를 공유하는지 확인하세요 (`git fetch origin main` 먼저). `PULL_REQUEST_BASE_REF`와 `PULL_REQUEST_HEAD_REF` 둘 다 설정해야 합니다.
-
-### Actions에선 매트릭스가 비는데 로컬에선 잘 돼요
-
-`detect` 잡은 전체 git 히스토리가 필요합니다. 체크아웃에 `fetch-depth: 0`을 유지해야 병합 베이스를 계산할 수 있습니다.
-
-### 느린 테스트 스위트를 여러 러너로 나누고 싶어요
-
-그 프로젝트에 샤드 규칙을 추가하세요 — [느린 스위트 샤딩으로 나누기](/ko/docs/how-tos/sharding) 참고.
-
-## 다음 단계
-
-- 포크 PR에서도 안전하게 실행: [포크 풀 리퀘스트에서 실행하기](/ko/docs/how-tos/fork-prs)
-- 실패 시 병합 차단: [상태 체크로 병합 게이트하기](/ko/docs/how-tos/merge-gate)
-- 모든 설정 필드 상세: [설정 레퍼런스](/ko/docs/reference/configuration)
+이어서 [풀 리퀘스트 검사 실행](/ko/docs/how-tos/pr-checks)의 태그 고정 전체 워크플로를 복사하세요. 리프 변경이 의존자를 포함하는 경우, 전역 의존성 변경이 전체를 실행하는 경우, 무관한 변경이 `hasChange=false`와 건너뛴 매트릭스·성공한 status를 만드는 경우를 검증합니다.

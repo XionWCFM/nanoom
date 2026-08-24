@@ -47,3 +47,9 @@
 ### Patch Changes
 
 - [#1](https://github.com/XionWCFM/nanoom/pull/1) [`ef351af`](https://github.com/XionWCFM/nanoom/commit/ef351afcf391bbdcb15a59696b09eb5a84a0223c) Thanks [@XionWCFM](https://github.com/XionWCFM)! - Complete the nanoom engine, GitHub Actions integration, and release distribution path.
+# 0.2.3
+
+- Validate ambiguous configuration, shard arguments, status inputs, and continued task failures.
+- Use npm-compatible semver ranges for workspace dependency edges.
+- Verify fallback binary checksums before extraction and synchronize every npm package version.
+- Remove moving `@main` internal Action references and add repeatable local/released-fixture completion gates.

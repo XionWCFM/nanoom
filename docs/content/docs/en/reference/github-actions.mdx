@@ -1,212 +1,69 @@
 ---
 title: GitHub Actions reference
-description: Composite actions — inputs, outputs, and usage examples
+description: Public composite Action inputs, outputs, and contracts
 ---
 
-nanoom ships five composite actions in this repository. Reference them with local paths inside the nanoom repo (`./.github/actions/...`), or publish your fork and use `owner/repo/.github/actions/nanoom-affected@tag`.
+Pin public Actions to a release tag: `XionWCFM/nanoom/.github/actions/<name>@v0.2.3`. The internal setup script is loaded from that same ref; it never follows `main`.
 
----
-
-## `nanoom-affected`
-
-Runs affected detection and emits a job matrix.
-
-### Usage
+## `affected`
 
 ```yaml
-- id: detect
-  uses: ./.github/actions/nanoom-affected
+- id: affected
+  uses: XionWCFM/nanoom/.github/actions/affected@v0.2.3
+  with:
+    cwd: .
+    config: nanoom.config.json
 ```
 
-### Inputs
-
-| Input | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `version` | string | No | `latest` | nanoom version to install (`latest` or `v0.1.0`) |
-
-### Outputs
-
-| Output | Type | Description |
+| Input | Default | Description |
 | --- | --- | --- |
-| `has-change` | string | `"true"` when at least one project is affected |
-| `groups` | JSON | `{ "ci": { "has_change": true, "matrix": { "include": [...] } } }` |
+| `version` | `latest` | Release binary tag, or `local` for repository tests |
+| `cwd` | `.` | Consumer working directory |
+| `config` | `nanoom.config.json` | Config path relative to `cwd` |
+| `base`, `head` | event-derived | Explicit comparison revisions |
 
-### What it does internally
+Outputs are `has_change` and `groups`. `groups` maps each configured group to `{hasChange, matrix}`. Event resolution uses standard GitHub context (`before`, `base_ref`, or merge-group base SHA) at the Action boundary and invokes the CLI with explicit revisions.
 
-1. Installs nanoom binary (cached by version).
-2. Runs `nanoom affected --matrix` once for all configured groups.
-3. Adds per-group `has_change` values and exposes one `groups` output.
-4. Consumers select a group with `fromJSON(needs.affected.outputs.groups).ci.matrix`.
-
----
-
-## `nanoom-run`
-
-Runs one `(project, task)` pair on the current runner.
-
-### Usage
+## `install`
 
 ```yaml
-- uses: ./.github/actions/nanoom-run
+- uses: XionWCFM/nanoom/.github/actions/install@v0.2.3
   with:
+    matrix: ${{ toJSON(matrix) }}
+    packageManager: yarn
+    cwd: .
+```
+
+`matrix` is required and may be one entry or an `include` wrapper. `packageManager`, `cwd`, and `version` are optional. npm is rejected because it cannot perform the required focused workspace-closure install.
+
+## `run`
+
+```yaml
+- uses: XionWCFM/nanoom/.github/actions/run@v0.2.3
+  with:
+    matrix: ${{ toJSON(matrix) }}
+    packageManager: yarn
+    monorepoTool: turbo
+```
+
+The required `matrix` entry supplies group, workspace, task, shard, and isolate data. Optional inputs are `packageManager`, `monorepoTool`, `cwd`, and `version`.
+
+## `status`
+
+```yaml
+- uses: XionWCFM/nanoom/.github/actions/status@v0.2.3
+  with:
+    needs: ${{ toJSON(needs) }}
+    affectedJob: affected
+    matrixJob: run
     group: ci
-    task: ${{ matrix.task }}
-    filter: ${{ matrix.name }}
-    shard: ${{ matrix.shard }}
-```
-
-### Inputs
-
-| Input | Type | Required | Description |
-| --- | --- | --- | --- |
-| `group` | string | **Yes** | Group name from config |
-| `task` | string | **Yes** | Task name from the group's `tasks` |
-| `filter` | string | **Yes** | Project name to run (from `matrix.name`) |
-| `shard` | string | No | Shard index (from `matrix.shard`) |
-| `version` | string | No | `latest` — nanoom version to install |
-
-### What it does internally
-
-1. Installs nanoom.
-2. Runs `nanoom run <group> <task> --filter <filter> [--shard <shard>]`.
-3. Writes `<job>_result=success|failure` to `$GITHUB_OUTPUT` for the status gate.
-
----
-
-## `nanoom-install`
-
-Installs dependencies for every discovered project (and optionally the root).
-
-### Usage
-
-```yaml
-- uses: ./.github/actions/nanoom-install
-  with:
-    package-manager: auto # auto | pnpm | yarn | npm
-    root-install: 'true'
-```
-
-### Inputs
-
-| Input | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `package-manager` | string | No | `auto` | `auto`, `pnpm`, `yarn`, or `npm` |
-| `root-install` | boolean | No | `false` | Also run install at repo root |
-| `version` | string | No | `latest` | nanoom version to install |
-
-### Detection (when `auto`)
-
-1. `pnpm-lock.yaml` → pnpm
-2. `yarn.lock` → yarn
-3. otherwise → npm
-
----
-
-## `nanoom-status`
-
-Aggregates job results and fails if anything failed.
-
-### Usage
-
-```yaml
-- uses: ./.github/actions/nanoom-status
-  with:
-    jobs: test
     format: markdown
 ```
 
-### Inputs
+`needs` is required. The other defaults are shown above except `format`, whose default is `text`. This Action uses `jq` directly and does not install the CLI. It succeeds only for `hasChange=true/matrix=success` or `hasChange=false/matrix=skipped`; all inconsistent, cancelled, or failed combinations fail.
 
-| Input | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `jobs` | string | **Yes** | — | Comma-separated job names (e.g. `test` or `build,test,e2e`) |
-| `format` | string | No | `text` | `text`, `json`, or `markdown` |
-| `version` | string | No | `latest` | nanoom version to install |
+## Matrix entry
 
-### What it does
+Each entry contains `group`, `name`, `path`, and `task`. Sharded entries also contain `shard` and `totalShards`; isolated entries contain `isolate: true`.
 
-1. Installs nanoom.
-2. Reads `$GITHUB_OUTPUT` for each listed job: `<job>_result=success|failure|cancelled|skipped`.
-3. Prints a summary table in the chosen format.
-4. **Exits 1 if any job reported `failure`** — use as the required status check.
-
-### Output formats
-
-**Text:**
-```
-test → success
-test → success
-test → failure
-```
-
-**Markdown:**
-```markdown
-| Job | Result |
-|-----|--------|
-| test | ✅ success |
-| test | ❌ failure |
-```
-
-**JSON:**
-```json
-{ "results": [ { "job": "test", "result": "failure" } ] }
-```
-
----
-
-## `setup-nanoom`
-
-Downloads and caches the nanoom binary, adds it to `$PATH`.
-
-### Usage
-
-```yaml
-- uses: ./.github/actions/setup-nanoom
-  with:
-    version: latest
-```
-
-### Inputs
-
-| Input | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `version` | string | No | `latest` | Version to install (`latest` or `v0.1.0`) |
-
-### Use case
-
-Use this when you want to run raw `nanoom` commands in your own steps:
-
-```yaml
-- uses: ./.github/actions/setup-nanoom
-- run: nanoom affected --json
-- run: nanoom run ci test --filter @app/web
-```
-
----
-
-## Matrix entry fields
-
-Every entry in the `include` array carries:
-
-| Field | Type | Present | Description |
-| --- | --- | --- | --- |
-| `name` | string | always | Project name |
-| `path` | string | always | Project path relative to repo root |
-| `task` | string | always | Task name to run |
-| `shard` | integer | when sharded | 1-based shard index |
-| `isolate` | string | when isolated | `"true"` — dedicated runner |
-
----
-
-## Fork pull requests
-
-Detection resolves merge-base against the fork's head repository when `GITHUB_HEAD_REPOSITORY` differs from `GITHUB_REPOSITORY`. Keep secrets out of jobs that run for untrusted forks; nanoom itself needs none.
-
----
-
-## Related
-
-- [How-to: PR checks](/en/docs/how-tos/pr-checks) — full workflow.
-- [How-to: Sharding](/en/docs/how-tos/sharding) — shard in Actions.
-- [How-to: Merge gate](/en/docs/how-tos/merge-gate) — status gate.
-- [CLI reference](/en/docs/reference/cli) — underlying flags.
+Use the final `status` job as the stable branch-protection check. A skipped matrix is valid only when `affected` explicitly reported no change.
