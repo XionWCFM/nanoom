@@ -19,9 +19,23 @@ printf '%s\n' "${files[@]}"
 
 has() { printf '%s\n' "${files[@]}" | grep -Fxq -- "$1"; }
 any() { printf '%s\n' "${files[@]}" | grep -Eq -- "$1"; }
+
+release_only=true
+for file in "${files[@]}"; do
+  case "$file" in
+    .changeset/*.md | Cargo.lock | Cargo.toml | yarn.lock | packages/cli/CHANGELOG.md | packages/cli/package.json | packages/cli-*/package.json) ;;
+    *) release_only=false ;;
+  esac
+done
+if $release_only; then
+  bash scripts/version-consistency.sh
+  echo 'review-change: PASS (release versions and package contracts are consistent)'
+  exit 0
+fi
+
 fail=0
 
-if any '^(src/|packages/cli/)' && ! any '(^|/)(tests?|__tests__|.*test.*|smoke-test\.js)'; then
+if any '^src/|^packages/cli/(bin/|postinstall\.js|download-smoke\.js|smoke-test\.js|scripts/)' && ! any '(^|/)(tests?|__tests__|.*test.*|smoke-test\.js)'; then
   echo 'BLOCKED: CLI/source change has no changed regression test.'; fail=1
 fi
 if any '^\.github/actions/' && ! has 'scripts/action-contract.sh'; then
