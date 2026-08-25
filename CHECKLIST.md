@@ -14,7 +14,7 @@ verification target when publishing the CLI package is explicitly in scope.
 
 - [ ] Every in-scope checklist item below is implemented, tested, and backed by a reproducible command or hosted-run evidence. Items outside the current scope must be marked `DE-SCOPED` with the user's reason; silently leaving them unchecked is not allowed.
 - [x] `cargo test --all --all-features`, `cargo fmt --all --check`, and `cargo clippy --all-targets --all-features -- -D warnings` pass.
-- [x] Measured Rust test coverage is at least 90% (target remains 95% where practical); the CI job must fail below the threshold.
+- [x] Measured Rust test coverage is at least 96%; the CI job must fail below the threshold.
 - [x] A reproducible local end-to-end fixture proves affected detection, matrix generation, `run`, `install`, `status`, dependency propagation, global dependencies, isolate, and shard behavior.
 - [ ] Distribution smoke tests prove direct release-binary execution, Yarn Berry-based fixture installation/execution, GitHub Actions setup/download, and (only when explicitly requested) npm registry publication/wrapper execution.
 
@@ -45,7 +45,7 @@ verification target when publishing the CLI package is explicitly in scope.
 - [x] Initialize Cargo workspace (single crate)
 - [x] Add all dependencies to Cargo.toml
 - [x] Set up CI workflow (build, test, lint, clippy, fmt)
-- [x] Configure a reproducible LLVM coverage gate (90% minimum; 93.66% line coverage measured)
+- [x] Configure a reproducible LLVM coverage gate (96% minimum; 96.01% line coverage measured)
 - [x] Set up pre-commit hooks (cargo fmt, clippy, test)
 - [x] Create initial README.md with project overview
 
@@ -171,7 +171,7 @@ verification target when publishing the CLI package is explicitly in scope.
 - [x] cargo test --all passes
 - [x] cargo clippy --all-targets --all-features -- -D warnings
 - [x] cargo fmt --all --check
-- [x] cargo llvm-cov --workspace --all-features --cobertura --fail-under-lines 90 (93.66% line coverage measured locally and hosted)
+- [x] cargo llvm-cov --workspace --all-features --cobertura --fail-under-lines 96 (96.01% line coverage measured locally)
 - [x] All integration tests pass
 - [x] Actions work in test repository (`nanoom-fixtures` hosted runs 32578005927 and 32579238857: v0.1.7 release setup, affected/matrix, install, run, status, shard/isolate all passed)
 
@@ -192,7 +192,7 @@ The agent may stop and mark the goal complete only when:
 
 - no in-scope unchecked item remains;
 - all required local quality gates pass;
-- coverage is at least 90%;
+- coverage is at least 96%;
 - Yarn Berry + Turborepo fixture E2E passes on a hosted runner;
 - transitive dependency propagation is proven;
 - affected -> dynamic matrix -> result artifact -> aggregate status is proven;
@@ -207,7 +207,7 @@ If any condition fails, the goal remains active and the agent must continue the 
 - [x] `cargo test --all --all-features` passes (140 tests currently, including unit and integration tests).
 - [x] `cargo fmt --all --check` passes.
 - [x] `cargo clippy --all-targets --all-features -- -D warnings` passes.
-- [x] `cargo llvm-cov --workspace --all-features --summary-only` measures 93.66% line coverage (2223/2364); CI enforces the 90% minimum.
+- [x] `cargo llvm-cov --workspace --all-features --summary-only` measures 96.01% line coverage (3009/3134); CI enforces the 96% minimum.
 - [x] npm wrapper/platform-package local smoke passes and `npm pack --dry-run --ignore-scripts` contains the wrapper files.
 - [x] Locally built release binary can be archived, extracted, and executed successfully.
 - [x] `scripts/release-smoke.sh` validates five artifact names, SHA-256 files, tar/zip payloads, and Unix executable permissions in a local fixture.

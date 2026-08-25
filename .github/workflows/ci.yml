@@ -62,7 +62,7 @@ jobs:
         run: cargo clippy --locked --all-targets --all-features -- -D warnings
 
   coverage:
-    name: Coverage (90% minimum, 95% target)
+    name: Coverage (96% minimum)
     runs-on: ubuntu-latest
 
     steps:
@@ -76,7 +76,7 @@ jobs:
         run: cargo install cargo-llvm-cov --locked
 
       - name: Run coverage
-        run: mkdir -p coverage && cargo llvm-cov --locked --workspace --all-features --cobertura --output-path coverage/cobertura.xml --fail-under-lines 90
+        run: mkdir -p coverage && cargo llvm-cov --locked --workspace --all-features --cobertura --output-path coverage/cobertura.xml --fail-under-lines 96
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4

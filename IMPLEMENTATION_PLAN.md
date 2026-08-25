@@ -249,7 +249,7 @@ Each action downloads binary from GitHub Releases OR uses npm package.
 |------|-------|
 | **Week 1** | 1. Cargo project setup with dependencies<br>2. Config parsing + JSON Schema generation<br>3. Git operations (gitoxide) - base commit detection |
 | **Week 2** | 4. Workspace detection (auto + config override)<br>5. File-to-workspace mapping + glob matching<br>6. Affected calculation + matrix generation |
-| **Week 3** | 7. CLI subcommands: affected, run, install, status<br>8. Unit tests (95% coverage target) |
+| **Week 3** | 7. CLI subcommands: affected, run, install, status<br>8. Unit tests (96% coverage target) |
 
 ---
 
@@ -361,7 +361,7 @@ Each action downloads binary from GitHub Releases OR uses npm package.
 
 ### Phase 1.9: Testing
 
-- [ ] Unit tests for all modules (95% coverage target)
+- [x] Unit tests for all modules (96% coverage target)
 - [ ] Integration tests with real git repos
 - [ ] Property-based tests for matrix generation
 - [ ] Test fixtures: sample monorepos with various configs

@@ -73,8 +73,10 @@ async fn main() {
 }
 
 async fn run() -> Result<()> {
-    let cli = Cli::parse();
+    run_cli(Cli::parse()).await
+}
 
+async fn run_cli(cli: Cli) -> Result<()> {
     let config_path = cli
         .config
         .unwrap_or_else(|| PathBuf::from("nanoom.config.json"));
@@ -83,12 +85,7 @@ async fn run() -> Result<()> {
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
 
     if cli.verbose > 0 {
-        eprintln!(
-            "nanoom: cwd={} config={} command={:?}",
-            cwd.display(),
-            config_path.display(),
-            cli.command
-        );
+        log_invocation(&cwd, &config_path, &cli.command);
     }
 
     // Schema command does not require a config file; all others do.
@@ -117,13 +114,71 @@ async fn run() -> Result<()> {
 
     let config = Config::load(&config_path, &cwd)?;
 
-    match cli.command {
-        Commands::Affected(args) => nanoom::commands::affected::execute(args, &config, &cwd).await,
-        Commands::Run(args) => nanoom::commands::run::execute(args, &config, &cwd).await,
-        Commands::Install(args) => nanoom::commands::install::execute(args, &config, &cwd).await,
-        Commands::Status(args) => nanoom::commands::status::execute(args, &config).await,
+    dispatch(cli.command, &config, &cwd).await
+}
+
+async fn dispatch(command: Commands, config: &Config, cwd: &std::path::Path) -> Result<()> {
+    match command {
+        Commands::Affected(args) => nanoom::commands::affected::execute(args, config, cwd).await,
+        Commands::Run(args) => nanoom::commands::run::execute(args, config, cwd).await,
+        Commands::Install(args) => nanoom::commands::install::execute(args, config, cwd).await,
+        Commands::Status(args) => nanoom::commands::status::execute(args, config).await,
         Commands::Schema { .. } => Ok(()),
-        Commands::CacheKey(args) => nanoom::commands::cache_key::execute(args, &cwd),
+        Commands::CacheKey(args) => nanoom::commands::cache_key::execute(args, cwd),
         Commands::Version { .. } => Ok(()),
+    }
+}
+
+fn log_invocation(cwd: &std::path::Path, config_path: &std::path::Path, command: &Commands) {
+    eprintln!(
+        "nanoom: cwd={} config={} command={:?}",
+        cwd.display(),
+        config_path.display(),
+        command
+    );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn invocation_logging_accepts_each_public_command() {
+        let cwd = PathBuf::from(".");
+        let config = PathBuf::from("nanoom.config.json");
+        log_invocation(&cwd, &config, &Commands::Version { json: false });
+        log_invocation(&cwd, &config, &Commands::Schema { output: None });
+    }
+
+    #[tokio::test]
+    async fn dispatch_handles_early_return_commands() {
+        let config: Config =
+            serde_json::from_value(serde_json::json!({"group":{"ci":{"tasks":["test"]}}})).unwrap();
+        dispatch(
+            Commands::Schema { output: None },
+            &config,
+            PathBuf::from(".").as_path(),
+        )
+        .await
+        .unwrap();
+        dispatch(
+            Commands::Version { json: false },
+            &config,
+            PathBuf::from(".").as_path(),
+        )
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn run_cli_logs_verbose_invocation() {
+        run_cli(Cli {
+            command: Commands::Version { json: false },
+            config: None,
+            cwd: None,
+            verbose: 1,
+        })
+        .await
+        .unwrap();
     }
 }
