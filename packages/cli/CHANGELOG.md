@@ -1,5 +1,11 @@
 # @nanoom/cli
 
+## 0.2.7
+
+### Patch Changes
+
+- [#65](https://github.com/XionWCFM/nanoom/pull/65) [`2f3e2d9`](https://github.com/XionWCFM/nanoom/commit/2f3e2d94c6e94f41247f8d0989dfcff51958049c) Thanks [@XionWCFM](https://github.com/XionWCFM)! - Stream install and task output in JSON mode, flatten child log groups, and make every Bash composite Action use one structured shell step with compact canonical JSON.
+
 ## 0.1.8
 
 ### Patch Changes
