@@ -21,6 +21,10 @@ test -f .github/actions/_setup/setup.sh
 for action in affected install run _setup; do
   grep -q 'TOKEN:.*github.token' ".github/actions/$action/action.yml"
 done
+for action in affected install run _setup; do
+  grep -q 'ACTION_REF:.*github.action_ref' ".github/actions/$action/action.yml"
+done
+grep -q 'action_ref.*v\[0-9\]' .github/actions/_setup/setup.sh
 grep -q 'Authorization: Bearer' .github/actions/_setup/setup.sh
 ! grep -R -n 'XionWCFM/nanoom/.github/actions/_setup@main' .github/actions
 ! grep -R -nE 'PUSH_REF_NAME|PULL_REQUEST_(BASE|HEAD)_REF|MERGE_GROUP_(BASE|HEAD)_REF' .github/actions .github/workflows/ci.yml
@@ -34,6 +38,9 @@ grep -q 'matrix:' .github/actions/install/action.yml
 grep -q 'matrix:' .github/actions/run/action.yml
 grep -q 'GITHUB_STEP_SUMMARY' .github/actions/status/run.sh
 ! grep -q '^  version:' .github/actions/status/action.yml
+! grep -qE 'affectedJob|matrixJob|GROUP|AFFECTED|MATRIX|FORMAT' .github/actions/status/action.yml .github/actions/status/run.sh
+grep -q 'needs must contain at least one job result' .github/actions/status/run.sh
+grep -q 'all needed jobs succeeded or were skipped' .github/actions/status/run.sh
 ! grep -R -nE 'PUSH_REF_NAME|PULL_REQUEST_(BASE|HEAD)_REF|MERGE_GROUP_(BASE|HEAD)_REF|root-install|setup-nanoom|nanoom-(affected|install|run|status)|"concurrency"' README.md
 
 failure_dir=$(mktemp -d)
@@ -45,5 +52,6 @@ fi
 grep -q '✗ failed during matrix-task (exit 7)' "$failure_dir/log"
 grep -q 'Final JSON' "$failure_dir/log"
 sed -n 's/^result=//p' "$failure_dir/output" | jq -e '.status == "failure" and .phase == "matrix-task" and .exitCode == 7' >/dev/null
+bash scripts/status-action-test.sh
 
 echo 'action contract passed'

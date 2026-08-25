@@ -211,11 +211,7 @@ jobs:
         uses: ./.github/actions/status
         with:
           needs: ${{ toJSON(needs) }}
-          affectedJob: fixture-affected
-          matrixJob: fixture-run
-          group: ci
-          format: markdown
       - name: Verify status result
         env:
           RESULT: ${{ steps.aggregate.outputs.result }}
-        run: jq -e '.status == "success" and .hasChange and .matrixResult == "success" and .reason != ""' <<< "$RESULT"
+        run: jq -e '.status == "success" and (.jobs | length) == 2 and .reason != ""' <<< "$RESULT"
