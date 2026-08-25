@@ -2,6 +2,7 @@
 set -euo pipefail
 
 requested=${REQUESTED:-latest}
+action_ref=${ACTION_REF:-}
 repository=${REPOSITORY:-XionWCFM/nanoom}
 api=${API:-https://api.github.com}
 server=${SERVER:-https://github.com}
@@ -18,9 +19,13 @@ if [[ "$requested" == local ]]; then
 fi
 
 if [[ "$requested" == latest ]]; then
-  curl_args=(-fsSL)
-  [[ -n ${TOKEN:-} ]] && curl_args+=(-H "Authorization: Bearer $TOKEN")
-  version=$(curl "${curl_args[@]}" "$api/repos/$repository/releases/latest" | jq -er .tag_name)
+  if [[ "$action_ref" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    version=$action_ref
+  else
+    curl_args=(-fsSL)
+    [[ -n ${TOKEN:-} ]] && curl_args+=(-H "Authorization: Bearer $TOKEN")
+    version=$(curl "${curl_args[@]}" "$api/repos/$repository/releases/latest" | jq -er .tag_name)
+  fi
 else
   version=$requested
 fi

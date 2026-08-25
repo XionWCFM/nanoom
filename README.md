@@ -64,25 +64,23 @@ The Actions remain dependency-free Bash composites. Each uses one shell step and
 
 ```yaml
 - id: affected
-  uses: XionWCFM/nanoom/.github/actions/affected@v0.2.6
+  uses: XionWCFM/nanoom/.github/actions/affected@v0.2.8
 
-- uses: XionWCFM/nanoom/.github/actions/install@v0.2.6
+- uses: XionWCFM/nanoom/.github/actions/install@v0.2.8
   with:
     matrix: ${{ toJSON(matrix) }}
 
-- uses: XionWCFM/nanoom/.github/actions/run@v0.2.6
+- uses: XionWCFM/nanoom/.github/actions/run@v0.2.8
   with:
     matrix: ${{ toJSON(matrix) }}
 ```
 
-The `status` Action evaluates the workflow's `needs` JSON directly and does not download the CLI:
+The `status` Action evaluates every result in the workflow's `needs` JSON directly and does not download the CLI. `success` and `skipped` pass; `failure`, `cancelled`, missing, and unknown results fail:
 
 ```yaml
-- uses: XionWCFM/nanoom/.github/actions/status@v0.2.6
+- uses: XionWCFM/nanoom/.github/actions/status@v0.2.8
   with:
     needs: ${{ toJSON(needs) }}
-    matrixJob: run
-    group: ci
 ```
 
 ## Quality and completion

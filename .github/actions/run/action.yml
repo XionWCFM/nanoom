@@ -18,6 +18,7 @@ runs:
       shell: bash
       env:
         REQUESTED: ${{ inputs.version }}
+        ACTION_REF: ${{ github.action_ref }}
         API: ${{ github.api_url }}
         SERVER: ${{ github.server_url }}
         TOKEN: ${{ github.token }}

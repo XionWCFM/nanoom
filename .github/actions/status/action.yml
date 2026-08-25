@@ -1,11 +1,7 @@
 name: nanoom status
-description: Evaluate needs results without artifacts
+description: Evaluate all needs results without artifacts
 inputs:
   needs: {required: true}
-  affectedJob: {default: affected}
-  matrixJob: {default: matrix}
-  group: {default: ci}
-  format: {default: text}
 outputs:
   result:
     description: Canonical aggregate status result JSON
@@ -18,8 +14,4 @@ runs:
       shell: bash
       env:
         NEEDS: ${{ inputs.needs }}
-        AFFECTED: ${{ inputs.affectedJob }}
-        MATRIX: ${{ inputs.matrixJob }}
-        GROUP: ${{ inputs.group }}
-        FORMAT: ${{ inputs.format }}
       run: bash "$GITHUB_ACTION_PATH/run.sh"
