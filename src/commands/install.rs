@@ -2,7 +2,6 @@ use crate::config::Config;
 use crate::error::{Error, Result};
 use clap::Args;
 use std::path::Path;
-use std::process::Stdio;
 use tokio::process::Command;
 
 #[derive(Args, Debug, Clone)]
@@ -167,14 +166,7 @@ async fn run_command(cmd: &str, args: Vec<String>, dir: &Path, json: bool) -> Re
     let mut command = Command::new(package_manager_executable(cmd));
     command.current_dir(dir).args(&args);
     let status = if json {
-        let output = command
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .await?;
-        eprint!("{}", String::from_utf8_lossy(&output.stdout));
-        eprint!("{}", String::from_utf8_lossy(&output.stderr));
-        output.status
+        crate::commands::run_streamed(&mut command).await?
     } else {
         command.status().await?
     };
@@ -282,14 +274,7 @@ async fn run_install(pm: &str, dir: &Path, json: bool) -> Result<()> {
     );
 
     let status = if json {
-        let output = command
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .await?;
-        eprint!("{}", String::from_utf8_lossy(&output.stdout));
-        eprint!("{}", String::from_utf8_lossy(&output.stderr));
-        output.status
+        crate::commands::run_streamed(&mut command).await?
     } else {
         command.status().await?
     };

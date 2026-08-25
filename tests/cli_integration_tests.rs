@@ -773,6 +773,75 @@ fn test_install_handles_root_monorepo_without_workspace_lockfiles() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn json_install_streams_flat_child_output_before_exit() {
+    use std::os::unix::fs::PermissionsExt;
+    use std::process::Stdio;
+    use std::time::{Duration, Instant};
+
+    let dir = tempdir().unwrap();
+    setup_monorepo(dir.path());
+    let bin = dir.path().join("bin");
+    fs::create_dir(&bin).unwrap();
+    let npm = bin.join("npm");
+    fs::write(
+        &npm,
+        "#!/bin/sh\nprintf '::group::Resolution step\\n'\nprintf 'first-live-line\\n'\nsleep 5\nprintf 'second-line\\n'\nprintf '::endgroup::\\n'\n",
+    )
+    .unwrap();
+    fs::set_permissions(&npm, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let stdout_path = dir.path().join("stdout.log");
+    let stderr_path = dir.path().join("stderr.log");
+    let stdout = fs::File::create(&stdout_path).unwrap();
+    let stderr = fs::File::create(&stderr_path).unwrap();
+    let path = std::env::join_paths(std::iter::once(bin).chain(std::env::split_paths(
+        &std::env::var_os("PATH").unwrap_or_default(),
+    )))
+    .unwrap();
+    let mut child = Command::new(binary_path())
+        .current_dir(dir.path())
+        .args(["install", "--package-manager", "npm", "--json"])
+        .env("PATH", path)
+        .stdout(Stdio::from(stdout))
+        .stderr(Stdio::from(stderr))
+        .spawn()
+        .unwrap();
+
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        let log = fs::read_to_string(&stderr_path).unwrap();
+        if log.contains("first-live-line") {
+            assert!(
+                child.try_wait().unwrap().is_none(),
+                "child output was buffered"
+            );
+            break;
+        }
+        if let Some(status) = child.try_wait().unwrap() {
+            panic!(
+                "nanoom exited before streaming ({status}): stdout={} stderr={log}",
+                fs::read_to_string(&stdout_path).unwrap()
+            );
+        }
+        assert!(
+            Instant::now() < deadline,
+            "first child line was not streamed"
+        );
+        std::thread::sleep(Duration::from_millis(25));
+    }
+
+    assert!(child.wait().unwrap().success());
+    let stdout = fs::read_to_string(stdout_path).unwrap();
+    serde_json::from_str::<serde_json::Value>(stdout.trim()).unwrap();
+    let stderr = fs::read_to_string(stderr_path).unwrap();
+    assert!(stderr.contains("◆ Resolution step"));
+    assert!(stderr.contains("second-line"));
+    assert!(!stderr.contains("::group::"));
+    assert!(!stderr.contains("::endgroup::"));
+}
+
 #[test]
 fn test_affected_report_explains_global_dependency_selection() {
     let dir = tempdir().unwrap();
