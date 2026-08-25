@@ -93,6 +93,7 @@ mod tests {
         let key_a = key_for_test(&args, dir.path());
         let key_b = key_for_test(&args, dir.path());
         assert_eq!(key_a, key_b);
+        execute(args.clone(), dir.path()).unwrap();
         std::fs::write(dir.path().join("nanoom.config.json"), "{\"x\":1}\n").unwrap();
         assert_ne!(key_a, key_for_test(&args, dir.path()));
     }

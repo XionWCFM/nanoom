@@ -368,6 +368,24 @@ mod tests {
     }
 
     #[test]
+    fn yarn_focus_requires_a_valid_root_manifest() {
+        let missing = tempdir().unwrap();
+        assert!(
+            matches!(root_workspace_name(missing.path()), Err(Error::ConfigValidation(message)) if message.contains("Cannot read"))
+        );
+        let invalid = tempdir().unwrap();
+        std::fs::write(invalid.path().join("package.json"), "not json").unwrap();
+        assert!(
+            matches!(root_workspace_name(invalid.path()), Err(Error::ConfigValidation(message)) if message.contains("Invalid"))
+        );
+        let unnamed = tempdir().unwrap();
+        std::fs::write(unnamed.path().join("package.json"), "{}").unwrap();
+        assert!(
+            matches!(root_workspace_name(unnamed.path()), Err(Error::ConfigValidation(message)) if message.contains("name"))
+        );
+    }
+
+    #[test]
     fn test_detect_package_manager_explicit() {
         let dir = tempdir().unwrap();
         assert_eq!(
@@ -401,6 +419,30 @@ mod tests {
         let dir3 = tempdir().unwrap();
         std::fs::write(dir3.path().join("package.json"), "{}").unwrap();
         assert_eq!(detect_package_manager(dir3.path(), None).unwrap(), "npm");
+    }
+
+    #[test]
+    fn package_manager_manifest_versions_are_supported_or_fallback() {
+        for (manager, expected) in [
+            ("pnpm@9.1.0", "pnpm"),
+            ("yarn@1.22.22", "yarn"),
+            ("npm@10.0.0", "npm"),
+        ] {
+            let dir = tempdir().unwrap();
+            std::fs::write(
+                dir.path().join("package.json"),
+                format!(r#"{{"packageManager":"{manager}"}}"#),
+            )
+            .unwrap();
+            assert_eq!(detect_package_manager(dir.path(), None).unwrap(), expected);
+        }
+        let unknown = tempdir().unwrap();
+        std::fs::write(
+            unknown.path().join("package.json"),
+            r#"{"packageManager":"bun@1.0.0"}"#,
+        )
+        .unwrap();
+        assert_eq!(detect_package_manager(unknown.path(), None).unwrap(), "npm");
     }
 
     #[test]
@@ -561,5 +603,13 @@ mod tests {
             }
             other => panic!("expected CommandFailed, got {:?}", other),
         }
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn test_run_command_json_reports_failure() {
+        let dir = tempdir().unwrap();
+        let result = run_command("false", vec!["--json".into()], dir.path(), true).await;
+        assert!(matches!(result, Err(Error::CommandFailed { command, .. }) if command == "false"));
     }
 }

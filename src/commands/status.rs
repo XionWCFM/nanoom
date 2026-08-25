@@ -261,6 +261,30 @@ mod tests {
 
     #[test]
     #[serial]
+    fn invalid_explicit_status_and_missing_output_are_errors() {
+        let invalid = read_job_result("test", Some("test=unknown")).unwrap_err();
+        assert!(
+            matches!(invalid, crate::error::Error::StatusAggregation(message) if message.contains("invalid status"))
+        );
+        std::env::remove_var("GITHUB_OUTPUT");
+        let missing = read_job_result("test", None).unwrap_err();
+        assert!(
+            matches!(missing, crate::error::Error::StatusAggregation(message) if message.contains("requires"))
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn unreadable_output_is_an_error() {
+        std::env::set_var("GITHUB_OUTPUT", "/path/that/does/not/exist");
+        let error = read_job_result("test", None).unwrap_err();
+        assert!(
+            matches!(error, crate::error::Error::StatusAggregation(message) if message.contains("cannot read"))
+        );
+    }
+
+    #[test]
+    #[serial]
     fn test_read_job_result_multiple_jobs() {
         let file = temp_output_file("multi");
         std::env::set_var("GITHUB_OUTPUT", &file);
@@ -297,5 +321,71 @@ mod tests {
         assert!(json.contains("test"));
         assert!(json.contains("success"));
         assert!(json.contains("1000"));
+    }
+
+    #[tokio::test]
+    async fn execute_reports_success_and_rejects_invalid_format() {
+        let config: crate::Config = serde_json::from_value(serde_json::json!({
+            "group": {"ci": {"tasks": ["test"]}}
+        }))
+        .unwrap();
+        execute(
+            StatusArgs {
+                jobs: "build".into(),
+                format: Some("json".into()),
+                results: Some("build=success".into()),
+                json: false,
+            },
+            &config,
+        )
+        .await
+        .unwrap();
+        let error = execute(
+            StatusArgs {
+                jobs: "build".into(),
+                format: Some("xml".into()),
+                results: Some("build=success".into()),
+                json: false,
+            },
+            &config,
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            matches!(error, crate::error::Error::StatusAggregation(message) if message.contains("invalid format"))
+        );
+    }
+
+    #[tokio::test]
+    async fn execute_covers_text_markdown_and_reported_failure() {
+        let config: crate::Config = serde_json::from_value(serde_json::json!({
+            "group": {"ci": {"tasks": ["test"]}}
+        }))
+        .unwrap();
+        for format in ["text", "markdown"] {
+            execute(
+                StatusArgs {
+                    jobs: "build".into(),
+                    format: Some(format.into()),
+                    results: Some("build=success".into()),
+                    json: false,
+                },
+                &config,
+            )
+            .await
+            .unwrap();
+        }
+        let error = execute(
+            StatusArgs {
+                jobs: "build".into(),
+                format: Some("text".into()),
+                results: Some("build=failure".into()),
+                json: false,
+            },
+            &config,
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(error, crate::error::Error::ReportedFailure(_)));
     }
 }

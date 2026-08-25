@@ -8,7 +8,7 @@ git diff --check
 cargo fmt --all --check
 cargo clippy --locked --all-targets --all-features -- -D warnings
 cargo test --locked --all --all-features
-cargo llvm-cov --locked --workspace --all-features --fail-under-lines 90 --summary-only
+cargo llvm-cov --locked --workspace --all-features --fail-under-lines 96 --summary-only
 bash scripts/action-contract.sh
 bash scripts/setup-smoke.sh
 bash scripts/platform-package-smoke.sh

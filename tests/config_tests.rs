@@ -258,6 +258,18 @@ fn test_validate_rejects_ambiguous_rules_and_invalid_globs() {
 }
 
 #[test]
+fn test_validate_rejects_duplicate_and_unknown_tasks() {
+    for config in [
+        serde_json::json!({"group":{"ci":{"tasks":["test","test"]}}}),
+        serde_json::json!({"group":{"ci":{"tasks":["test"],"rules":[{"name":"app","isolate":["build"]}]}}}),
+        serde_json::json!({"group":{"ci":{"tasks":["test"],"rules":[{"name":"app","shard":[{"task":"build","shard":2}]}]}}}),
+    ] {
+        let config: Config = serde_json::from_value(config).unwrap();
+        assert!(config.validate().is_err());
+    }
+}
+
+#[test]
 fn test_schema_generation() {
     let schema = nanoom::schema::generate().unwrap();
     let schema_str = serde_json::to_string(&schema).unwrap();

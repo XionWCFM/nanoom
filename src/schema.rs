@@ -1,12 +1,11 @@
 use crate::config::Config;
-use crate::error::{Error, Result};
+use crate::error::Result;
 use schemars::schema_for;
 use serde_json::Value;
 
 pub fn generate() -> Result<Value> {
     let schema = schema_for!(Config);
-    let mut value =
-        serde_json::to_value(schema).map_err(|e| Error::SchemaGeneration(e.to_string()))?;
+    let mut value = serde_json::to_value(schema)?;
 
     if let Some(obj) = value.as_object_mut() {
         obj.insert(
@@ -31,4 +30,18 @@ pub fn generate_to_file(path: &std::path::Path) -> Result<()> {
     let content = serde_json::to_string_pretty(&schema)?;
     std::fs::write(path, content)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn writes_schema_to_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("schema.json");
+        generate_to_file(&path).unwrap();
+        let value: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        assert_eq!(value["title"], "nanoom Configuration");
+    }
 }
