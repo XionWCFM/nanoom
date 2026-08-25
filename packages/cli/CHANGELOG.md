@@ -1,5 +1,11 @@
 # @nanoom/cli
 
+## 0.2.8
+
+### Patch Changes
+
+- [#67](https://github.com/XionWCFM/nanoom/pull/67) [`a1430cb`](https://github.com/XionWCFM/nanoom/commit/a1430cb4343bff2a5ec1336380b612e700566e43) Thanks [@XionWCFM](https://github.com/XionWCFM)! - Simplify the GitHub status Action to aggregate all `needs` results directly. The Action now accepts only `needs`, treats `success` and `skipped` as passing, and rejects failed, cancelled, missing, or unknown results.
+
 ## 0.2.7
 
 ### Patch Changes
