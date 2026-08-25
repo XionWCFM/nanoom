@@ -312,15 +312,7 @@ async fn run_task(
     }
 
     let status = if json {
-        use std::process::Stdio;
-        let output = cmd
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .await?;
-        eprint!("{}", String::from_utf8_lossy(&output.stdout));
-        eprint!("{}", String::from_utf8_lossy(&output.stderr));
-        output.status
+        crate::commands::run_streamed(&mut cmd).await?
     } else {
         cmd.status().await?
     };

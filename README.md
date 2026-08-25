@@ -54,11 +54,13 @@ nanoom version [--json]
 
 `status` treats `failure` and `cancelled` as failure. Missing or unknown results are errors; `skipped` is accepted only when explicitly reported.
 
-JSON mode keeps stdout machine-readable. `affected --report` includes resolved full commit hashes, changed paths, direct/transitive/global reasons, and matrices. Every public Action prints and exports a canonical `result` JSON containing its resolved values, exact command where applicable, decision reason, and final status.
+JSON mode keeps stdout machine-readable while child-process output streams to stderr as it happens. `affected --report` includes resolved full commit hashes, changed paths, direct/transitive/global reasons, and matrices. Every public Action prints and exports a canonical `result` JSON containing its resolved values, exact command where applicable, decision reason, and final status.
 
 ## GitHub Actions
 
 Four public composite Actions live under `.github/actions`: `affected`, `install`, `run`, and `status`. Pin consumers to a release tag:
+
+The Actions remain dependency-free Bash composites. Each uses one shell step and prints flat sections in the order `Inputs`, `Resolved values`, `Why`, `Command`, `Progress`, `Result`, `Action outputs`, and a compact one-line `Final JSON`. Yarn and Turbo log groups are rendered as plain headings so progress remains visible without nested dropdowns. GitHub's own top-level step wrapper is outside the Action's control and remains collapsible.
 
 ```yaml
 - id: affected
