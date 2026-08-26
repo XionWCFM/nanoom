@@ -4,7 +4,7 @@ inputs:
   matrix: {required: true}
   packageManager: {default: auto}
   cwd: {default: .}
-  version: {default: latest}
+  version: {default: action}
 outputs:
   result:
     description: Canonical focused-install result JSON
@@ -12,8 +12,7 @@ outputs:
 runs:
   using: composite
   steps:
-    - name: Install focused dependencies
-      id: install
+    - name: Set up nanoom
       shell: bash
       env:
         REQUESTED: ${{ inputs.version }}
@@ -22,7 +21,44 @@ runs:
         SERVER: ${{ github.server_url }}
         TOKEN: ${{ github.token }}
         BINARY: ${{ env.NANOOM_LOCAL_BINARY }}
+      run: bash "$GITHUB_ACTION_PATH/../_setup/setup.sh"
+    - name: Install focused dependencies
+      id: install
+      shell: bash
+      env:
         MATRIX: ${{ inputs.matrix }}
         PM: ${{ inputs.packageManager }}
         CWD: ${{ inputs.cwd }}
-      run: bash "$GITHUB_ACTION_PATH/run.sh"
+      run: |
+        set -euo pipefail
+        trap 'echo "::error title=Focused install failed::Review the package-manager output above. Verify the matrix JSON, workspace name, lockfile, and packageManager input."' ERR
+        cyan=$'\033[36m'; green=$'\033[32m'; bold=$'\033[1m'; reset=$'\033[0m'
+        started=$(date +%s)
+        entry=$(jq -ce '(.include[0] // .) | select(.name)' <<<"$MATRIX")
+        matrix_json=$(jq -c '{group, label, name, path, task, shard, totalShards, isolate} | with_entries(select(.value != null))' <<<"$entry")
+        name=$(jq -er '.name | select(type == "string" and length > 0)' <<<"$entry")
+        [[ "$PM" == npm ]] && { echo '::error title=Unsupported package manager::npm cannot perform a focused workspace install. Use Yarn Berry or pnpm.'; exit 2; }
+        args=(-C "$CWD" install --package-manager "$PM" --filter "$name" --json)
+        printf -v command '%q ' nanoom "${args[@]}"
+        printf '%s◆ nanoom install%s\n' "$bold$cyan" "$reset"
+        printf '  Inputs\n    matrix: %s\n    package manager: %s\n    cwd: %s\n' "$matrix_json" "$PM" "$CWD"
+        printf '  Why\n    root development dependencies plus the selected workspace dependency closure are required\n'
+        printf '  Command\n    %s\n' "${command% }"
+        cli_result=$(nanoom "${args[@]}")
+        elapsed=$(( $(date +%s) - started ))
+        result=$(jq -cn --argjson matrix "$matrix_json" --arg command "${command% }" --arg cwd "$CWD" --argjson cli "$cli_result" --argjson elapsed "$elapsed" '{status:"success", reason:"installed root development dependencies plus the selected workspace dependency closure", matrix:$matrix, command:$command, cwd:$cwd, cli:$cli, elapsedSeconds:$elapsed}')
+        echo "result=$result" >> "$GITHUB_OUTPUT"
+        printf '  Result\n    workspace=%s; status=success; elapsed=%ss\n' "$name" "$elapsed"
+        printf '  Final JSON\n'
+        jq . <<<"$result"
+        printf '  Action output\n    result=<same canonical JSON above>\n'
+        echo "::notice title=Focused install complete::$name dependencies are ready (${elapsed}s)"
+        {
+          echo '### nanoom install'
+          echo
+          echo "**Result:** focused dependencies for \`$name\` installed in ${elapsed}s."
+          echo
+          echo "Reason: root development dependencies and the selected workspace dependency closure are required by the matrix entry."
+          echo
+          echo "Command: \`${command% }\`"
+        } >> "$GITHUB_STEP_SUMMARY"

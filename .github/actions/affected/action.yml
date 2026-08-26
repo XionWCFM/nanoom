@@ -1,7 +1,7 @@
 name: nanoom affected
 description: Calculate the authoritative flattened matrix
 inputs:
-  version: {default: latest}
+  version: {default: action}
   config: {default: nanoom.config.json}
   cwd: {default: '.'}
   base: {default: ''}
@@ -17,8 +17,7 @@ outputs:
 runs:
   using: composite
   steps:
-    - name: Calculate affected workspaces
-      id: out
+    - name: Set up nanoom
       shell: bash
       env:
         REQUESTED: ${{ inputs.version }}
@@ -27,6 +26,11 @@ runs:
         SERVER: ${{ github.server_url }}
         TOKEN: ${{ github.token }}
         BINARY: ${{ env.NANOOM_LOCAL_BINARY }}
+      run: bash "$GITHUB_ACTION_PATH/../_setup/setup.sh"
+    - name: Calculate affected workspaces
+      id: out
+      shell: bash
+      env:
         CWD: ${{ inputs.cwd }}
         CONFIG: ${{ inputs.config }}
         BASE: ${{ inputs.base }}
@@ -34,4 +38,79 @@ runs:
         EVENT: ${{ github.event_name }}
         EVENT_BASE: ${{ github.event.before || github.base_ref || github.event.merge_group.base_sha }}
         EVENT_HEAD: ${{ github.sha }}
-      run: bash "$GITHUB_ACTION_PATH/run.sh"
+      run: |
+        set -euo pipefail
+        trap 'echo "::error title=Affected calculation failed::Review the error above. Verify cwd/config and the GitHub event comparison refs."' ERR
+        cyan=$'\033[36m'; green=$'\033[32m'; yellow=$'\033[33m'; bold=$'\033[1m'; reset=$'\033[0m'
+        started=$(date +%s)
+        printf '%s◆ nanoom affected%s\n' "$bold$cyan" "$reset"
+        printf '  Inputs\n'
+        printf '    working directory: %s\n' "$CWD"
+        printf '    config: %s\n' "$CONFIG"
+        printf '    requested comparison: %s -> %s\n' "${BASE:-event-derived}" "${HEAD:-event-derived}"
+        printf '    selection: all configured groups\n'
+        if [[ -z "$BASE" ]]; then BASE="$EVENT_BASE"; fi
+        if [[ -z "$HEAD" ]]; then HEAD="$EVENT_HEAD"; fi
+        [[ -n "$BASE" ]] || { echo '::error title=Missing comparison base::affected could not resolve a base revision from inputs or the GitHub event.'; exit 2; }
+        [[ -n "$HEAD" ]] || HEAD=HEAD
+        if ! git -C "$CWD" rev-parse --verify "$BASE^{commit}" >/dev/null 2>&1; then
+          printf '  Fetch\n    base revision is missing; fetching origin with depth=1\n'
+          if [[ "$EVENT" == pull_request && "$BASE" != refs/* ]]; then
+            git -C "$CWD" fetch --no-tags --depth=1 origin "$BASE:refs/remotes/origin/$BASE"
+            BASE="refs/remotes/origin/$BASE"
+          else
+            git -C "$CWD" fetch --no-tags --depth=1 origin "$BASE"
+            BASE=FETCH_HEAD
+          fi
+          printf '    fetched base: %s\n' "$BASE"
+        else
+          printf '  Fetch\n    base revision already exists in checkout\n'
+        fi
+        args=(-C "$CWD" -c "$CONFIG" affected --report --base "$BASE" --head "$HEAD")
+        printf -v command '%q ' nanoom "${args[@]}"
+        printf '  Command\n    %s\n' "${command% }"
+        report=$(nanoom "${args[@]}")
+        matrix=$(jq -c .matrix <<<"$report")
+        groups=$(jq -c 'with_entries(.value = {hasChange: ((.value.include | length) > 0), matrix: .value})' <<<"$matrix")
+        has=$(jq -r 'any(to_entries[]; .value.include | length > 0)' <<<"$matrix")
+        echo "has_change=$has" >> "$GITHUB_OUTPUT"
+        echo "groups=$groups" >> "$GITHUB_OUTPUT"
+        echo "result=$report" >> "$GITHUB_OUTPUT"
+        count=$(jq '[to_entries[].value.include[]] | length' <<<"$matrix")
+        elapsed=$(( $(date +%s) - started ))
+        base_commit=$(jq -r .affected.diagnostics.comparison.baseCommit <<<"$report")
+        head_commit=$(jq -r .affected.diagnostics.comparison.headCommit <<<"$report")
+        mode=$(jq -r .affected.diagnostics.comparison.mode <<<"$report")
+        changed=$(jq '.affected.diagnostics.changedFiles | length' <<<"$report")
+        echo "::notice title=Affected result::has_change=$has; $count matrix entries will run (${elapsed}s)"
+        printf '%s◆ affected result (%s entries)%s\n' "$bold$cyan" "$count" "$reset"
+        printf '  Resolved values\n'
+        printf '    base commit: %s\n' "$base_commit"
+        printf '    head commit: %s\n' "$head_commit"
+        printf '    comparison mode: %s\n' "$mode"
+        printf '    changed files: %s\n' "$changed"
+        jq -r '.affected.diagnostics.changedFiles[] | "    · " + .' <<<"$report"
+        printf '  Why these workspaces\n'
+        jq -r '.affected.diagnostics.reasons | to_entries[] | "    · \(.key): " + (if .value.kind == "direct" then "direct change: " + (.value.changedFiles | join(", ")) elif .value.kind == "globalDependency" then "global dependency: " + (.value.changedFiles | join(", ")) else "transitive dependency: " + (.value.dependencyPath | join(" -> ")) end)' <<<"$report"
+        printf '  Matrix plan\n'
+        if (( count )); then
+          jq -r 'to_entries[] as $group | $group.value.include[] | "    · \($group.key) / \(.name) / \(.task)" + (if .shard then " / shard \(.shard)/\(.totalShards)" else "" end) + (if .isolate then " / isolated" else "" end)' <<<"$matrix"
+        else
+          printf '    no workspace tasks matched; downstream matrix will be skipped\n'
+        fi
+        printf '  Result\n    has_change=%s; matrix entries=%s; elapsed=%ss\n' "$has" "$count" "$elapsed"
+        printf '  Final JSON\n'
+        jq . <<<"$report"
+        printf '  Action outputs\n    has_change=%s\n    groups=%s\n    result=<same canonical JSON above>\n' "$has" "$groups"
+        {
+          echo "### nanoom affected"
+          echo
+          echo "**Result:** \`has_change=$has\` — **$count** matrix entries across all groups"
+          echo
+          echo "Comparison (\`$mode\`): \`$base_commit\` -> \`$head_commit\`; **$changed** changed files."
+          echo
+          echo '| Group | Workspace | Task | Execution | Why |'
+          echo '|---|---|---|---|---|'
+          jq -r --argjson reasons "$(jq -c .affected.diagnostics.reasons <<<"$report")" 'to_entries[] as $group | $group.value.include[] | . as $entry | "| \($group.key) | \(.name) | \(.task) | " + (if .shard then "shard \(.shard)/\(.totalShards)" elif .isolate then "isolated" else "standard" end) + " | " + ($reasons[$entry.name] | if .kind == "direct" then "direct: " + (.changedFiles | join(", ")) elif .kind == "globalDependency" then "global: " + (.changedFiles | join(", ")) else "transitive: " + (.dependencyPath | join(" -> ")) end) + " |"' <<<"$matrix"
+          (( count )) || echo '| - | - | - | no work | no matching change |'
+        } >> "$GITHUB_STEP_SUMMARY"

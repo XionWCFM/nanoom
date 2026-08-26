@@ -26,6 +26,9 @@ for action in affected install run _setup; do
 done
 grep -q 'action_ref.*v\[0-9\]' .github/actions/_setup/setup.sh
 grep -q 'Authorization: Bearer' .github/actions/_setup/setup.sh
+grep -q 'ACTION_REF' .github/actions/_setup/setup.sh
+grep -q 'requested=\${REQUESTED:-action}' .github/actions/_setup/setup.sh
+grep -R -q 'version: {default: action}' .github/actions/{affected,install,run}/action.yml
 ! grep -R -n 'XionWCFM/nanoom/.github/actions/_setup@main' .github/actions
 ! grep -R -nE 'PUSH_REF_NAME|PULL_REQUEST_(BASE|HEAD)_REF|MERGE_GROUP_(BASE|HEAD)_REF' .github/actions .github/workflows/ci.yml
 grep -q 'github.event.before' .github/actions/affected/action.yml

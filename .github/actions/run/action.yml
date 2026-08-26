@@ -5,7 +5,7 @@ inputs:
   packageManager: {default: auto}
   monorepoTool: {default: auto}
   cwd: {default: .}
-  version: {default: latest}
+  version: {default: action}
 outputs:
   result:
     description: Canonical matrix-task result JSON
@@ -13,8 +13,7 @@ outputs:
 runs:
   using: composite
   steps:
-    - name: Run matrix entry
-      id: run
+    - name: Set up nanoom
       shell: bash
       env:
         REQUESTED: ${{ inputs.version }}
@@ -23,8 +22,49 @@ runs:
         SERVER: ${{ github.server_url }}
         TOKEN: ${{ github.token }}
         BINARY: ${{ env.NANOOM_LOCAL_BINARY }}
+      run: bash "$GITHUB_ACTION_PATH/../_setup/setup.sh"
+    - name: Run matrix entry
+      id: run
+      shell: bash
+      env:
         MATRIX: ${{ inputs.matrix }}
         PM: ${{ inputs.packageManager }}
         TOOL: ${{ inputs.monorepoTool }}
         CWD: ${{ inputs.cwd }}
-      run: bash "$GITHUB_ACTION_PATH/run.sh"
+      run: |
+        set -euo pipefail
+        trap 'echo "::error title=Matrix task failed::Review the task output above. Reproduce with the displayed nanoom command and verify the workspace script and runner selection."' ERR
+        cyan=$'\033[36m'; green=$'\033[32m'; bold=$'\033[1m'; reset=$'\033[0m'
+        started=$(date +%s)
+        e=$(jq -ce '(.include[0] // .) | select(.group and .task and .name)' <<<"$MATRIX"); matrix_json=$(jq -c '{group, label, name, path, task, shard, totalShards, isolate} | with_entries(select(.value != null))' <<<"$e"); group=$(jq -r .group <<<"$e"); task=$(jq -r .task <<<"$e"); name=$(jq -r .name <<<"$e"); args=(-C "$CWD" run "$group" "$task" --all --filter "$name" --json)
+        [[ -n $(jq -r '.shard // empty' <<<"$e") ]] && args+=(--shard "$(jq -r '.shard' <<<"$e")" --total-shards "$(jq -r '.totalShards' <<<"$e")"); [[ $(jq -r '.isolate // false' <<<"$e") == true ]] && args+=(--isolate)
+        if [[ "$TOOL" == turbo && ! -x "$CWD/node_modules/.bin/turbo" ]]; then
+          echo 'turbo is not present in the focused dependency closure; using the requested package-manager runner' >&2
+          args+=(--runner "$PM")
+        elif [[ "$TOOL" != auto ]]; then
+          args+=(--runner "$TOOL")
+        fi
+        printf -v command '%q ' nanoom "${args[@]}"
+        printf '%s◆ nanoom run%s\n' "$bold$cyan" "$reset"
+        printf '  Inputs\n    matrix: %s\n    workspace: %s\n    group/task: %s / %s\n    runner: %s/%s\n' "$matrix_json" "$name" "$group" "$task" "$TOOL" "$PM"
+        [[ -n $(jq -r '.shard // empty' <<<"$e") ]] && printf '    shard: %s/%s\n' "$(jq -r '.shard' <<<"$e")" "$(jq -r '.totalShards' <<<"$e")"
+        [[ $(jq -r '.isolate // false' <<<"$e") == true ]] && printf '    isolation: enabled\n'
+        printf '  Why\n    authoritative affected matrix selected this task\n  Command\n    %s\n' "${command% }"
+        cli_result=$(nanoom "${args[@]}")
+        elapsed=$(( $(date +%s) - started ))
+        result=$(jq -cn --argjson matrix "$matrix_json" --arg command "${command% }" --arg cwd "$CWD" --argjson cli "$cli_result" --argjson elapsed "$elapsed" '{status:"success", reason:"executed the task selected by the authoritative affected matrix entry", matrix:$matrix, command:$command, cwd:$cwd, cli:$cli, elapsedSeconds:$elapsed}')
+        echo "result=$result" >> "$GITHUB_OUTPUT"
+        printf '  Result\n    %s / %s / %s succeeded; elapsed=%ss\n' "$group" "$name" "$task" "$elapsed"
+        printf '  Final JSON\n'
+        jq . <<<"$result"
+        printf '  Action output\n    result=<same canonical JSON above>\n'
+        echo "::notice title=Matrix task complete::$group / $name / $task succeeded (${elapsed}s)"
+        {
+          echo '### nanoom run'
+          echo
+          echo "**Result:** \`$group / $name / $task\` succeeded in ${elapsed}s."
+          echo
+          echo "Reason: this task was selected by the authoritative affected matrix entry."
+          echo
+          echo "Command: \`${command% }\`"
+        } >> "$GITHUB_STEP_SUMMARY"

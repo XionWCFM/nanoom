@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-requested=${REQUESTED:-latest}
+requested=${REQUESTED:-action}
 action_ref=${ACTION_REF:-}
 repository=${REPOSITORY:-XionWCFM/nanoom}
 api=${API:-https://api.github.com}
@@ -18,14 +18,16 @@ if [[ "$requested" == local ]]; then
   exit 0
 fi
 
-if [[ "$requested" == latest ]]; then
-  if [[ "$action_ref" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-    version=$action_ref
-  else
-    curl_args=(-fsSL)
-    [[ -n ${TOKEN:-} ]] && curl_args+=(-H "Authorization: Bearer $TOKEN")
-    version=$(curl "${curl_args[@]}" "$api/repos/$repository/releases/latest" | jq -er .tag_name)
-  fi
+if [[ "$requested" == action ]]; then
+  [[ "$action_ref" == v* ]] || {
+    echo "Cannot derive a release version from GitHub Action ref '$action_ref'. Pin the Action to a release or set version explicitly." >&2
+    exit 2
+  }
+  version=$action_ref
+elif [[ "$requested" == latest ]]; then
+  curl_args=(-fsSL)
+  [[ -n ${TOKEN:-} ]] && curl_args+=(-H "Authorization: Bearer $TOKEN")
+  version=$(curl "${curl_args[@]}" "$api/repos/$repository/releases/latest" | jq -er .tag_name)
 else
   version=$requested
 fi
