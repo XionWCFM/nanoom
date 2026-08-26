@@ -257,31 +257,31 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@nanoom/cli-linux-arm64@npm:0.1.8, @nanoom/cli-linux-arm64@workspace:packages/cli-linux-arm64":
+"@nanoom/cli-linux-arm64@npm:0.2.8, @nanoom/cli-linux-arm64@workspace:packages/cli-linux-arm64":
   version: 0.0.0-use.local
   resolution: "@nanoom/cli-linux-arm64@workspace:packages/cli-linux-arm64"
   languageName: unknown
   linkType: soft
 
-"@nanoom/cli-linux-x64@npm:0.1.8, @nanoom/cli-linux-x64@workspace:packages/cli-linux-x64":
+"@nanoom/cli-linux-x64@npm:0.2.8, @nanoom/cli-linux-x64@workspace:packages/cli-linux-x64":
   version: 0.0.0-use.local
   resolution: "@nanoom/cli-linux-x64@workspace:packages/cli-linux-x64"
   languageName: unknown
   linkType: soft
 
-"@nanoom/cli-macos-arm64@npm:0.1.8, @nanoom/cli-macos-arm64@workspace:packages/cli-macos-arm64":
+"@nanoom/cli-macos-arm64@npm:0.2.8, @nanoom/cli-macos-arm64@workspace:packages/cli-macos-arm64":
   version: 0.0.0-use.local
   resolution: "@nanoom/cli-macos-arm64@workspace:packages/cli-macos-arm64"
   languageName: unknown
   linkType: soft
 
-"@nanoom/cli-macos-x64@npm:0.1.8, @nanoom/cli-macos-x64@workspace:packages/cli-macos-x64":
+"@nanoom/cli-macos-x64@npm:0.2.8, @nanoom/cli-macos-x64@workspace:packages/cli-macos-x64":
   version: 0.0.0-use.local
   resolution: "@nanoom/cli-macos-x64@workspace:packages/cli-macos-x64"
   languageName: unknown
   linkType: soft
 
-"@nanoom/cli-windows-x64@npm:0.1.8, @nanoom/cli-windows-x64@workspace:packages/cli-windows-x64":
+"@nanoom/cli-windows-x64@npm:0.2.8, @nanoom/cli-windows-x64@workspace:packages/cli-windows-x64":
   version: 0.0.0-use.local
   resolution: "@nanoom/cli-windows-x64@workspace:packages/cli-windows-x64"
   languageName: unknown
@@ -291,11 +291,11 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@nanoom/cli@workspace:packages/cli"
   dependencies:
-    "@nanoom/cli-linux-arm64": "npm:0.1.8"
-    "@nanoom/cli-linux-x64": "npm:0.1.8"
-    "@nanoom/cli-macos-arm64": "npm:0.1.8"
-    "@nanoom/cli-macos-x64": "npm:0.1.8"
-    "@nanoom/cli-windows-x64": "npm:0.1.8"
+    "@nanoom/cli-linux-arm64": "npm:0.2.8"
+    "@nanoom/cli-linux-x64": "npm:0.2.8"
+    "@nanoom/cli-macos-arm64": "npm:0.2.8"
+    "@nanoom/cli-macos-x64": "npm:0.2.8"
+    "@nanoom/cli-windows-x64": "npm:0.2.8"
   dependenciesMeta:
     "@nanoom/cli-linux-arm64":
       optional: true

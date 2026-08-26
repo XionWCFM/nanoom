@@ -6,6 +6,7 @@ use nanoom::{
     config::Config,
 };
 use std::fs;
+use std::process::Command;
 use tempfile::tempdir;
 
 fn create_package_json(dir: &std::path::Path, name: &str, deps: &[(&str, &str)]) {
@@ -55,6 +56,58 @@ async fn test_calculate_affected_no_git_env() {
 
     let result = calculate(&config, dir.path()).await;
     assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn test_calculate_with_override_tip_reports_isolation_and_shards() {
+    let dir = tempdir().unwrap();
+    let git = |args: &[&str]| {
+        let status = Command::new("git")
+            .args(args)
+            .current_dir(dir.path())
+            .env("GIT_AUTHOR_NAME", "test")
+            .env("GIT_AUTHOR_EMAIL", "test@example.com")
+            .env("GIT_COMMITTER_NAME", "test")
+            .env("GIT_COMMITTER_EMAIL", "test@example.com")
+            .status()
+            .unwrap();
+        assert!(status.success());
+    };
+    git(&["init", "-q"]);
+    fs::create_dir_all(dir.path().join("packages/app")).unwrap();
+    fs::write(
+        dir.path().join("package.json"),
+        r#"{"name":"root","workspaces":["packages/*"]}"#,
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("packages/app/package.json"),
+        r#"{"name":"app"}"#,
+    )
+    .unwrap();
+    fs::write(dir.path().join("nanoom.config.json"), r#"{"group":{"ci":{"tasks":["test","build"],"rules":[{"name":"app","isolate":["test"],"shard":[{"task":"build","shard":2}]}]}},"workspace":{"include":["packages/*"]}}"#).unwrap();
+    git(&["add", "."]);
+    git(&["commit", "-qm", "base"]);
+    fs::write(dir.path().join("packages/app/changed.txt"), "changed").unwrap();
+    git(&["add", "."]);
+    git(&["commit", "-qm", "change"]);
+    let config = Config::load(std::path::Path::new("nanoom.config.json"), dir.path()).unwrap();
+    std::env::set_var("COMPARISON", "tip");
+    let output = nanoom::affected::calculate_with_override(
+        &config,
+        dir.path(),
+        Some("HEAD~1"),
+        Some("HEAD"),
+    )
+    .await
+    .unwrap();
+    std::env::remove_var("COMPARISON");
+    let entries = &output.group["ci"].workspaces;
+    assert!(entries.iter().any(|entry| entry.isolate == Some(true)));
+    assert_eq!(
+        entries.iter().filter(|entry| entry.shard.is_some()).count(),
+        2
+    );
 }
 
 #[test]
@@ -146,8 +199,8 @@ fn test_generate_matrix_for_group() {
                     name: "pkg1".to_string(),
                     path: "packages/pkg1".to_string(),
                     task: "test".to_string(),
-                    shard: None,
-                    total_shards: None,
+                    shard: Some(1),
+                    total_shards: Some(2),
                     isolate: Some(false),
                 }],
             },
@@ -161,6 +214,8 @@ fn test_generate_matrix_for_group() {
     assert_eq!(include.len(), 1);
     assert_eq!(include[0]["name"], "pkg1");
     assert_eq!(include[0]["task"], "test");
+    assert_eq!(include[0]["shard"], 1);
+    assert_eq!(include[0]["totalShards"], 2);
 }
 
 #[test]

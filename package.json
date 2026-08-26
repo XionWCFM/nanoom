@@ -1,10 +1,13 @@
 {
   "name": "nanoom-workspace",
   "private": true,
-  "packageManager": "yarn@4.9.1",
+  "packageManager": "yarn@4.11.0",
   "workspaces": [
     "packages/*"
   ],
+  "scripts": {
+    "check": "cargo fmt --all --check && cargo clippy --locked --all-targets --all-features -- -D warnings && cargo test --locked --all --all-features"
+  },
   "devDependencies": {
     "@changesets/changelog-github": "^1.0.0",
     "@changesets/cli": "^3.0.1",

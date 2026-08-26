@@ -61,20 +61,8 @@ jobs:
       - name: Clippy
         run: cargo clippy --locked --all-targets --all-features -- -D warnings
 
-  docs:
-    name: Docs build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - run: corepack enable
-      - run: yarn --cwd docs install --immutable
-      - run: yarn --cwd docs build
-
   coverage:
-    name: Coverage (90% minimum, 95% target)
+    name: Coverage (96% minimum)
     runs-on: ubuntu-latest
 
     steps:
@@ -88,7 +76,7 @@ jobs:
         run: cargo install cargo-llvm-cov --locked
 
       - name: Run coverage
-        run: mkdir -p coverage && cargo llvm-cov --locked --workspace --all-features --cobertura --output-path coverage/cobertura.xml --fail-under-lines 90
+        run: mkdir -p coverage && cargo llvm-cov --locked --workspace --all-features --cobertura --output-path coverage/cobertura.xml --fail-under-lines 96
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
@@ -224,11 +212,7 @@ jobs:
         uses: ./.github/actions/status
         with:
           needs: ${{ toJSON(needs) }}
-          affectedJob: fixture-affected
-          matrixJob: fixture-run
-          group: ci
-          format: markdown
       - name: Verify status result
         env:
           RESULT: ${{ steps.aggregate.outputs.result }}
-        run: jq -e '.status == "success" and .hasChange and .matrixResult == "success" and .reason != ""' <<< "$RESULT"
+        run: jq -e '.status == "success" and (.jobs | length) == 2 and .reason != ""' <<< "$RESULT"

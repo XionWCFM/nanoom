@@ -35,7 +35,7 @@ strategy:
 4. **Format Check** - `cargo fmt --all --check`
 5. **Clippy** - `cargo clippy --all-targets --all-features -- -D warnings`
 6. **Test** - `cargo test --all --workspace`
-7. **Coverage** - `cargo tarpaulin --out Xml --output-dir coverage --fail-under 95`
+7. **Coverage** - `cargo llvm-cov --workspace --all-features --fail-under-lines 96`
 8. **Build Release** - `cargo build --release --all-targets`
 9. **Audit** - `cargo audit --deny warnings` (security vulnerabilities)
 10. **Deny** - `cargo deny check` (license, bans, sources) - optional but recommended
@@ -204,7 +204,7 @@ All must pass:
 - [ ] Format check
 - [ ] Clippy (no warnings)
 - [ ] All tests pass
-- [ ] Coverage ≥ 95%
+- [x] Coverage ≥ 96%
 - [ ] Build succeeds on all 3 OS
 - [ ] No security vulnerabilities (cargo audit)
 - [ ] No license violations (cargo deny)

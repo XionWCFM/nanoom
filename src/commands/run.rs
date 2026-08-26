@@ -98,22 +98,7 @@ pub async fn execute(args: RunArgs, config: &Config, cwd: &std::path::Path) -> R
             Error::ConfigValidation(format!("Group '{}' not in output", args.group))
         })?;
 
-        group_output
-            .workspaces
-            .iter()
-            .filter(|ws| ws.task == args.task)
-            .filter(|ws| args.filter.as_ref().map(|f| &ws.name == f).unwrap_or(true))
-            .filter(|ws| args.shard.map(|s| ws.shard == Some(s)).unwrap_or(true))
-            .filter(|ws| !args.isolate || ws.isolate == Some(true))
-            .map(|ws| crate::workspace::Project {
-                name: ws.name.clone(),
-                path: PathBuf::from(&ws.path),
-                dependencies: vec![],
-                dependency_specs: HashMap::new(),
-                dependents: vec![],
-                package_json_version: None,
-            })
-            .collect()
+        select_affected_projects(group_output, &args)
     };
 
     if projects.is_empty() {
@@ -217,6 +202,28 @@ pub async fn execute(args: RunArgs, config: &Config, cwd: &std::path::Path) -> R
     Ok(())
 }
 
+fn select_affected_projects(
+    group_output: &crate::affected::GroupOutput,
+    args: &RunArgs,
+) -> Vec<crate::workspace::Project> {
+    group_output
+        .workspaces
+        .iter()
+        .filter(|ws| ws.task == args.task)
+        .filter(|ws| args.filter.as_ref().map(|f| &ws.name == f).unwrap_or(true))
+        .filter(|ws| args.shard.map(|s| ws.shard == Some(s)).unwrap_or(true))
+        .filter(|ws| !args.isolate || ws.isolate == Some(true))
+        .map(|ws| crate::workspace::Project {
+            name: ws.name.clone(),
+            path: PathBuf::from(&ws.path),
+            dependencies: vec![],
+            dependency_specs: HashMap::new(),
+            dependents: vec![],
+            package_json_version: None,
+        })
+        .collect()
+}
+
 async fn run_task(
     project: &crate::workspace::Project,
     task: &TaskConfig,
@@ -306,15 +313,7 @@ async fn run_task(
     }
 
     let status = if json {
-        use std::process::Stdio;
-        let output = cmd
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .await?;
-        eprint!("{}", String::from_utf8_lossy(&output.stdout));
-        eprint!("{}", String::from_utf8_lossy(&output.stderr));
-        output.status
+        crate::commands::run_streamed(&mut cmd).await?
     } else {
         cmd.status().await?
     };
@@ -668,5 +667,162 @@ mod tests {
         let dir = tempdir().unwrap();
         std::fs::write(dir.path().join("package.json"), "invalid").unwrap();
         assert!(resolve_script_runner(dir.path(), "test", dir.path()).is_none());
+    }
+
+    #[test]
+    fn select_affected_projects_applies_task_filter_shard_and_isolation() {
+        let output = crate::affected::GroupOutput {
+            label: "ci".into(),
+            workspaces: vec![
+                crate::affected::WorkspaceEntry {
+                    group: "ci".into(),
+                    name: "app".into(),
+                    path: "packages/app".into(),
+                    task: "test".into(),
+                    shard: None,
+                    total_shards: None,
+                    isolate: Some(true),
+                },
+                crate::affected::WorkspaceEntry {
+                    group: "ci".into(),
+                    name: "app".into(),
+                    path: "packages/app".into(),
+                    task: "build".into(),
+                    shard: Some(2),
+                    total_shards: Some(2),
+                    isolate: Some(false),
+                },
+            ],
+        };
+        let args = RunArgs {
+            group: "ci".into(),
+            task: "build".into(),
+            runner: None,
+            filter: Some("app".into()),
+            shard: Some(2),
+            total_shards: Some(2),
+            isolate: false,
+            all: false,
+            continue_on_error: false,
+            json: true,
+        };
+        assert_eq!(select_affected_projects(&output, &args).len(), 1);
+        let isolated = RunArgs {
+            task: "test".into(),
+            isolate: true,
+            filter: None,
+            shard: None,
+            total_shards: None,
+            ..args
+        };
+        assert_eq!(select_affected_projects(&output, &isolated).len(), 1);
+    }
+
+    #[tokio::test]
+    #[cfg(not(windows))]
+    #[serial]
+    async fn runner_selection_executes_turbo_nx_and_package_manager_commands() {
+        let dir = tempdir().unwrap();
+        let bin = dir.path().join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        for name in ["turbo", "nx", "yarn"] {
+            let path = bin.join(name);
+            std::fs::write(&path, "#!/bin/sh\nexit 0\n").unwrap();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            }
+        }
+        let old_path = std::env::var_os("PATH");
+        let existing_path = old_path.clone().unwrap_or_default();
+        let paths = std::iter::once(bin.clone()).chain(std::env::split_paths(&existing_path));
+        std::env::set_var("PATH", std::env::join_paths(paths).unwrap());
+        let project = make_project("app", dir.path());
+        let task = TaskConfig {
+            command: "build".into(),
+            args: vec![],
+            env: HashMap::new(),
+        };
+        for runner in ["turbo", "nx", "yarn"] {
+            run_task(&project, &task, Some(runner), dir.path(), true)
+                .await
+                .unwrap();
+        }
+        std::fs::write(dir.path().join("turbo.json"), "{}").unwrap();
+        std::fs::write(dir.path().join("nx.json"), "{}").unwrap();
+        assert!(matches!(
+            run_task(&project, &task, None, dir.path(), true).await,
+            Err(Error::InvalidRunner(_))
+        ));
+        if let Some(path) = old_path {
+            std::env::set_var("PATH", path);
+        }
+    }
+
+    #[tokio::test]
+    async fn execute_rejects_invalid_shard_matrix() {
+        let config = make_config(vec![]);
+        let result = execute(
+            RunArgs {
+                group: "ci".into(),
+                task: "echo".into(),
+                runner: None,
+                filter: None,
+                shard: Some(2),
+                total_shards: Some(1),
+                isolate: false,
+                all: true,
+                continue_on_error: false,
+                json: true,
+            },
+            &config,
+            Path::new("."),
+        )
+        .await;
+        assert!(
+            matches!(result, Err(Error::ConfigValidation(message)) if message.contains("shard"))
+        );
+    }
+
+    #[tokio::test]
+    #[cfg(not(windows))]
+    #[serial]
+    async fn auto_runner_uses_package_script_and_rejects_unknown_runner() {
+        let dir = tempdir().unwrap();
+        let bin = dir.path().join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let yarn = bin.join("yarn");
+        std::fs::write(&yarn, "#!/bin/sh\nexit 0\n").unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&yarn, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let old_path = std::env::var_os("PATH");
+        let existing = old_path.clone().unwrap_or_default();
+        std::env::set_var(
+            "PATH",
+            std::env::join_paths(std::iter::once(bin).chain(std::env::split_paths(&existing)))
+                .unwrap(),
+        );
+        std::fs::write(
+            dir.path().join("package.json"),
+            r#"{"name":"app","packageManager":"yarn@1.22.0","scripts":{"test":"true"}}"#,
+        )
+        .unwrap();
+        let project = make_project("app", dir.path());
+        let task = TaskConfig {
+            command: "test".into(),
+            args: vec![],
+            env: HashMap::new(),
+        };
+        run_task(&project, &task, None, dir.path(), true)
+            .await
+            .unwrap();
+        assert!(matches!(
+            run_task(&project, &task, Some("bun"), dir.path(), true).await,
+            Err(Error::InvalidRunner(name)) if name == "bun"
+        ));
+        if let Some(path) = old_path {
+            std::env::set_var("PATH", path);
+        }
     }
 }

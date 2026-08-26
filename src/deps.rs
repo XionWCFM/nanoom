@@ -23,6 +23,19 @@ mod tests {
 
     #[test]
     fn follows_npm_range_semantics() {
+        for wildcard in [
+            "",
+            "*",
+            "x",
+            "X",
+            "latest",
+            "workspace:",
+            "workspace:*",
+            "workspace:^",
+            "workspace:~",
+        ] {
+            assert!(is_satisfied(wildcard, "999.0.0"));
+        }
         assert!(is_satisfied("workspace:^", "1.0.0"));
         assert!(is_satisfied("^1.2.3", "1.9.0"));
         assert!(is_satisfied("1.2.3 - 2.3.4", "2.0.0"));

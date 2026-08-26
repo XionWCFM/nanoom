@@ -73,14 +73,14 @@ fn parse_config(path: &Path) -> Config {
 
 ---
 
-## 6. Testing Principles (95% Coverage Target)
+## 6. Testing Principles (96% Coverage Minimum)
 
 - **Prefer real implementations over mocks**: Test actual git, actual filesystem, actual CLI
 - **Unit tests**: Test pure functions in isolation (parser, mapper, calculator)
 - **Integration tests**: Test full CLI commands with real git repos (in-memory via gitoxide)
 - **Property-based tests**: `proptest` for edge cases in glob matching, path mapping
 - **Test organization**: `#[cfg(test)]` modules in same file, integration tests in `tests/`
-- **Coverage**: `cargo-tarpaulin`, fail CI if < 95%
+- **Coverage**: `cargo llvm-cov`, fail CI if < 96%
 
 ### 6.1 Test Patterns
 

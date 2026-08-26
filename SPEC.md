@@ -15,7 +15,7 @@ Large monorepos take too long to run all tasks on a single runner. We detect cha
 ## Technical Stack & Principles
 
 - **Engine:** Rust, binary committed to repo
-- **Testing:** 95%+ coverage, E2E tests with in-memory Git (gitoxide/libgit2)
+- **Testing:** 96%+ line coverage, E2E tests with in-memory Git (gitoxide/libgit2)
 - **Performance:** Top priority
 - **Configuration:** Declarative, single `nanoom.config.json` (no JS/TS config — no Node runtime needed)
 - **Schema:** JSON Schema provided for validation

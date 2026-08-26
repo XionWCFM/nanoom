@@ -560,4 +560,51 @@ mod tests {
         assert_eq!(sorted.len(), 1);
         assert_eq!(sorted[0].name, "app");
     }
+
+    #[test]
+    fn workspace_lookup_and_relative_path_are_stable() {
+        let project = project("packages/app", &[]);
+        let workspace = Workspace {
+            projects: vec![project.clone()],
+            name_to_index: HashMap::from([("packages/app".into(), 0)]),
+            path_to_index: HashMap::from([(PathBuf::from("packages/app"), 0)]),
+        };
+        assert_eq!(
+            workspace.get_project_by_name("packages/app").unwrap().name,
+            "packages/app"
+        );
+        assert!(workspace.get_project_by_name("missing").is_none());
+        assert_eq!(
+            workspace
+                .get_project_by_path(Path::new("packages/app"))
+                .unwrap()
+                .name,
+            "packages/app"
+        );
+        assert_eq!(workspace.project_count(), 1);
+        let discovered = DiscoveredWorkspace {
+            name: project.name,
+            path: PathBuf::from("/tmp/root/packages/app"),
+            package_json: PackageJson {
+                name: None,
+                version: None,
+                dependencies: HashMap::new(),
+                dev_dependencies: HashMap::new(),
+                peer_dependencies: HashMap::new(),
+                optional_dependencies: HashMap::new(),
+                workspaces: WorkspacesField::default(),
+            },
+            dependencies: vec![],
+            dependency_specs: HashMap::new(),
+            dependents: vec![],
+        };
+        assert_eq!(
+            discovered.relative_path(Path::new("/tmp/root")),
+            PathBuf::from("packages/app")
+        );
+        assert_eq!(
+            discovered.relative_path(Path::new("/other")),
+            PathBuf::from("/tmp/root/packages/app")
+        );
+    }
 }
