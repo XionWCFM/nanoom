@@ -10,20 +10,8 @@ pub struct AffectedArgs {
     #[arg(long, help = "Head reference (defaults to HEAD)")]
     pub head: Option<String>,
 
-    #[arg(long, value_parser = ["json", "text"], help = "Output format (json, text)")]
-    pub format: Option<String>,
-
-    #[arg(long, help = "Generate GitHub Actions matrices for all groups")]
-    pub matrix: bool,
-
-    #[arg(long, help = "Output matrix as JSON to stdout")]
+    #[arg(long, help = "Output the canonical affected report as JSON")]
     pub json: bool,
-
-    #[arg(
-        long,
-        help = "Output affected diagnostics and matrices as one JSON report"
-    )]
-    pub report: bool,
 }
 
 pub async fn execute(
@@ -34,7 +22,7 @@ pub async fn execute(
     let result =
         calculate_with_override(config, cwd, args.base.as_deref(), args.head.as_deref()).await?;
 
-    if args.report {
+    if args.json {
         println!(
             "{}",
             serde_json::to_string(&serde_json::json!({
@@ -45,88 +33,65 @@ pub async fn execute(
         return Ok(());
     }
 
-    if args.json {
-        println!("{}", serde_json::to_string(&result)?);
-        return Ok(());
-    }
-
-    if args.matrix {
-        let matrix = generate_matrix(&result);
-        println!("{}", serde_json::to_string(&matrix)?);
-        return Ok(());
-    }
-
-    let format = args.format.as_deref().unwrap_or("text");
-    match format {
-        "json" => {
-            println!("{}", serde_json::to_string_pretty(&result)?);
+    println!("◆ nanoom affected");
+    println!(
+        "  Result: {}",
+        if result.has_change {
+            "changes found"
+        } else {
+            "no changes found"
         }
-        "text" => {
-            println!("◆ nanoom affected");
-            println!(
-                "  Result: {}",
-                if result.has_change {
-                    "changes found"
-                } else {
-                    "no changes found"
-                }
-            );
-            if let Some(diagnostics) = &result.diagnostics {
-                println!("  Comparison: {}", diagnostics.comparison.mode);
+    );
+    if let Some(diagnostics) = &result.diagnostics {
+        println!("  Comparison: {}", diagnostics.comparison.mode);
+        println!(
+            "  Commits: {} -> {}",
+            diagnostics.comparison.base_commit, diagnostics.comparison.head_commit
+        );
+        println!("  Changed files: {}", diagnostics.changed_files.len());
+        for file in &diagnostics.changed_files {
+            println!("  - {file}");
+        }
+    }
+    for (group_name, group_output) in &result.group {
+        println!(
+            "\n  Matrix group: {} ({} entries)",
+            group_name,
+            group_output.workspaces.len()
+        );
+        for ws in &group_output.workspaces {
+            let shard_str = ws
+                .shard
+                .map(|s| format!(" (shard {})", s))
+                .unwrap_or_default();
+            let isolate_str = ws
+                .isolate
+                .filter(|&b| b)
+                .map(|_| " [isolated]")
+                .unwrap_or_default();
+            println!("    - {} / {} [{}]", ws.name, ws.task, ws.path);
+            if let Some(reason) = result
+                .diagnostics
+                .as_ref()
+                .and_then(|diagnostics| diagnostics.reasons.get(&ws.name))
+            {
                 println!(
-                    "  Commits: {} -> {}",
-                    diagnostics.comparison.base_commit, diagnostics.comparison.head_commit
+                    "      why: {}",
+                    match reason.kind.as_str() {
+                        "direct" => format!("direct change: {}", reason.changed_files.join(", ")),
+                        "globalDependency" =>
+                            format!("global dependency: {}", reason.changed_files.join(", ")),
+                        _ => format!(
+                            "transitive dependency: {}",
+                            reason.dependency_path.join(" -> ")
+                        ),
+                    }
                 );
-                println!("  Changed files: {}", diagnostics.changed_files.len());
-                for file in &diagnostics.changed_files {
-                    println!("  - {file}");
-                }
             }
-            for (group_name, group_output) in &result.group {
-                println!(
-                    "\n  Matrix group: {} ({} entries)",
-                    group_name,
-                    group_output.workspaces.len()
-                );
-                for ws in &group_output.workspaces {
-                    let shard_str = ws
-                        .shard
-                        .map(|s| format!(" (shard {})", s))
-                        .unwrap_or_default();
-                    let isolate_str = ws
-                        .isolate
-                        .filter(|&b| b)
-                        .map(|_| " [isolated]")
-                        .unwrap_or_default();
-                    println!("    - {} / {} [{}]", ws.name, ws.task, ws.path);
-                    if let Some(reason) = result
-                        .diagnostics
-                        .as_ref()
-                        .and_then(|diagnostics| diagnostics.reasons.get(&ws.name))
-                    {
-                        println!(
-                            "      why: {}",
-                            match reason.kind.as_str() {
-                                "direct" =>
-                                    format!("direct change: {}", reason.changed_files.join(", ")),
-                                "globalDependency" => format!(
-                                    "global dependency: {}",
-                                    reason.changed_files.join(", ")
-                                ),
-                                _ => format!(
-                                    "transitive dependency: {}",
-                                    reason.dependency_path.join(" -> ")
-                                ),
-                            }
-                        );
-                    }
-                    if !shard_str.is_empty() || !isolate_str.is_empty() {
-                        println!("    {}{}", shard_str, isolate_str);
-                    }
-                }
+            if !shard_str.is_empty() || !isolate_str.is_empty() {
+                println!("    {}{}", shard_str, isolate_str);
             }
         }
-        _ => unreachable!("clap validates affected output formats"),
     }
 
     Ok(())
@@ -175,14 +140,6 @@ mod tests {
     }
 
     #[test]
-    fn test_execute_matrix_option() {
-        let result = mock_output();
-        let matrix = crate::affected::generate_matrix(&result);
-        let json = serde_json::to_string(&matrix).unwrap();
-        assert!(json.contains("include"));
-    }
-
-    #[test]
     fn test_format_text_branch() {
         let result = mock_output();
         let output = format!(
@@ -191,12 +148,5 @@ mod tests {
         );
         assert!(output.contains("Result: changes found"));
         assert!(output.contains("Matrix group: ci (1 entries)"));
-    }
-
-    #[test]
-    fn test_format_json_branch() {
-        let result = mock_output();
-        let json = serde_json::to_string_pretty(&result).unwrap();
-        assert!(json.contains("has_change"));
     }
 }

@@ -252,9 +252,7 @@ fn test_affected_pull_request_event_with_changes() {
 
     let (success, output) = run_cli(
         dir.path(),
-        &[
-            "affected", "--report", "--base", "main", "--head", "feature",
-        ],
+        &["affected", "--json", "--base", "main", "--head", "feature"],
         &[],
     );
 
@@ -353,15 +351,14 @@ fn test_affected_matrix_output() {
 
     let (success, output) = run_cli(
         dir.path(),
-        &[
-            "affected", "--matrix", "--base", "main", "--head", "feature",
-        ],
+        &["affected", "--json", "--base", "main", "--head", "feature"],
         &[],
     );
     assert!(success, "command failed: {}", output);
 
-    let matrix: serde_json::Value =
-        serde_json::from_str(output.trim()).expect("invalid matrix JSON");
+    let report: serde_json::Value =
+        serde_json::from_str(output.trim()).expect("invalid JSON report");
+    let matrix = &report["matrix"];
     let include = matrix["ci"]["include"]
         .as_array()
         .expect("matrix include missing");
@@ -406,16 +403,21 @@ fn minimal_config(dir: &Path) {
 }
 
 #[test]
-fn test_status_aggregates_from_github_output() {
+fn test_status_aggregates_explicit_results() {
     let dir = tempdir().unwrap();
     minimal_config(dir.path());
 
-    let gh_output = dir.path().join("github_output.txt");
-    fs::write(&gh_output, "ci_result=success\ne2e_result=failure\n").unwrap();
-
-    let envs = [("GITHUB_OUTPUT", gh_output.to_str().unwrap())];
-    let (success, output, stderr) =
-        run_cli_parts(dir.path(), &["status", "ci,e2e", "--format", "json"], &envs);
+    let (success, output, stderr) = run_cli_parts(
+        dir.path(),
+        &[
+            "status",
+            "ci,e2e",
+            "--results",
+            "ci=success,e2e=failure",
+            "--json",
+        ],
+        &[],
+    );
 
     // e2e failed -> overall failure and non-zero exit
     assert!(
@@ -436,11 +438,11 @@ fn test_status_all_success_exits_zero() {
     let dir = tempdir().unwrap();
     minimal_config(dir.path());
 
-    let gh_output = dir.path().join("github_output.txt");
-    fs::write(&gh_output, "ci_result=success\n").unwrap();
-
-    let envs = [("GITHUB_OUTPUT", gh_output.to_str().unwrap())];
-    let (success, _output) = run_cli(dir.path(), &["status", "ci", "--format", "text"], &envs);
+    let (success, _output) = run_cli(
+        dir.path(),
+        &["status", "ci", "--results", "ci=success"],
+        &[],
+    );
     assert!(success);
 }
 
@@ -451,7 +453,7 @@ fn status_rejects_missing_and_unknown_results() {
 
     let (missing_success, missing_output) = run_cli(dir.path(), &["status", "ci"], &[]);
     assert!(!missing_success);
-    assert!(missing_output.contains("GITHUB_OUTPUT"));
+    assert!(missing_output.contains("--results"));
 
     let (unknown_success, unknown_output) = run_cli(
         dir.path(),
@@ -461,21 +463,7 @@ fn status_rejects_missing_and_unknown_results() {
     assert!(!unknown_success);
     assert!(unknown_output.contains("invalid status 'unknown'"));
 
-    let (format_success, format_output) = run_cli(
-        dir.path(),
-        &["status", "ci", "--results", "ci=success", "--format", "xml"],
-        &[],
-    );
-    assert!(!format_success);
-    assert!(format_output.contains("invalid format 'xml'"));
-}
-
-#[test]
-fn status_markdown_and_cancelled_paths_are_observable() {
-    let dir = tempdir().unwrap();
-    minimal_config(dir.path());
-
-    let (markdown_success, markdown_output) = run_cli(
+    let (removed_format_success, removed_format_output) = run_cli(
         dir.path(),
         &[
             "status",
@@ -483,12 +471,18 @@ fn status_markdown_and_cancelled_paths_are_observable() {
             "--results",
             "ci=success",
             "--format",
-            "markdown",
+            "text",
         ],
         &[],
     );
-    assert!(markdown_success);
-    assert!(markdown_output.contains("| ci | ✅ |"));
+    assert!(!removed_format_success);
+    assert!(removed_format_output.contains("unexpected argument '--format'"));
+}
+
+#[test]
+fn status_cancelled_path_is_observable() {
+    let dir = tempdir().unwrap();
+    minimal_config(dir.path());
 
     let (cancelled_success, stdout, stderr) = run_cli_parts(
         dir.path(),
@@ -594,7 +588,7 @@ fn test_global_cwd_flag_works_from_outside_repo() {
     );
     let parsed: serde_json::Value = serde_json::from_str(&String::from_utf8_lossy(&output.stdout))
         .expect("invalid JSON output");
-    assert_eq!(parsed["has_change"], true);
+    assert_eq!(parsed["affected"]["has_change"], true);
 }
 
 #[test]
@@ -668,7 +662,7 @@ fn test_affected_preserves_all_entries_when_exceeding_concurrency() {
 
     let parsed: serde_json::Value =
         serde_json::from_str(output.trim()).expect("invalid JSON output");
-    let workspaces = parsed["group"]["ci"]["workspaces"]
+    let workspaces = parsed["affected"]["group"]["ci"]["workspaces"]
         .as_array()
         .expect("ci group missing");
 
@@ -800,9 +794,7 @@ fn test_affected_report_explains_global_dependency_selection() {
 
     let (success, stdout, stderr) = run_cli_parts(
         dir.path(),
-        &[
-            "affected", "--report", "--base", "main", "--head", "feature",
-        ],
+        &["affected", "--json", "--base", "main", "--head", "feature"],
         &[],
     );
     assert!(success, "affected failed: {stderr}");

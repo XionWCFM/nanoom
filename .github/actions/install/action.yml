@@ -1,10 +1,11 @@
 name: nanoom install
 description: Focused dependency installation for a matrix entry
 inputs:
-  matrix: {required: true}
-  packageManager: {default: auto}
-  cwd: {default: .}
-  version: {default: action}
+  matrix: {description: "One matrix entry or include wrapper emitted by nanoom affected", required: true}
+  packageManager: {description: "Package manager override: auto, pnpm, or yarn", default: auto}
+  cwd: {description: "Consumer working directory", default: .}
+  version: {description: "Release tag matching the pinned Action ref, or local for repository tests", default: action}
+  releaseBaseUrl: {description: "HTTPS origin hosting Nanoom release assets; use your GitHub Enterprise Server URL when it mirrors releases", default: "https://github.com"}
 outputs:
   result:
     description: Canonical focused-install result JSON
@@ -18,7 +19,7 @@ runs:
         REQUESTED: ${{ inputs.version }}
         ACTION_REF: ${{ github.action_ref }}
         API: ${{ github.api_url }}
-        SERVER: ${{ github.server_url }}
+        RELEASE_BASE_URL: ${{ inputs.releaseBaseUrl }}
         TOKEN: ${{ github.token }}
         BINARY: ${{ env.NANOOM_LOCAL_BINARY }}
       run: bash "$GITHUB_ACTION_PATH/../_setup/setup.sh"
@@ -35,7 +36,7 @@ runs:
         cyan=$'\033[36m'; green=$'\033[32m'; bold=$'\033[1m'; reset=$'\033[0m'
         started=$(date +%s)
         entry=$(jq -ce '(.include[0] // .) | select(.name)' <<<"$MATRIX")
-        matrix_json=$(jq -c '{group, label, name, path, task, shard, totalShards, isolate} | with_entries(select(.value != null))' <<<"$entry")
+        matrix_json=$(jq -c '{name, task, shard, totalShards, isolate} | with_entries(select(.value != null and .value != false))' <<<"$entry")
         name=$(jq -er '.name | select(type == "string" and length > 0)' <<<"$entry")
         [[ "$PM" == npm ]] && { echo '::error title=Unsupported package manager::npm cannot perform a focused workspace install. Use Yarn Berry or pnpm.'; exit 2; }
         args=(-C "$CWD" install --package-manager "$PM" --filter "$name" --json)

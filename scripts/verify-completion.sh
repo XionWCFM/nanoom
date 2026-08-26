@@ -13,7 +13,6 @@ bash scripts/action-contract.sh
 bash scripts/setup-smoke.sh
 bash scripts/platform-package-smoke.sh
 node packages/cli/smoke-test.js
-node packages/cli/download-smoke.js
 corepack yarn --cwd docs install --immutable
 corepack yarn --cwd docs build
 

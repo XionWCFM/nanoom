@@ -20,9 +20,10 @@ description: 서로 다른 매트릭스 샤드 생성과 실행
 이 설정은 `shard: 1..4`, `totalShards: 4`인 네 항목을 생성합니다. 전체 항목을 Action에 전달하세요.
 
 ```yaml
-- uses: XionWCFM/nanoom/.github/actions/run@v0.2.6
+- uses: XionWCFM/nanoom/.github/actions/run@v0.2.9
   with:
     matrix: ${{ toJSON(matrix) }}
+    group: ci
 ```
 
 작업은 `NANOOM_SHARD_INDEX`, `NANOOM_SHARD_TOTAL`을 받습니다. 테스트 러너의 샤드 플래그에 연결하세요. 두 CLI 샤드 플래그는 함께 사용하고 유효한 1 기반 범위여야 합니다.

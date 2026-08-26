@@ -20,9 +20,10 @@ description: Emit and execute distinct matrix shards
 This emits four entries with `shard: 1..4` and `totalShards: 4`. Pass the entire entry to the Action:
 
 ```yaml
-- uses: XionWCFM/nanoom/.github/actions/run@v0.2.6
+- uses: XionWCFM/nanoom/.github/actions/run@v0.2.9
   with:
     matrix: ${{ toJSON(matrix) }}
+    group: ci
 ```
 
 The task receives `NANOOM_SHARD_INDEX` and `NANOOM_SHARD_TOTAL`; wire those into the test runner's shard flags. The two CLI shard flags must appear together and form a valid one-based range.

@@ -3,13 +3,13 @@ title: GitHub Actions reference
 description: Public composite Action inputs, outputs, and contracts
 ---
 
-Pin public Actions to a release tag: `XionWCFM/nanoom/.github/actions/<name>@v0.2.6`. The internal setup script is loaded from that same ref; it never follows `main`.
+Pin public Actions to a release tag: `XionWCFM/nanoom/.github/actions/<name>@v0.2.9`. The internal setup script is loaded from that same ref; it never follows `main`.
 
 ## `affected`
 
 ```yaml
 - id: affected
-  uses: XionWCFM/nanoom/.github/actions/affected@v0.2.6
+  uses: XionWCFM/nanoom/.github/actions/affected@v0.2.9
   with:
     cwd: .
     config: nanoom.config.json
@@ -17,41 +17,45 @@ Pin public Actions to a release tag: `XionWCFM/nanoom/.github/actions/<name>@v0.
 
 | Input | Default | Description |
 | --- | --- | --- |
-| `version` | `latest` | Release binary tag, or `local` for repository tests |
+| `version` | `action` | The Action ref's release tag, or `local` for repository tests |
 | `cwd` | `.` | Consumer working directory |
 | `config` | `nanoom.config.json` | Config path relative to `cwd` |
 | `base`, `head` | event-derived | Explicit comparison revisions |
+| `releaseBaseUrl` | `https://github.com` | HTTPS origin for Nanoom release assets; set an Enterprise Server URL only when it hosts the releases |
 
-Outputs are `has_change`, `groups`, and `result`. `groups` maps each configured group to `{hasChange, matrix}`. `result` is the canonical JSON report with requested refs, resolved commit hashes, changed paths, selection reasons, and matrices. Event resolution uses standard GitHub context (`before`, `base_ref`, or merge-group base SHA) at the Action boundary and invokes the CLI with explicit revisions.
+Outputs are `has_change`, `groups`, and `result`. `groups` maps each configured group to `{hasChange, matrix}`; its entries contain only `name`, `task`, and optional shard/isolation fields so the workflow stays within GitHub's output limit. `result` is a compact canonical summary containing comparison commits and per-group entry counts. Event resolution uses standard GitHub context (`before`, `base_ref`, or merge-group base SHA) at the Action boundary and invokes the CLI with explicit revisions.
+
+`releaseBaseUrl` defaults to public GitHub even on GitHub Enterprise Server. Override it only if your Enterprise Server mirrors the matching Nanoom release tag and assets; API/event resolution continues to use the current GitHub host.
 
 ## `install`
 
 ```yaml
-- uses: XionWCFM/nanoom/.github/actions/install@v0.2.6
+- uses: XionWCFM/nanoom/.github/actions/install@v0.2.9
   with:
     matrix: ${{ toJSON(matrix) }}
     packageManager: yarn
     cwd: .
 ```
 
-`matrix` is required and may be one entry or an `include` wrapper. `packageManager`, `cwd`, and `version` are optional. npm is rejected because it cannot perform the required focused workspace-closure install. The `result` output records the exact command, scope, reason, CLI result, and status.
+`matrix` is required and may be one entry or an `include` wrapper. `packageManager`, `cwd`, `version`, and `releaseBaseUrl` are optional. npm is rejected because it cannot perform the required focused workspace-closure install. The `result` output records the exact command, scope, reason, CLI result, and status.
 
 ## `run`
 
 ```yaml
-- uses: XionWCFM/nanoom/.github/actions/run@v0.2.6
+- uses: XionWCFM/nanoom/.github/actions/run@v0.2.9
   with:
     matrix: ${{ toJSON(matrix) }}
+    group: ci
     packageManager: yarn
     monorepoTool: turbo
 ```
 
-The required `matrix` entry supplies group, workspace, task, shard, and isolate data. Optional inputs are `packageManager`, `monorepoTool`, `cwd`, and `version`. The `result` output records the entry, exact command, reason, CLI result, and status.
+The required `matrix` entry supplies workspace, task, shard, and isolate data; the required `group` input identifies the affected group. Optional inputs are `packageManager`, `monorepoTool`, `cwd`, `version`, and `releaseBaseUrl`. The `result` output records the entry, exact command, reason, CLI result, and status.
 
 ## `status`
 
 ```yaml
-- uses: XionWCFM/nanoom/.github/actions/status@v0.2.6
+- uses: XionWCFM/nanoom/.github/actions/status@v0.2.9
   with:
     needs: ${{ toJSON(needs) }}
     affectedJob: affected
@@ -66,6 +70,6 @@ All four Actions print one always-visible, flat log in the order `Inputs → Res
 
 ## Matrix entry
 
-Each entry contains `group`, `name`, `path`, and `task`. Sharded entries also contain `shard` and `totalShards`; isolated entries contain `isolate: true`.
+Each Action matrix entry contains `name` and `task`. Sharded entries also contain `shard` and `totalShards`; isolated entries contain `isolate: true`. Pass the configured group once to the `run` Action.
 
 Use the final `status` job as the stable branch-protection check. A skipped matrix is valid only when `affected` explicitly reported no change.

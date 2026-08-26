@@ -8,7 +8,7 @@
 npm install --save-dev @nanoom/cli
 ```
 
-The npm wrapper uses the exact-version platform package when available. Its fallback downloads the matching GitHub release archive and verifies the published SHA-256 checksum before extraction.
+The npm wrapper executes the exact-version platform package. If it is missing, reinstall without omitting optional dependencies or install a release archive explicitly.
 
 ## Configure
 
@@ -37,12 +37,11 @@ Generate the schema with `nanoom schema --output nanoom.schema.json`. Unknown fi
 ## CLI
 
 ```text
-nanoom affected --base <revision> [--head <revision>] [--matrix|--report]
+nanoom affected --base <revision> [--head <revision>] [--json]
 nanoom run <group> <task> [--filter <workspace>] [--all]
            [--shard N --total-shards N] [--isolate] [--continue-on-error]
-nanoom install [--package-manager auto|pnpm|yarn|npm]
-               [--filter <workspace>] [--workspace-install]
-nanoom status <job,...> [--results job=status,...] [--format text|json|markdown]
+nanoom install [--package-manager auto|pnpm|yarn|npm] [--filter <workspace>]
+nanoom status <job,...> --results job=status,... [--json]
 nanoom cache-key --runner <name> --task <task> [--filter <workspace>]
 nanoom schema [--output <file>]
 nanoom version [--json]
@@ -50,11 +49,11 @@ nanoom version [--json]
 
 `affected` deliberately requires an explicit base revision. The composite Action resolves `github.event.before`, `github.base_ref`, or `github.event.merge_group.base_sha` at the GitHub boundary and passes explicit `--base`/`--head` arguments to the platform-agnostic CLI.
 
-`install` always installs the monorepo root. `--filter` performs a focused dependency-closure install for Yarn Berry or pnpm. `--workspace-install` additionally runs legacy per-workspace installs.
+`install` always installs the monorepo root. `--filter` performs a focused dependency-closure install for Yarn Berry or pnpm.
 
-`status` treats `failure` and `cancelled` as failure. Missing or unknown results are errors; `skipped` is accepted only when explicitly reported.
+`status` is a local aggregator: it requires explicit results, treats `failure` and `cancelled` as failure, and accepts `skipped` only when explicitly reported. The GitHub Action aggregates cross-job `needs` JSON.
 
-JSON mode keeps stdout machine-readable. `affected --report` includes resolved full commit hashes, changed paths, direct/transitive/global reasons, and matrices. Every public Action prints and exports a canonical `result` JSON containing its resolved values, exact command where applicable, decision reason, and final status.
+JSON mode keeps stdout machine-readable. `affected --json` includes resolved full commit hashes, changed paths, direct/transitive/global reasons, and matrices. Every public Action prints a canonical result; `affected` exports a compact result summary plus the matrix-bearing `groups` output.
 
 ## GitHub Actions
 
@@ -62,21 +61,25 @@ Four public composite Actions live under `.github/actions`: `affected`, `install
 
 ```yaml
 - id: affected
-  uses: XionWCFM/nanoom/.github/actions/affected@v0.2.6
+  uses: XionWCFM/nanoom/.github/actions/affected@v0.2.9
+  with:
+    # Default: https://github.com. Set this only when your GHES instance hosts the release assets.
+    releaseBaseUrl: https://github.example.com
 
-- uses: XionWCFM/nanoom/.github/actions/install@v0.2.6
+- uses: XionWCFM/nanoom/.github/actions/install@v0.2.9
   with:
     matrix: ${{ toJSON(matrix) }}
 
-- uses: XionWCFM/nanoom/.github/actions/run@v0.2.6
+- uses: XionWCFM/nanoom/.github/actions/run@v0.2.9
   with:
     matrix: ${{ toJSON(matrix) }}
+    group: ci
 ```
 
 The `status` Action evaluates the workflow's `needs` JSON directly and does not download the CLI:
 
 ```yaml
-- uses: XionWCFM/nanoom/.github/actions/status@v0.2.6
+- uses: XionWCFM/nanoom/.github/actions/status@v0.2.9
   with:
     needs: ${{ toJSON(needs) }}
     matrixJob: run

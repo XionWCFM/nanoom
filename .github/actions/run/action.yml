@@ -1,11 +1,13 @@
 name: nanoom run
 description: Run one authoritative matrix entry
 inputs:
-  matrix: {required: true}
-  packageManager: {default: auto}
-  monorepoTool: {default: auto}
-  cwd: {default: .}
-  version: {default: action}
+  matrix: {description: "One matrix entry or include wrapper emitted by nanoom affected", required: true}
+  group: {description: "Affected group that selected this matrix entry", required: true}
+  packageManager: {description: "Package manager override: auto, pnpm, yarn, or npm", default: auto}
+  monorepoTool: {description: "Runner override: auto, turbo, nx, pnpm, yarn, or npm", default: auto}
+  cwd: {description: "Consumer working directory", default: .}
+  version: {description: "Release tag matching the pinned Action ref, or local for repository tests", default: action}
+  releaseBaseUrl: {description: "HTTPS origin hosting Nanoom release assets; use your GitHub Enterprise Server URL when it mirrors releases", default: "https://github.com"}
 outputs:
   result:
     description: Canonical matrix-task result JSON
@@ -19,7 +21,7 @@ runs:
         REQUESTED: ${{ inputs.version }}
         ACTION_REF: ${{ github.action_ref }}
         API: ${{ github.api_url }}
-        SERVER: ${{ github.server_url }}
+        RELEASE_BASE_URL: ${{ inputs.releaseBaseUrl }}
         TOKEN: ${{ github.token }}
         BINARY: ${{ env.NANOOM_LOCAL_BINARY }}
       run: bash "$GITHUB_ACTION_PATH/../_setup/setup.sh"
@@ -28,6 +30,7 @@ runs:
       shell: bash
       env:
         MATRIX: ${{ inputs.matrix }}
+        GROUP: ${{ inputs.group }}
         PM: ${{ inputs.packageManager }}
         TOOL: ${{ inputs.monorepoTool }}
         CWD: ${{ inputs.cwd }}
@@ -36,7 +39,7 @@ runs:
         trap 'echo "::error title=Matrix task failed::Review the task output above. Reproduce with the displayed nanoom command and verify the workspace script and runner selection."' ERR
         cyan=$'\033[36m'; green=$'\033[32m'; bold=$'\033[1m'; reset=$'\033[0m'
         started=$(date +%s)
-        e=$(jq -ce '(.include[0] // .) | select(.group and .task and .name)' <<<"$MATRIX"); matrix_json=$(jq -c '{group, label, name, path, task, shard, totalShards, isolate} | with_entries(select(.value != null))' <<<"$e"); group=$(jq -r .group <<<"$e"); task=$(jq -r .task <<<"$e"); name=$(jq -r .name <<<"$e"); args=(-C "$CWD" run "$group" "$task" --all --filter "$name" --json)
+        e=$(jq -ce --arg group "$GROUP" '(.include[0] // .) | .group = $group | select(.group and .task and .name)' <<<"$MATRIX"); matrix_json=$(jq -c '{group, name, task, shard, totalShards, isolate} | with_entries(select(.value != null and .value != false))' <<<"$e"); group=$(jq -r .group <<<"$e"); task=$(jq -r .task <<<"$e"); name=$(jq -r .name <<<"$e"); args=(-C "$CWD" run "$group" "$task" --all --filter "$name" --json)
         [[ -n $(jq -r '.shard // empty' <<<"$e") ]] && args+=(--shard "$(jq -r '.shard' <<<"$e")" --total-shards "$(jq -r '.totalShards' <<<"$e")"); [[ $(jq -r '.isolate // false' <<<"$e") == true ]] && args+=(--isolate)
         if [[ "$TOOL" == turbo && ! -x "$CWD/node_modules/.bin/turbo" ]]; then
           echo 'turbo is not present in the focused dependency closure; using the requested package-manager runner' >&2

@@ -1,18 +1,19 @@
 name: nanoom affected
 description: Calculate the authoritative flattened matrix
 inputs:
-  version: {default: action}
-  config: {default: nanoom.config.json}
-  cwd: {default: '.'}
-  base: {default: ''}
-  head: {default: ''}
+  version: {description: "Release tag matching the pinned Action ref, or local for repository tests", default: action}
+  config: {description: "Config path relative to cwd", default: nanoom.config.json}
+  cwd: {description: "Consumer working directory", default: '.'}
+  base: {description: "Explicit comparison base; empty resolves from the GitHub event", default: ''}
+  head: {description: "Explicit comparison head; empty resolves from the GitHub event", default: ''}
+  releaseBaseUrl: {description: "HTTPS origin hosting Nanoom release assets; use your GitHub Enterprise Server URL when it mirrors releases", default: "https://github.com"}
 outputs:
   has_change:
     value: ${{ steps.out.outputs.has_change }}
   groups:
     value: ${{ steps.out.outputs.groups }}
   result:
-    description: Canonical affected report including revisions, changed files, reasons, and matrices
+    description: Compact affected summary with resolved revisions and per-group entry counts
     value: ${{ steps.out.outputs.result }}
 runs:
   using: composite
@@ -23,7 +24,7 @@ runs:
         REQUESTED: ${{ inputs.version }}
         ACTION_REF: ${{ github.action_ref }}
         API: ${{ github.api_url }}
-        SERVER: ${{ github.server_url }}
+        RELEASE_BASE_URL: ${{ inputs.releaseBaseUrl }}
         TOKEN: ${{ github.token }}
         BINARY: ${{ env.NANOOM_LOCAL_BINARY }}
       run: bash "$GITHUB_ACTION_PATH/../_setup/setup.sh"
@@ -66,16 +67,25 @@ runs:
         else
           printf '  Fetch\n    base revision already exists in checkout\n'
         fi
-        args=(-C "$CWD" -c "$CONFIG" affected --report --base "$BASE" --head "$HEAD")
+        args=(-C "$CWD" -c "$CONFIG" affected --json --base "$BASE" --head "$HEAD")
         printf -v command '%q ' nanoom "${args[@]}"
         printf '  Command\n    %s\n' "${command% }"
         report=$(nanoom "${args[@]}")
         matrix=$(jq -c .matrix <<<"$report")
-        groups=$(jq -c 'with_entries(.value = {hasChange: ((.value.include | length) > 0), matrix: .value})' <<<"$matrix")
+        # `group`, `label`, and `path` are already known at the workflow boundary
+        # and are not needed to select an install. Do not repeat them per entry.
+        groups=$(jq -c 'with_entries(.value = {hasChange: ((.value.include | length) > 0), matrix: {include: [.value.include[] | {name, task, shard, totalShards, isolate} | with_entries(select(.value != null and .value != false))]}})' <<<"$matrix")
         has=$(jq -r 'any(to_entries[]; .value.include | length > 0)' <<<"$matrix")
+        result=$(jq -cn --argjson report "$report" --argjson groups "$groups" --argjson has "$has" '{status:"success",hasChange:$has,comparison:$report.affected.diagnostics.comparison,groups:($groups | with_entries(.value |= {hasChange, entryCount:(.matrix.include | length)}))}')
+        output_bytes=$(printf 'has_change=%s\ngroups=%s\nresult=%s\n' "$has" "$groups" "$result" | iconv -f UTF-8 -t UTF-16LE | wc -c | tr -d ' ')
+        if (( output_bytes > 1048576 )); then
+          largest_group=$(jq -r 'to_entries | max_by(.value.include | length) | .key' <<<"$matrix")
+          echo "::error title=Matrix output is too large::nanoom would write ${output_bytes} UTF-16 bytes across has_change, groups, and result; GitHub permits 1048576. Split group '$largest_group' into smaller configured groups." >&2
+          exit 2
+        fi
         echo "has_change=$has" >> "$GITHUB_OUTPUT"
         echo "groups=$groups" >> "$GITHUB_OUTPUT"
-        echo "result=$report" >> "$GITHUB_OUTPUT"
+        echo "result=$result" >> "$GITHUB_OUTPUT"
         count=$(jq '[to_entries[].value.include[]] | length' <<<"$matrix")
         elapsed=$(( $(date +%s) - started ))
         base_commit=$(jq -r .affected.diagnostics.comparison.baseCommit <<<"$report")
@@ -101,7 +111,7 @@ runs:
         printf '  Result\n    has_change=%s; matrix entries=%s; elapsed=%ss\n' "$has" "$count" "$elapsed"
         printf '  Final JSON\n'
         jq . <<<"$report"
-        printf '  Action outputs\n    has_change=%s\n    groups=%s\n    result=<same canonical JSON above>\n' "$has" "$groups"
+        printf '  Action outputs\n    has_change=%s\n    groups=%s\n    result=<compact canonical summary; %s UTF-16 bytes total>\n' "$has" "$groups" "$output_bytes"
         {
           echo "### nanoom affected"
           echo

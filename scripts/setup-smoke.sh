@@ -14,6 +14,7 @@ cat > "$tmp/bin/curl" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 args=" $* "
+printf '%s\n' "$args" >> "$FIXTURE_REQUESTS"
 if [[ "$args" == *'/releases/latest '* ]]; then
   [[ "$args" == *' -H Authorization: Bearer fixture-token '* ]]
   printf '{"tag_name":"v0.0.0"}\n'
@@ -32,8 +33,9 @@ EOF
 chmod +x "$tmp/bin/curl"
 
 PATH="$tmp/bin:$PATH" RUNNER_TEMP="$tmp/runner" GITHUB_PATH="$tmp/github-path" \
-  TOKEN=fixture-token FIXTURE_ARCHIVE="$tmp/nanoom-linux-x64.tar.gz" REQUESTED=latest \
+  TOKEN=fixture-token FIXTURE_ARCHIVE="$tmp/nanoom-linux-x64.tar.gz" FIXTURE_REQUESTS="$tmp/requests" REQUESTED=v0.0.0 RELEASE_BASE_URL=https://github.example.test \
   bash "$root/.github/actions/_setup/setup.sh"
 grep -q '/nanoom-bin$' "$tmp/github-path"
+grep -Fq 'https://github.example.test/XionWCFM/nanoom/releases/download/v0.0.0/nanoom-' "$tmp/requests"
 "$tmp/runner/nanoom-bin/nanoom"
 echo 'setup authentication smoke passed'

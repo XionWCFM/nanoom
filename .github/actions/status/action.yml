@@ -1,11 +1,11 @@
 name: nanoom status
 description: Evaluate needs results without artifacts
 inputs:
-  needs: {required: true}
-  affectedJob: {default: affected}
-  matrixJob: {default: matrix}
-  group: {default: ci}
-  format: {default: text}
+  needs: {description: "JSON from toJSON(needs) in the aggregate job", required: true}
+  affectedJob: {description: "Job id that runs nanoom affected", default: affected}
+  matrixJob: {description: "Matrix job id whose result is aggregated", default: matrix}
+  group: {description: "Affected group to evaluate", default: ci}
+  format: {description: "Summary format: text or markdown", default: text}
 outputs:
   result:
     description: Canonical aggregate status result JSON

@@ -77,6 +77,7 @@ pub async fn execute(args: RunArgs, config: &Config, cwd: &std::path::Path) -> R
             .iter()
             .filter(|project| {
                 let rule = group_config.rules.iter().find(|r| r.name == project.name);
+                let is_ignored = rule.is_some_and(|r| r.ignore);
                 let shard_matches = args.shard.is_none_or(|shard| {
                     rule.and_then(|r| r.shard.iter().find(|s| s.task == args.task))
                         .is_some_and(|spec| shard <= spec.shard)
@@ -87,7 +88,7 @@ pub async fn execute(args: RunArgs, config: &Config, cwd: &std::path::Path) -> R
                     .filter
                     .as_ref()
                     .is_none_or(|filter| &project.name == filter);
-                shard_matches && isolate_matches && filter_matches
+                !is_ignored && shard_matches && isolate_matches && filter_matches
             })
             .cloned()
             .collect()

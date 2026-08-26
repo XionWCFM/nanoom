@@ -199,6 +199,7 @@ jobs:
           packageManager: yarn
           monorepoTool: turbo
           matrix: ${{ toJSON(matrix) }}
+          group: ci
       - name: Verify run result
         env:
           RESULT: ${{ steps.task.outputs.result }}

@@ -11,7 +11,7 @@ status:
   needs: [affected, run]
   runs-on: ubuntu-latest
   steps:
-    - uses: XionWCFM/nanoom/.github/actions/status@v0.2.6
+    - uses: XionWCFM/nanoom/.github/actions/status@v0.2.9
       with:
         needs: ${{ toJSON(needs) }}
         affectedJob: affected

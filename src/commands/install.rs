@@ -10,13 +10,6 @@ pub struct InstallArgs {
     #[arg(long, help = "Package manager to use (auto, pnpm, yarn, npm)")]
     pub package_manager: Option<String>,
 
-    #[arg(
-        long = "workspace-install",
-        alias = "root-install",
-        help = "Also run an install in each workspace (root install is always performed)"
-    )]
-    pub workspace_install: bool,
-
     #[arg(long, help = "Install only this workspace and its dependency closure")]
     pub filter: Option<String>,
 
@@ -24,7 +17,11 @@ pub struct InstallArgs {
     pub json: bool,
 }
 
-pub async fn execute(args: InstallArgs, config: &Config, base_cwd: &std::path::Path) -> Result<()> {
+pub async fn execute(
+    args: InstallArgs,
+    _config: &Config,
+    base_cwd: &std::path::Path,
+) -> Result<()> {
     let cwd = base_cwd;
 
     let pm = detect_package_manager(cwd, args.package_manager.as_deref())?;
@@ -82,32 +79,6 @@ pub async fn execute(args: InstallArgs, config: &Config, base_cwd: &std::path::P
     eprintln!("  Scope: root dependencies");
     run_install(&pm, cwd, args.json).await?;
 
-    if !args.workspace_install {
-        if args.json {
-            println!(
-                "{}",
-                serde_json::json!({
-                    "status": "success",
-                    "packageManager": pm,
-                    "cwd": cwd,
-                    "scope": {"root": true, "workspaceInstall": false},
-                    "reason": "installed the monorepo root from its lockfile"
-                })
-            );
-        }
-        return Ok(());
-    }
-
-    let workspace = crate::workspace::Workspace::discover(config, cwd)?;
-
-    for project in workspace.all_projects() {
-        let project_path = &project.path;
-        if project_path.join("package.json").exists() {
-            eprintln!("Installing for {}...", project.name);
-            run_install(&pm, project_path, args.json).await?;
-        }
-    }
-
     if args.json {
         println!(
             "{}",
@@ -115,8 +86,8 @@ pub async fn execute(args: InstallArgs, config: &Config, base_cwd: &std::path::P
                 "status": "success",
                 "packageManager": pm,
                 "cwd": cwd,
-                "scope": {"root": true, "workspaceInstall": args.workspace_install},
-                "reason": "installed the monorepo root and every workspace requested by --workspace-install"
+                "scope": {"root": true},
+                "reason": "installed the monorepo root from its lockfile"
             })
         );
     }
@@ -456,7 +427,7 @@ mod tests {
     #[cfg(not(windows))]
     #[tokio::test]
     #[serial]
-    async fn execute_can_run_root_and_opt_in_workspace_installs_without_network() {
+    async fn execute_runs_only_the_root_install_without_network() {
         let dir = tempdir().unwrap();
         let original_path = prepend_fake_managers(dir.path());
         std::fs::write(
@@ -480,7 +451,6 @@ mod tests {
         execute(
             InstallArgs {
                 package_manager: Some("yarn".into()),
-                workspace_install: true,
                 filter: None,
                 json: true,
             },
@@ -513,7 +483,6 @@ mod tests {
             execute(
                 InstallArgs {
                     package_manager: Some(manager.into()),
-                    workspace_install: false,
                     filter: Some("@repo/app".into()),
                     json: true,
                 },
@@ -526,7 +495,6 @@ mod tests {
         let error = execute(
             InstallArgs {
                 package_manager: Some("npm".into()),
-                workspace_install: false,
                 filter: Some("@repo/app".into()),
                 json: true,
             },

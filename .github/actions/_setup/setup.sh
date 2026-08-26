@@ -5,7 +5,7 @@ requested=${REQUESTED:-action}
 action_ref=${ACTION_REF:-}
 repository=${REPOSITORY:-XionWCFM/nanoom}
 api=${API:-https://api.github.com}
-server=${SERVER:-https://github.com}
+release_base_url=${RELEASE_BASE_URL:-https://github.com}
 bin_dir="$RUNNER_TEMP/nanoom-bin"
 mkdir -p "$bin_dir"
 
@@ -24,10 +24,6 @@ if [[ "$requested" == action ]]; then
     exit 2
   }
   version=$action_ref
-elif [[ "$requested" == latest ]]; then
-  curl_args=(-fsSL)
-  [[ -n ${TOKEN:-} ]] && curl_args+=(-H "Authorization: Bearer $TOKEN")
-  version=$(curl "${curl_args[@]}" "$api/repos/$repository/releases/latest" | jq -er .tag_name)
 else
   version=$requested
 fi
@@ -47,7 +43,9 @@ esac
 file="nanoom-$os-$arch.$extension"
 download_dir="$RUNNER_TEMP/nanoom-download"
 mkdir -p "$download_dir"
-url="$server/$repository/releases/download/$version/$file"
+release_base_url=${release_base_url%/}
+[[ "$release_base_url" =~ ^https:// ]] || { echo "releaseBaseUrl must be an https URL, got '$release_base_url'" >&2; exit 2; }
+url="$release_base_url/$repository/releases/download/$version/$file"
 curl -fsSL "$url" -o "$download_dir/$file"
 curl -fsSL "$url.sha256" -o "$download_dir/$file.sha256"
 expected=$(awk '{print $1}' "$download_dir/$file.sha256")
