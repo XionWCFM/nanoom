@@ -4,7 +4,7 @@ inputs:
   matrix: {required: true}
   packageManager: {default: auto}
   cwd: {default: .}
-  version: {default: latest}
+  version: {default: action}
 outputs:
   result:
     description: Canonical focused-install result JSON
@@ -16,6 +16,7 @@ runs:
       shell: bash
       env:
         REQUESTED: ${{ inputs.version }}
+        ACTION_REF: ${{ github.action_ref }}
         API: ${{ github.api_url }}
         SERVER: ${{ github.server_url }}
         TOKEN: ${{ github.token }}

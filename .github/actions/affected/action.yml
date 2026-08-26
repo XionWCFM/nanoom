@@ -1,7 +1,7 @@
 name: nanoom affected
 description: Calculate the authoritative flattened matrix
 inputs:
-  version: {default: latest}
+  version: {default: action}
   config: {default: nanoom.config.json}
   cwd: {default: '.'}
   base: {default: ''}
@@ -21,6 +21,7 @@ runs:
       shell: bash
       env:
         REQUESTED: ${{ inputs.version }}
+        ACTION_REF: ${{ github.action_ref }}
         API: ${{ github.api_url }}
         SERVER: ${{ github.server_url }}
         TOKEN: ${{ github.token }}
@@ -53,13 +54,17 @@ runs:
         [[ -n "$BASE" ]] || { echo '::error title=Missing comparison base::affected could not resolve a base revision from inputs or the GitHub event.'; exit 2; }
         [[ -n "$HEAD" ]] || HEAD=HEAD
         if ! git -C "$CWD" rev-parse --verify "$BASE^{commit}" >/dev/null 2>&1; then
+          printf '  Fetch\n    base revision is missing; fetching origin with depth=1\n'
           if [[ "$EVENT" == pull_request && "$BASE" != refs/* ]]; then
-            git -C "$CWD" fetch --no-tags --depth=100 origin "$BASE:refs/remotes/origin/$BASE"
+            git -C "$CWD" fetch --no-tags --depth=1 origin "$BASE:refs/remotes/origin/$BASE"
             BASE="refs/remotes/origin/$BASE"
           else
-            git -C "$CWD" fetch --no-tags --depth=100 origin "$BASE"
+            git -C "$CWD" fetch --no-tags --depth=1 origin "$BASE"
             BASE=FETCH_HEAD
           fi
+          printf '    fetched base: %s\n' "$BASE"
+        else
+          printf '  Fetch\n    base revision already exists in checkout\n'
         fi
         args=(-C "$CWD" -c "$CONFIG" affected --report --base "$BASE" --head "$HEAD")
         printf -v command '%q ' nanoom "${args[@]}"

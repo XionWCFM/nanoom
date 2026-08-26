@@ -189,33 +189,38 @@ pub fn resolve_base_commit(
 }
 
 fn try_merge_base_with_deepen(repo: &GitRepo, base_ref: &str, head_ref: &str) -> Result<String> {
-    let max_attempts = 3;
     let mut fetch_depth = 128;
 
-    for attempt in 0..max_attempts {
+    loop {
         match repo.get_merge_base(base_ref, head_ref) {
             Ok(base) => return Ok(base),
             Err(Error::NoCommonAncestor { .. }) => {
-                if attempt == max_attempts - 1 {
+                if !repo.is_shallow()? {
                     return Err(Error::NoCommonAncestor {
                         base: base_ref.to_string(),
                         head: head_ref.to_string(),
                     });
                 }
-                deepen_fetch(repo, fetch_depth)?;
-                fetch_depth *= 2;
+                eprintln!(
+                    "affected: shallow repository; deepening origin by {} commits (base={} head={})",
+                    fetch_depth, base_ref, head_ref
+                );
+                if !deepen_fetch(repo, fetch_depth)? {
+                    return Err(Error::NoCommonAncestor {
+                        base: base_ref.to_string(),
+                        head: head_ref.to_string(),
+                    });
+                }
+                fetch_depth = fetch_depth.saturating_mul(2);
             }
             Err(e) => return Err(e),
         }
     }
-
-    Err(Error::NoCommonAncestor {
-        base: base_ref.to_string(),
-        head: head_ref.to_string(),
-    })
 }
 
-fn deepen_fetch(repo: &GitRepo, depth: usize) -> Result<()> {
+fn deepen_fetch(repo: &GitRepo, depth: usize) -> Result<bool> {
+    let shallow_path = repo.workdir.join(".git/shallow");
+    let before = std::fs::read(&shallow_path).unwrap_or_default();
     let output = Command::new("git")
         .arg("-C")
         .arg(&repo.workdir)
@@ -230,12 +235,13 @@ fn deepen_fetch(repo: &GitRepo, depth: usize) -> Result<()> {
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(Error::GitError(format!(
-            "Failed to deepen fetch: {}",
-            stderr
+            "Failed to deepen fetch from origin by {} commits: {}",
+            depth, stderr
         )));
     }
 
-    Ok(())
+    let after = std::fs::read(&shallow_path).unwrap_or_default();
+    Ok(before != after || !shallow_path.exists())
 }
 
 pub fn detect_default_branch(repo: &GitRepo) -> Result<String> {
@@ -521,10 +527,10 @@ mod tests {
             base_ref: "main".to_string(),
             head_ref: "isolated".to_string(),
         };
-        match resolve_base_commit(&repo, &event, ComparisonMode::MergeBase) {
-            Err(Error::GitError(msg)) => assert!(msg.contains("deepen")),
-            other => panic!("expected GitError about deepen fetch, got {:?}", other),
-        }
+        assert!(matches!(
+            resolve_base_commit(&repo, &event, ComparisonMode::MergeBase),
+            Err(Error::NoCommonAncestor { .. })
+        ));
     }
 
     #[test]

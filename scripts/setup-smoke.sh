@@ -32,7 +32,7 @@ EOF
 chmod +x "$tmp/bin/curl"
 
 PATH="$tmp/bin:$PATH" RUNNER_TEMP="$tmp/runner" GITHUB_PATH="$tmp/github-path" \
-  TOKEN=fixture-token FIXTURE_ARCHIVE="$tmp/nanoom-linux-x64.tar.gz" \
+  TOKEN=fixture-token FIXTURE_ARCHIVE="$tmp/nanoom-linux-x64.tar.gz" REQUESTED=latest \
   bash "$root/.github/actions/_setup/setup.sh"
 grep -q '/nanoom-bin$' "$tmp/github-path"
 "$tmp/runner/nanoom-bin/nanoom"

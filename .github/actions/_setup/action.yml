@@ -2,7 +2,7 @@ name: nanoom internal setup
 description: Download, verify, and expose the nanoom release binary
 inputs:
   version:
-    default: latest
+    default: action
   repository:
     default: XionWCFM/nanoom
 runs:
@@ -12,6 +12,7 @@ runs:
       shell: bash
       env:
         REQUESTED: ${{ inputs.version }}
+        ACTION_REF: ${{ github.action_ref }}
         API: ${{ github.api_url }}
         REPOSITORY: ${{ inputs.repository }}
         SERVER: ${{ github.server_url }}
