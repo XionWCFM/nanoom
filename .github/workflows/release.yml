@@ -114,7 +114,7 @@ jobs:
           "$hash  ${{ matrix.artifact }}" | Out-File "${{ matrix.artifact }}.sha256" -Encoding ascii
 
       - name: Install cosign
-        uses: sigstore/cosign-installer@v3.7.0
+        uses: sigstore/cosign-installer@v4.1.2
 
       - name: Sign release archive
         shell: bash
@@ -147,7 +147,7 @@ jobs:
           merge-multiple: true
           path: release-artifacts
       - name: Install cosign
-        uses: sigstore/cosign-installer@v3.7.0
+        uses: sigstore/cosign-installer@v4.1.2
       - name: Verify archives, checksums, permissions, and executable payload
         run: bash scripts/release-smoke.sh release-artifacts
       - name: Verify Yarn platform package contracts
