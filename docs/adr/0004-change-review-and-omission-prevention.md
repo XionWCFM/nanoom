@@ -19,3 +19,5 @@ The final change record names the source commit, changed public contract, tests 
 ## Consequence
 
 The shell check catches common omissions early, while the independent reviewer catches false positives and semantic gaps. Heuristics are deliberately not sufficient for approval.
+
+Pure dependency-version updates do not require meaningless touched test or documentation files. They reuse the existing regression, Action-contract, and release-contract gates; any behavioral change alongside the version bump remains subject to the normal omission checks.
