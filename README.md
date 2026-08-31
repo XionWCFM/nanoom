@@ -82,8 +82,6 @@ The `status` Action evaluates the workflow's `needs` JSON directly and does not 
 - uses: XionWCFM/nanoom/.github/actions/status@v0.2.9
   with:
     needs: ${{ toJSON(needs) }}
-    matrixJob: run
-    group: ci
 ```
 
 ## Quality and completion

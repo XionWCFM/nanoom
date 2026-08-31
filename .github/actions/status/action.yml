@@ -1,11 +1,7 @@
 name: nanoom status
-description: Evaluate needs results without artifacts
+description: Evaluate all needs results without artifacts
 inputs:
   needs: {description: "JSON from toJSON(needs) in the aggregate job", required: true}
-  affectedJob: {description: "Job id that runs nanoom affected", default: affected}
-  matrixJob: {description: "Matrix job id whose result is aggregated", default: matrix}
-  group: {description: "Affected group to evaluate", default: ci}
-  format: {description: "Summary format: text or markdown", default: text}
 outputs:
   result:
     description: Canonical aggregate status result JSON
@@ -18,46 +14,4 @@ runs:
       shell: bash
       env:
         NEEDS: ${{ inputs.needs }}
-        AFFECTED: ${{ inputs.affectedJob }}
-        MATRIX: ${{ inputs.matrixJob }}
-        GROUP: ${{ inputs.group }}
-        FORMAT: ${{ inputs.format }}
-      run: |
-        set -euo pipefail
-        trap 'echo "::error title=Workflow status failed::Review the status table above. Ensure needs contains the configured affectedJob and matrixJob, and that the matrix job uses if: needs.<affected>.outputs.groups.<group>.hasChange == '\''true'\''."' ERR
-        cyan=$'\033[36m'; green=$'\033[32m'; red=$'\033[31m'; bold=$'\033[1m'; reset=$'\033[0m'
-        jq -e . >/dev/null <<<"$NEEDS"
-        a=$(jq -r --arg n "$AFFECTED" '.[$n].result' <<<"$NEEDS")
-        m=$(jq -r --arg n "$MATRIX" '.[$n].result' <<<"$NEEDS")
-        h=$(jq -r --arg n "$AFFECTED" --arg g "$GROUP" '.[$n].outputs.groups // "{}" | fromjson | .[$g].hasChange // false' <<<"$NEEDS")
-        [[ "$FORMAT" == text || "$FORMAT" == markdown ]] || { echo "::error title=Invalid status format::format must be text or markdown, got '$FORMAT'."; exit 2; }
-        printf '%s◆ nanoom status%s\n' "$bold$cyan" "$reset"
-        printf '  Observed values\n    affected job: %s (%s.hasChange=%s)\n' "$a" "$GROUP" "$h"
-        if [[ "$m" == success ]]; then color=$green; else color=$red; fi
-        printf '    matrix job: %s\n' "$m"
-        expected=$([[ "$h" == true ]] && echo success || echo skipped)
-        if [[ "$a" != success ]]; then reason="affected calculation failed"
-        elif [[ "$m" == "$expected" ]]; then reason=$([[ "$h" == true ]] && echo 'changes required a matrix and every entry succeeded' || echo 'no changes required work and the matrix was correctly skipped')
-        else reason="matrix result is inconsistent with affected output"
-        fi
-        result=$(jq -cn --arg affectedJob "$AFFECTED" --arg affectedResult "$a" --arg matrixJob "$MATRIX" --arg matrixResult "$m" --arg group "$GROUP" --argjson hasChange "$h" --arg expectedMatrixResult "$expected" --arg reason "$reason" '{affectedJob:$affectedJob, affectedResult:$affectedResult, matrixJob:$matrixJob, matrixResult:$matrixResult, group:$group, hasChange:$hasChange, expectedMatrixResult:$expectedMatrixResult, reason:$reason, status:(if $affectedResult == "success" and $matrixResult == $expectedMatrixResult then "success" else "failure" end)}')
-        echo "result=$result" >> "$GITHUB_OUTPUT"
-        printf '  Expected values\n    matrix job: %s\n  Why\n    %s\n  Final JSON\n' "$expected" "$reason"
-        jq . <<<"$result"
-        printf '  Action output\n    result=<same canonical JSON above>\n'
-        {
-          echo '### nanoom workflow status'
-          echo
-          echo '| Job | Result | Detail |'
-          echo '|---|---|---|'
-          echo "| $AFFECTED | $a | $GROUP.hasChange=$h |"
-          echo "| $MATRIX | $m | expected from affected result |"
-          echo
-          echo "Reason: $reason"
-        } >> "$GITHUB_STEP_SUMMARY"
-        [[ "$a" == success ]] || { echo "::error title=Affected job did not succeed::$AFFECTED finished with '$a'. Open that job and fix its affected calculation."; exit 1; }
-        case "$h:$m" in
-          true:success) echo "::notice title=Workflow status::Changes were found and all matrix entries succeeded." ;;
-          false:skipped) echo "::notice title=Workflow status::No changes were found and the matrix job was correctly skipped." ;;
-          *) echo "::error title=Inconsistent workflow result::$GROUP.hasChange=$h requires matrix=$([[ $h == true ]] && echo success || echo skipped), but $MATRIX finished with '$m'. Check the matrix job condition and failures."; exit 1 ;;
-        esac
+      run: bash "$GITHUB_ACTION_PATH/run.sh"
