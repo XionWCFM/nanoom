@@ -217,6 +217,11 @@ mod tests {
 
     #[test]
     fn timing_runner_auto_resolves_the_execution_boundary() {
+        let explicit = tempdir().unwrap();
+        assert_eq!(
+            resolve_timing_runner(explicit.path(), "yarn").unwrap(),
+            "yarn"
+        );
         for (marker, expected) in [("turbo.json", "turbo"), ("nx.json", "nx")] {
             let dir = tempdir().unwrap();
             std::fs::write(dir.path().join(marker), "{}").unwrap();
@@ -225,5 +230,10 @@ mod tests {
         let dir = tempdir().unwrap();
         std::fs::write(dir.path().join("pnpm-lock.yaml"), "").unwrap();
         assert_eq!(resolve_timing_runner(dir.path(), "auto").unwrap(), "pnpm");
+
+        let ambiguous = tempdir().unwrap();
+        std::fs::write(ambiguous.path().join("turbo.json"), "{}").unwrap();
+        std::fs::write(ambiguous.path().join("nx.json"), "{}").unwrap();
+        assert!(resolve_timing_runner(ambiguous.path(), "auto").is_err());
     }
 }

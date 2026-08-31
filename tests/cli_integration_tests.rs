@@ -163,6 +163,51 @@ fn test_cli_version() {
 }
 
 #[test]
+fn test_history_merges_without_repository_config() {
+    let dir = tempdir().unwrap();
+    let first = dir.path().join("first.json");
+    let second = dir.path().join("second.json");
+    let merged = dir.path().join("history.json");
+    fs::write(&first, r#"{"samples":[{"group":"ci","workspace":"a","task":"test","runner":"nx","environment":"linux","durationMs":10}]}"#).unwrap();
+    fs::write(&second, r#"{"samples":[{"group":"ci","workspace":"a","task":"test","runner":"nx","environment":"linux","durationMs":20}]}"#).unwrap();
+    let output = Command::new(binary_path())
+        .args(["history", "--input"])
+        .arg(&first)
+        .arg("--input")
+        .arg(&second)
+        .arg("--output")
+        .arg(&merged)
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(result["sampleCount"], 2);
+    let history: serde_json::Value = serde_json::from_slice(&fs::read(merged).unwrap()).unwrap();
+    assert_eq!(history["samples"].as_array().unwrap().len(), 2);
+}
+
+#[test]
+fn test_history_rejects_corrupt_input() {
+    let dir = tempdir().unwrap();
+    let corrupt = dir.path().join("corrupt.json");
+    fs::write(&corrupt, "not json").unwrap();
+    let output = Command::new(binary_path())
+        .args(["history", "--input"])
+        .arg(&corrupt)
+        .arg("--output")
+        .arg(dir.path().join("history.json"))
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("Invalid config"));
+}
+
+#[test]
 fn test_schema_command_outputs_valid_json() {
     let dir = tempdir().unwrap();
     let (success, output) = run_cli(dir.path(), &["schema"], &[]);
