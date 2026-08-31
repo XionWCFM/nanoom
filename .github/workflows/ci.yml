@@ -145,7 +145,7 @@ jobs:
           head: HEAD
           scheduler: artifact
           timingRunner: yarn
-          historyArtifactName: nanoom-timing-history-${{ github.run_id }}
+          historyArtifactName: nanoom-timing-history-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Test affected matrix contract
         env:
           GROUPS: ${{ steps.affected.outputs.groups }}
@@ -217,7 +217,7 @@ jobs:
           version: local
           scheduler: artifact
           timingRunner: yarn
-          historyArtifactName: nanoom-timing-history-${{ github.run_id }}
+          historyArtifactName: nanoom-timing-history-${{ github.run_id }}-${{ github.run_attempt }}
       - env:
           RESULT: ${{ steps.history.outputs.result }}
         run: jq -e '.status == "success" and .scheduler == "artifact" and .cli.sampleCount == 4' <<< "$RESULT"
@@ -243,7 +243,7 @@ jobs:
           base: main
           head: HEAD
           scheduler: artifact
-          historyArtifactName: nanoom-timing-history-${{ github.run_id }}
+          historyArtifactName: nanoom-timing-history-${{ github.run_id }}-${{ github.run_attempt }}
       - env:
           FIRST_GROUPS: ${{ needs.fixture-affected.outputs.groups }}
           SECOND_GROUPS: ${{ steps.affected.outputs.groups }}

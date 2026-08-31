@@ -40,6 +40,7 @@ pub async fn execute(
     config: &crate::Config,
     cwd: &std::path::Path,
 ) -> Result<()> {
+    let timing_runner = resolve_timing_runner(cwd, &args.timing_runner)?;
     let result =
         calculate_with_override(config, cwd, args.base.as_deref(), args.head.as_deref()).await?;
     let (history, history_status) = match args.history.as_deref() {
@@ -58,12 +59,8 @@ pub async fn execute(
             "disabled".to_string(),
         ),
     };
-    let matrix = generate_matrix_with_history(
-        &result,
-        &history,
-        &args.timing_runner,
-        &args.timing_environment,
-    );
+    let matrix =
+        generate_matrix_with_history(&result, &history, &timing_runner, &args.timing_environment);
 
     if args.json {
         println!(
@@ -73,7 +70,7 @@ pub async fn execute(
                 "matrix": matrix,
                 "scheduling": {
                     "historyStatus": history_status,
-                    "timingRunner": args.timing_runner,
+                    "timingRunner": timing_runner,
                     "timingEnvironment": args.timing_environment
                 }
             }))?
@@ -140,12 +137,34 @@ pub async fn execute(
     Ok(())
 }
 
+fn resolve_timing_runner(cwd: &std::path::Path, requested: &str) -> Result<String> {
+    if requested != "auto" {
+        return Ok(requested.to_string());
+    }
+    let turbo = cwd.join("turbo.json").exists();
+    let nx = cwd.join("nx.json").exists();
+    if turbo && nx {
+        return Err(crate::error::Error::InvalidRunner(
+            "both turbo.json and nx.json exist; set timingRunner explicitly".into(),
+        ));
+    }
+    Ok(if turbo {
+        "turbo".into()
+    } else if nx {
+        "nx".into()
+    } else {
+        crate::commands::install::detect_package_manager(cwd, None)?
+    })
+}
+
 #[cfg(test)]
 mod tests {
+    use super::resolve_timing_runner;
 
     use crate::affected::{AffectedOutput, GroupOutput, WorkspaceEntry};
 
     use std::collections::HashMap;
+    use tempfile::tempdir;
 
     fn mock_output() -> AffectedOutput {
         let workspaces = vec![WorkspaceEntry {
@@ -194,5 +213,17 @@ mod tests {
         );
         assert!(output.contains("Result: changes found"));
         assert!(output.contains("Matrix group: ci (1 entries)"));
+    }
+
+    #[test]
+    fn timing_runner_auto_resolves_the_execution_boundary() {
+        for (marker, expected) in [("turbo.json", "turbo"), ("nx.json", "nx")] {
+            let dir = tempdir().unwrap();
+            std::fs::write(dir.path().join(marker), "{}").unwrap();
+            assert_eq!(resolve_timing_runner(dir.path(), "auto").unwrap(), expected);
+        }
+        let dir = tempdir().unwrap();
+        std::fs::write(dir.path().join("pnpm-lock.yaml"), "").unwrap();
+        assert_eq!(resolve_timing_runner(dir.path(), "auto").unwrap(), "pnpm");
     }
 }

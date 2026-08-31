@@ -27,21 +27,27 @@ if [[ "$mode" == continuous ]]; then
   [[ "$SCHEDULER" == http ]] || { echo 'continuous matrix requires scheduler=http' >&2; false; }
   [[ "$COORDINATOR_URL" == https://* && -n "$COORDINATOR_TOKEN" ]] || { echo 'scheduler=http requires an HTTPS coordinatorUrl and NANOOM_COORDINATOR_TOKEN' >&2; false; }
   run_id=$(jq -er .runId <<<"$entry"); agent_id=$(jq -er .agentId <<<"$entry")
+  coordinator=${COORDINATOR_URL%/}; run_key=$(jq -rn --arg value "$run_id" '$value | @uri'); agent_key=$(jq -rn --arg value "$agent_id" '$value | @uri')
   claim_index=0
   while :; do
     claim_index=$((claim_index + 1))
-    claim=$(curl --fail-with-body --silent --show-error -X POST -H "Authorization: Bearer $COORDINATOR_TOKEN" -H 'Content-Type: application/json' -H "Idempotency-Key: $run_id:$agent_id:claim:$claim_index" "$COORDINATOR_URL/v1/runs/$run_id/claims" --data "$(jq -cn --arg agentId "$agent_id" '{agentId:$agentId}')")
+    claim=$(curl --fail-with-body --silent --show-error -X POST -H "Authorization: Bearer $COORDINATOR_TOKEN" -H 'Content-Type: application/json' -H "Idempotency-Key: $run_key:$agent_key:claim:$claim_index" "$coordinator/v1/runs/$run_key/claims" --data "$(jq -cn --arg agentId "$agent_id" '{agentId:$agentId}')")
     item=$(jq -c '.item // empty' <<<"$claim"); [[ -n "$item" ]] || break; item_id=$(jq -er .itemId <<<"$claim")
-    (while sleep 30; do curl --fail --silent -X PATCH -H "Authorization: Bearer $COORDINATOR_TOKEN" -H 'Content-Type: application/json' -H "Idempotency-Key: $run_id:$item_id:heartbeat" "$COORDINATOR_URL/v1/runs/$run_id/claims/$item_id" --data '{"status":"heartbeat"}' >/dev/null || exit; done) & heartbeat_pid=$!
+    item_key=$(jq -rn --arg value "$item_id" '$value | @uri'); heartbeat_failed="$RUNNER_TEMP/nanoom-heartbeat-$run_key-$agent_key-$item_key.failed"; rm -f "$heartbeat_failed"
+    (while sleep 30; do curl --fail --silent -X PATCH -H "Authorization: Bearer $COORDINATOR_TOKEN" -H 'Content-Type: application/json' -H "Idempotency-Key: $run_key:$item_key:heartbeat" "$coordinator/v1/runs/$run_key/claims/$item_key" --data '{"status":"heartbeat"}' >/dev/null || { : > "$heartbeat_failed"; exit 1; }; done) & heartbeat_pid=$!
     item_result=$(run_item "$item")
     if [[ $(jq -r .status <<<"$item_result") == success ]]; then
       kill "$heartbeat_pid" 2>/dev/null || true; wait "$heartbeat_pid" 2>/dev/null || true
+      if [[ -f "$heartbeat_failed" ]]; then
+        result=$(jq -cn --argjson completed "$results" --argjson failed "$item" '{status:"failure",completed:[$completed[].item],failed:[$failed],pending:[],reason:"coordinator heartbeat failed; static fallback is forbidden after run start"}')
+        echo "result=$result" >> "$GITHUB_OUTPUT"; printf '  Final JSON\n    %s\n' "$result"; trap - ERR; exit 1
+      fi
       duration=$(jq -r '.cli.executions[0].durationMs' <<<"$item_result")
-      curl --fail-with-body --silent --show-error -X PATCH -H "Authorization: Bearer $COORDINATOR_TOKEN" -H 'Content-Type: application/json' -H "Idempotency-Key: $run_id:$item_id:success" "$COORDINATOR_URL/v1/runs/$run_id/claims/$item_id" --data "$(jq -cn --argjson durationMs "$duration" '{status:"success",durationMs:$durationMs}')" >/dev/null
+      curl --fail-with-body --silent --show-error -X PATCH -H "Authorization: Bearer $COORDINATOR_TOKEN" -H 'Content-Type: application/json' -H "Idempotency-Key: $run_key:$item_key:success" "$coordinator/v1/runs/$run_key/claims/$item_key" --data "$(jq -cn --argjson durationMs "$duration" '{status:"success",durationMs:$durationMs}')" >/dev/null
       results=$(jq -c --argjson result "$item_result" '. + [$result]' <<<"$results")
     else
       kill "$heartbeat_pid" 2>/dev/null || true; wait "$heartbeat_pid" 2>/dev/null || true
-      curl --fail-with-body --silent --show-error -X PATCH -H "Authorization: Bearer $COORDINATOR_TOKEN" -H 'Content-Type: application/json' -H "Idempotency-Key: $run_id:$item_id:failure" "$COORDINATOR_URL/v1/runs/$run_id/claims/$item_id" --data '{"status":"failure"}' >/dev/null
+      curl --fail-with-body --silent --show-error -X PATCH -H "Authorization: Bearer $COORDINATOR_TOKEN" -H 'Content-Type: application/json' -H "Idempotency-Key: $run_key:$item_key:failure" "$coordinator/v1/runs/$run_key/claims/$item_key" --data '{"status":"failure"}' >/dev/null
       result=$(jq -cn --argjson completed "$results" --argjson failed "$item_result" '{status:"failure",completed:[$completed[].item],failed:[$failed.item],pending:[],reason:"task failed; future claims remain coordinator-owned"}')
       echo "result=$result" >> "$GITHUB_OUTPUT"; printf '  Final JSON\n    %s\n' "$result"; trap - ERR; exit 1
     fi
@@ -65,7 +71,7 @@ fi
 elapsed=$(( $(date +%s) - started )); matrix_json=$(jq -c '{assignmentId,agentId,runId,mode,predictedDurationMs,items} | with_entries(select(.value != null))' <<<"$entry")
 result=$(jq -cn --argjson matrix "$matrix_json" --argjson results "$results" --argjson elapsed "$elapsed" '{status:"success",reason:"executed assignment items in order",matrix:$matrix,results:$results,elapsedSeconds:$elapsed}'); echo "result=$result" >> "$GITHUB_OUTPUT"
 if [[ "$SCHEDULER" == artifact ]]; then
-  sample_dir="$RUNNER_TEMP/nanoom-timing"; mkdir -p "$sample_dir"; sample_name=$(jq -r '.assignmentId // "legacy"' <<<"$entry"); sample_path="$sample_dir/$sample_name.json"
+  sample_dir="$RUNNER_TEMP/nanoom-timing"; mkdir -p "$sample_dir"; assignment_id=$(jq -r '.assignmentId // "legacy"' <<<"$entry"); sample_name=$(printf '%s' "$assignment_id" | tr -c 'A-Za-z0-9._-' '-' | cut -c1-80); sample_path="$sample_dir/$sample_name.json"
   jq -n --arg group "$GROUP" --arg environment "$TIMING_ENVIRONMENT" --argjson results "$results" '{samples:[$results[] | .item as $item | .cli.executions[] | {group:$group,workspace:.workspace,task:$item.task,shard:$item.shard,runner:.runner,environment:$environment,durationMs:.durationMs}]}' > "$sample_path"
   echo "sample-path=$sample_path" >> "$GITHUB_OUTPUT"; echo "sample-name=nanoom-timing-sample-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$sample_name" >> "$GITHUB_OUTPUT"; echo "upload-started=$(date +%s)" >> "$GITHUB_OUTPUT"
 fi

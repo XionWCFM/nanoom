@@ -30,17 +30,20 @@ args=(-C "$CWD" -c "$CONFIG" affected --json --base "$BASE" --head "$HEAD" --tim
 printf -v ACTION_COMMAND '%q ' nanoom "${args[@]}"; ACTION_COMMAND=${ACTION_COMMAND% }
 printf '◆ nanoom affected\n  Inputs\n    cwd: %s\n    config: %s\n    scheduler: %s\n    timing environment: %s\n  Command\n    %s\n' "$CWD" "$CONFIG" "$SCHEDULER" "$TIMING_ENVIRONMENT" "$ACTION_COMMAND"
 ACTION_PHASE=affected-calculation; report=$(nanoom "${args[@]}")
-report=$(jq -c --arg historyStatus "$history_status" --argjson downloadMs "$history_download_ms" '.scheduling.historyStatus=$historyStatus | .scheduling.historyDownloadMs=$downloadMs | .scheduling.reason=(if $historyStatus == "loaded" then "recent successful samples loaded" elif $historyStatus == "disabled" then "telemetry disabled; deterministic equal weights" else "history unavailable; deterministic equal weights" end)' <<<"$report")
+report=$(jq -c --arg historyStatus "$history_status" --argjson downloadMs "$history_download_ms" '.scheduling.historyStatus=(if .scheduling.historyStatus == "fallback" then "corrupt" else $historyStatus end) | .scheduling.historyDownloadMs=$downloadMs | .scheduling.reason=(if .scheduling.historyStatus == "loaded" then "recent successful samples loaded" elif .scheduling.historyStatus == "disabled" then "telemetry disabled; deterministic equal weights" else "history unavailable or invalid; deterministic equal weights" end)' <<<"$report")
+history_status=$(jq -r .scheduling.historyStatus <<<"$report")
 matrix=$(jq -c .matrix <<<"$report")
 
 if [[ "$SCHEDULER" == http ]]; then
   [[ "$COORDINATOR_URL" == https://* && -n "$COORDINATOR_TOKEN" ]] || { echo 'scheduler=http requires an HTTPS coordinatorUrl and NANOOM_COORDINATOR_TOKEN' >&2; false; }
+  coordinator=${COORDINATOR_URL%/}
   while IFS= read -r group; do
     distribution=$(jq -c --arg group "$group" '.affected.group[$group].distribution // empty' <<<"$report"); [[ -n "$distribution" ]] || continue
     items=$(jq -c --arg group "$group" '.affected.group[$group].workspaces' <<<"$report"); item_count=$(jq length <<<"$items"); (( item_count > 0 )) || continue
     concurrency=$(jq -r .concurrency <<<"$distribution"); (( concurrency > item_count )) && concurrency=$item_count
     body=$(jq -cn --arg repository "$REPOSITORY" --arg run "$RUN_ID.$RUN_ATTEMPT" --arg group "$group" --arg environment "$TIMING_ENVIRONMENT" --argjson workItems "$items" --argjson tier "$distribution" --argjson concurrency "$concurrency" '{repository:$repository,run:$run,group:$group,workItems:$workItems,tier:$tier,concurrency:$concurrency,environment:$environment}')
-    response=$(curl --fail-with-body --silent --show-error -X POST -H "Authorization: Bearer $COORDINATOR_TOKEN" -H 'Content-Type: application/json' -H "Idempotency-Key: $REPOSITORY:$RUN_ID:$RUN_ATTEMPT:$group" "$COORDINATOR_URL/v1/runs" --data "$body")
+    group_key=$(jq -rn --arg value "$group" '$value | @uri')
+    response=$(curl --fail-with-body --silent --show-error -X POST -H "Authorization: Bearer $COORDINATOR_TOKEN" -H 'Content-Type: application/json' -H "Idempotency-Key: $REPOSITORY:$RUN_ID:$RUN_ATTEMPT:$group_key" "$coordinator/v1/runs" --data "$body")
     run_id=$(jq -er .runId <<<"$response"); agents=$(jq -cn --arg runId "$run_id" --argjson count "$concurrency" '[range(1; $count + 1) | {agentId:("agent-" + tostring),runId:$runId,mode:"continuous"}]')
     matrix=$(jq -c --arg group "$group" --argjson agents "$agents" '.[$group].include=$agents' <<<"$matrix")
   done < <(jq -r '.affected.group | keys[]' <<<"$report")
