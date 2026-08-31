@@ -811,6 +811,54 @@ fn test_run_executes_affected_workspace_script_end_to_end() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn run_resolves_local_nx_from_nested_relative_cwd() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempdir().unwrap();
+    let nested = dir.path().join("nested");
+    write_json(
+        &nested.join("package.json"),
+        &serde_json::json!({
+            "name": "root",
+            "private": true,
+            "workspaces": ["packages/*"]
+        }),
+    );
+    write_json(&nested.join("nx.json"), &serde_json::json!({}));
+    write_json(
+        &nested.join("nanoom.config.json"),
+        &serde_json::json!({ "group": { "ci": { "tasks": ["test"] } } }),
+    );
+    write_json(
+        &nested.join("packages/app/package.json"),
+        &serde_json::json!({
+            "name": "app",
+            "version": "1.0.0",
+            "scripts": { "test": "true" }
+        }),
+    );
+    let nx = nested.join("node_modules/.bin/nx");
+    fs::create_dir_all(nx.parent().unwrap()).unwrap();
+    fs::write(&nx, "#!/bin/sh\nexit 0\n").unwrap();
+    fs::set_permissions(&nx, fs::Permissions::from_mode(0o755)).unwrap();
+    init_git_repo(&nested);
+
+    let (success, stdout, stderr) = run_cli_parts(
+        dir.path(),
+        &[
+            "-C", "nested", "run", "ci", "test", "--all", "--filter", "app", "--runner", "nx",
+            "--json",
+        ],
+        &[("PATH", "")],
+    );
+    assert!(success, "run failed: {stdout}{stderr}");
+    let result: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(result["status"], "success");
+    assert_eq!(result["executions"][0]["runner"], "nx");
+}
+
 #[test]
 fn test_install_handles_root_monorepo_without_workspace_lockfiles() {
     let dir = tempdir().unwrap();
