@@ -243,6 +243,7 @@ jobs:
           base: main
           head: HEAD
           scheduler: artifact
+          timingRunner: yarn
           historyArtifactName: nanoom-timing-history-${{ github.run_id }}-${{ github.run_attempt }}
       - env:
           FIRST_GROUPS: ${{ needs.fixture-affected.outputs.groups }}
