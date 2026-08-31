@@ -249,6 +249,29 @@ fn test_discover_pnpm_workspace() {
 }
 
 #[test]
+fn pnpm_workspace_glob_does_not_rediscover_installed_dependencies() {
+    let dir = tempdir().unwrap();
+    fs::write(
+        dir.path().join("pnpm-workspace.yaml"),
+        "packages:\n  - 'packages/*'\n",
+    )
+    .unwrap();
+    write_json(
+        &dir.path().join("packages/app/package.json"),
+        &package_json("app", &[]),
+    );
+    write_json(
+        &dir.path()
+            .join("packages/app/node_modules/app/package.json"),
+        &package_json("app", &[]),
+    );
+
+    let workspace = Workspace::discover(&simple_config(&["**"], &[]), dir.path()).unwrap();
+    assert_eq!(workspace.project_count(), 1);
+    assert_eq!(workspace.all_projects()[0].name, "app");
+}
+
+#[test]
 fn test_discover_nx_workspace() {
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("nx.json"), r#"{"namedInputs": {}}"#).unwrap();

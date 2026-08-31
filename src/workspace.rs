@@ -2,7 +2,7 @@ use crate::config::{
     Config, DiscoveredWorkspace, NxJson, PackageJson, PnpmWorkspaceYaml, TurboJson, WorkspacesField,
 };
 use crate::error::Result;
-use globset::{Glob, GlobSetBuilder};
+use globset::{Glob, GlobMatcher, GlobSetBuilder};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
@@ -179,8 +179,7 @@ fn discover_pnpm_workspaces(cwd: &Path) -> Result<Vec<DiscoveredWorkspace>> {
 
     let mut workspaces = Vec::new();
     for pattern in pnpm_ws.packages {
-        let glob = Glob::new(&pattern)?;
-        let matcher = glob.compile_matcher();
+        let matcher = workspace_glob(&pattern)?;
 
         for entry in WalkDir::new(cwd).follow_links(false) {
             let path = entry?.path().to_path_buf();
@@ -281,8 +280,7 @@ fn discover_yarn_workspaces(cwd: &Path) -> Result<Vec<DiscoveredWorkspace>> {
 
     let mut workspaces = Vec::new();
     for pattern in &patterns {
-        let glob = Glob::new(pattern)?;
-        let matcher = glob.compile_matcher();
+        let matcher = workspace_glob(pattern)?;
 
         for entry in WalkDir::new(cwd).follow_links(false) {
             let path = entry?.path().to_path_buf();
@@ -296,6 +294,13 @@ fn discover_yarn_workspaces(cwd: &Path) -> Result<Vec<DiscoveredWorkspace>> {
     }
 
     Ok(workspaces)
+}
+
+fn workspace_glob(pattern: &str) -> Result<GlobMatcher> {
+    Ok(globset::GlobBuilder::new(pattern)
+        .literal_separator(true)
+        .build()?
+        .compile_matcher())
 }
 
 fn read_workspace(path: &Path, _root: &Path) -> Result<DiscoveredWorkspace> {
