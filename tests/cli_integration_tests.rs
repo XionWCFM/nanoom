@@ -592,7 +592,7 @@ fn test_global_cwd_flag_works_from_outside_repo() {
 }
 
 #[test]
-fn test_affected_preserves_all_entries_when_exceeding_concurrency() {
+fn test_affected_batches_all_entries_with_distribution_cap() {
     let dir = tempdir().unwrap();
     let root = dir.path();
     write_json(
@@ -621,6 +621,11 @@ fn test_affected_preserves_all_entries_when_exceeding_concurrency() {
             "group": {
                 "ci": {
                     "tasks": ["test"],
+                    "distribution": {
+                        "small": {"maxAffectedPercent": 25, "concurrency": 1},
+                        "medium": {"maxAffectedPercent": 60, "concurrency": 2},
+                        "full": {"maxAffectedPercent": 100, "concurrency": 2}
+                    },
                     "rules": [
                         { "name": "pkg-a", "shard": [{ "task": "test", "shard": 2 }] }
                     ]
@@ -671,6 +676,19 @@ fn test_affected_preserves_all_entries_when_exceeding_concurrency() {
         4,
         "all entries must survive regardless of concurrency: {:?}",
         workspaces
+    );
+    let assignments = parsed["matrix"]["ci"]["include"].as_array().unwrap();
+    assert_eq!(assignments.len(), 2);
+    assert_eq!(
+        assignments
+            .iter()
+            .flat_map(|assignment| assignment["items"].as_array().unwrap())
+            .count(),
+        4
+    );
+    assert_eq!(
+        parsed["affected"]["group"]["ci"]["distribution"]["name"],
+        "full"
     );
 
     for entry in workspaces {

@@ -749,7 +749,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let bin = dir.path().join("bin");
         std::fs::create_dir_all(&bin).unwrap();
-        for name in ["turbo", "nx", "yarn"] {
+        for name in ["turbo", "nx", "yarn", "pnpm"] {
             let path = bin.join(name);
             std::fs::write(&path, "#!/bin/sh\nexit 0\n").unwrap();
             #[cfg(unix)]
@@ -768,10 +768,12 @@ mod tests {
             args: vec![],
             env: HashMap::new(),
         };
-        for runner in ["turbo", "nx", "yarn"] {
-            run_task(&project, &task, Some(runner), dir.path(), true)
+        for runner in ["turbo", "nx", "yarn", "pnpm"] {
+            let execution = run_task(&project, &task, Some(runner), dir.path(), true)
                 .await
                 .unwrap();
+            assert_eq!(execution.runner, runner);
+            assert!(execution.duration_ms < 60_000);
         }
         std::fs::write(dir.path().join("turbo.json"), "{}").unwrap();
         std::fs::write(dir.path().join("nx.json"), "{}").unwrap();

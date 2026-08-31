@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 
+type TimingKey = (String, String, String, Option<usize>, String, String);
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TimingHistory {
@@ -24,7 +26,7 @@ pub struct TimingSample {
     pub duration_ms: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Assignment {
     pub assignment_id: String,
@@ -99,7 +101,12 @@ impl TimingHistory {
 
 fn median(values: &mut [u64]) -> u64 {
     values.sort_unstable();
-    values[values.len() / 2]
+    let upper = values.len() / 2;
+    if values.len().is_multiple_of(2) {
+        values[upper - 1] + (values[upper] - values[upper - 1]) / 2
+    } else {
+        values[upper]
+    }
 }
 
 pub fn select_tier(config: &DistributionConfig, affected_percent: f64) -> SelectedTier {
@@ -163,10 +170,7 @@ pub fn assign(
 }
 
 pub fn merge_histories(histories: impl IntoIterator<Item = TimingHistory>) -> TimingHistory {
-    let mut by_key: HashMap<
-        (String, String, String, Option<usize>, String, String),
-        Vec<TimingSample>,
-    > = HashMap::new();
+    let mut by_key: HashMap<TimingKey, Vec<TimingSample>> = HashMap::new();
     for sample in histories.into_iter().flat_map(|history| history.samples) {
         if sample.duration_ms == 0 {
             continue;
@@ -249,10 +253,12 @@ mod tests {
                 concurrency: 8,
             },
         };
+        assert_eq!(select_tier(&config, 0.0).name, "small");
         assert_eq!(select_tier(&config, 25.0).name, "small");
         assert_eq!(select_tier(&config, 25.1).name, "medium");
         assert_eq!(select_tier(&config, 60.0).name, "medium");
         assert_eq!(select_tier(&config, 60.1).name, "full");
+        assert_eq!(select_tier(&config, 100.0).name, "full");
     }
 
     #[test]
@@ -282,5 +288,63 @@ mod tests {
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].items[0].name, "a");
         assert_eq!(result.iter().flat_map(|bucket| &bucket.items).count(), 3);
+        assert_eq!(
+            result,
+            assign(
+                "ci",
+                &[item("a"), item("b"), item("c")],
+                2,
+                &history,
+                "yarn",
+                "linux-x64"
+            )
+        );
+    }
+
+    #[test]
+    fn cold_start_and_shards_have_stable_identity() {
+        let mut first = item("a");
+        first.shard = Some(1);
+        first.total_shards = Some(2);
+        let mut second = first.clone();
+        second.shard = Some(2);
+        let result = assign(
+            "ci",
+            &[second, first],
+            1,
+            &TimingHistory::default(),
+            "nx",
+            "linux-x64",
+        );
+        assert_eq!(result[0].predicted_duration_ms, 2);
+        assert_eq!(result[0].items[0].shard, Some(1));
+        assert_eq!(result[0].items[1].shard, Some(2));
+    }
+
+    #[test]
+    fn merge_keeps_only_recent_successful_samples() {
+        let samples = (0..9)
+            .map(|duration_ms| TimingSample {
+                group: "ci".into(),
+                workspace: "a".into(),
+                task: "test".into(),
+                shard: None,
+                runner: "nx".into(),
+                environment: "linux-x64".into(),
+                duration_ms,
+            })
+            .collect();
+        let merged = merge_histories([TimingHistory { samples }]);
+        assert_eq!(merged.samples.len(), 7);
+        assert_eq!(merged.samples.first().unwrap().duration_ms, 2);
+        assert_eq!(merged.samples.last().unwrap().duration_ms, 8);
+    }
+
+    #[test]
+    fn corrupt_history_is_rejected_for_caller_fallback() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("history.json");
+        std::fs::write(&path, "not json").unwrap();
+        assert!(TimingHistory::load(&path).is_err());
     }
 }

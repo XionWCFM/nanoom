@@ -14,8 +14,12 @@ run_item() {
   if [[ "$TOOL" == turbo && ! -x "$CWD/node_modules/.bin/turbo" ]]; then args+=(--runner "$PM"); elif [[ "$TOOL" != auto ]]; then args+=(--runner "$TOOL"); fi
   printf -v ACTION_COMMAND '%q ' nanoom "${args[@]}"; ACTION_COMMAND=${ACTION_COMMAND% }
   printf '  ▶ %s / %s / %s\n    cwd: %s\n    command: %s\n' "$group" "$name" "$task" "$CWD" "$ACTION_COMMAND" >&2
-  cli_result=$(nanoom "${args[@]}")
-  jq -cn --argjson item "$item" --arg command "$ACTION_COMMAND" --argjson cli "$cli_result" '{item:$item,command:$command,cli:$cli}'
+  trap - ERR
+  if cli_result=$(nanoom "${args[@]}"); then
+    jq -cn --argjson item "$item" --arg command "$ACTION_COMMAND" --argjson cli "$cli_result" '{status:"success",item:$item,command:$command,cli:$cli}'
+  else
+    jq -cn --argjson item "$item" --arg command "$ACTION_COMMAND" --argjson cli "${cli_result:-null}" '{status:"failure",item:$item,command:$command,cli:$cli}'
+  fi
 }
 
 results='[]'
@@ -29,19 +33,33 @@ if [[ "$mode" == continuous ]]; then
     claim=$(curl --fail-with-body --silent --show-error -X POST -H "Authorization: Bearer $COORDINATOR_TOKEN" -H 'Content-Type: application/json' -H "Idempotency-Key: $run_id:$agent_id:claim:$claim_index" "$COORDINATOR_URL/v1/runs/$run_id/claims" --data "$(jq -cn --arg agentId "$agent_id" '{agentId:$agentId}')")
     item=$(jq -c '.item // empty' <<<"$claim"); [[ -n "$item" ]] || break; item_id=$(jq -er .itemId <<<"$claim")
     (while sleep 30; do curl --fail --silent -X PATCH -H "Authorization: Bearer $COORDINATOR_TOKEN" -H 'Content-Type: application/json' -H "Idempotency-Key: $run_id:$item_id:heartbeat" "$COORDINATOR_URL/v1/runs/$run_id/claims/$item_id" --data '{"status":"heartbeat"}' >/dev/null || exit; done) & heartbeat_pid=$!
-    if item_result=$(run_item "$item"); then
+    item_result=$(run_item "$item")
+    if [[ $(jq -r .status <<<"$item_result") == success ]]; then
       kill "$heartbeat_pid" 2>/dev/null || true; wait "$heartbeat_pid" 2>/dev/null || true
       duration=$(jq -r '.cli.executions[0].durationMs' <<<"$item_result")
       curl --fail-with-body --silent --show-error -X PATCH -H "Authorization: Bearer $COORDINATOR_TOKEN" -H 'Content-Type: application/json' -H "Idempotency-Key: $run_id:$item_id:success" "$COORDINATOR_URL/v1/runs/$run_id/claims/$item_id" --data "$(jq -cn --argjson durationMs "$duration" '{status:"success",durationMs:$durationMs}')" >/dev/null
       results=$(jq -c --argjson result "$item_result" '. + [$result]' <<<"$results")
     else
       kill "$heartbeat_pid" 2>/dev/null || true; wait "$heartbeat_pid" 2>/dev/null || true
-      curl --fail-with-body --silent --show-error -X PATCH -H "Authorization: Bearer $COORDINATOR_TOKEN" -H 'Content-Type: application/json' -H "Idempotency-Key: $run_id:$item_id:failure" "$COORDINATOR_URL/v1/runs/$run_id/claims/$item_id" --data '{"status":"failure"}' >/dev/null; exit 1
+      curl --fail-with-body --silent --show-error -X PATCH -H "Authorization: Bearer $COORDINATOR_TOKEN" -H 'Content-Type: application/json' -H "Idempotency-Key: $run_id:$item_id:failure" "$COORDINATOR_URL/v1/runs/$run_id/claims/$item_id" --data '{"status":"failure"}' >/dev/null
+      result=$(jq -cn --argjson completed "$results" --argjson failed "$item_result" '{status:"failure",completed:[$completed[].item],failed:[$failed.item],pending:[],reason:"task failed; future claims remain coordinator-owned"}')
+      echo "result=$result" >> "$GITHUB_OUTPUT"; printf '  Final JSON\n    %s\n' "$result"; trap - ERR; exit 1
     fi
   done
 else
   items=$(jq -c 'if .items then .items elif .name then [.] else error("matrix entry must contain items or name") end' <<<"$entry")
-  while IFS= read -r item; do item_result=$(run_item "$item"); results=$(jq -c --argjson result "$item_result" '. + [$result]' <<<"$results"); done < <(jq -c '.[]' <<<"$items")
+  item_index=0
+  while IFS= read -r item; do
+    item_result=$(run_item "$item")
+    if [[ $(jq -r .status <<<"$item_result") == success ]]; then
+      results=$(jq -c --argjson result "$item_result" '. + [$result]' <<<"$results")
+    else
+      pending=$(jq -c --argjson start "$((item_index + 1))" '.[$start:]' <<<"$items")
+      result=$(jq -cn --argjson completed "$results" --argjson failed "$item_result" --argjson pending "$pending" '{status:"failure",completed:[$completed[].item],failed:[$failed.item],pending:$pending,reason:"first task failure stopped the assignment"}')
+      echo "result=$result" >> "$GITHUB_OUTPUT"; printf '  Final JSON\n    %s\n' "$result"; trap - ERR; exit 1
+    fi
+    item_index=$((item_index + 1))
+  done < <(jq -c '.[]' <<<"$items")
 fi
 
 elapsed=$(( $(date +%s) - started )); matrix_json=$(jq -c '{assignmentId,agentId,runId,mode,predictedDurationMs,items} | with_entries(select(.value != null))' <<<"$entry")
@@ -49,7 +67,7 @@ result=$(jq -cn --argjson matrix "$matrix_json" --argjson results "$results" --a
 if [[ "$SCHEDULER" == artifact ]]; then
   sample_dir="$RUNNER_TEMP/nanoom-timing"; mkdir -p "$sample_dir"; sample_name=$(jq -r '.assignmentId // "legacy"' <<<"$entry"); sample_path="$sample_dir/$sample_name.json"
   jq -n --arg group "$GROUP" --arg environment "$TIMING_ENVIRONMENT" --argjson results "$results" '{samples:[$results[] | .item as $item | .cli.executions[] | {group:$group,workspace:.workspace,task:$item.task,shard:$item.shard,runner:.runner,environment:$environment,durationMs:.durationMs}]}' > "$sample_path"
-  echo "sample-path=$sample_path" >> "$GITHUB_OUTPUT"; echo "sample-name=nanoom-timing-sample-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$sample_name" >> "$GITHUB_OUTPUT"
+  echo "sample-path=$sample_path" >> "$GITHUB_OUTPUT"; echo "sample-name=nanoom-timing-sample-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$sample_name" >> "$GITHUB_OUTPUT"; echo "upload-started=$(date +%s)" >> "$GITHUB_OUTPUT"
 fi
 printf '  Result\n    ✓ items=%s; elapsed=%ss\n  Final JSON\n    %s\n' "$(jq length <<<"$results")" "$elapsed" "$result"
 { echo '### nanoom run'; echo; echo "**Result:** $(jq length <<<"$results") assignment items succeeded in ${elapsed}s."; } >> "$GITHUB_STEP_SUMMARY"

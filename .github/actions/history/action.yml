@@ -4,10 +4,11 @@ inputs:
   scheduler: {description: "Timing backend: artifact or http", required: true}
   runIds: {description: "JSON array of HTTP coordinator run IDs", default: '[]'}
   coordinatorUrl: {description: "HTTPS coordinator base URL for scheduler=http", default: ''}
+  historyArtifactName: {description: "Artifact name used for merged timing history", default: nanoom-timing-history}
   version: {description: "Release tag matching the pinned Action ref, or local for repository tests", default: action}
   releaseBaseUrl: {description: "HTTPS origin hosting Nanoom release assets", default: "https://github.com"}
 outputs:
-  result: {description: "Canonical history result", value: "${{ steps.history.outputs.result }}"}
+  result: {description: "Canonical history result", value: "${{ steps.final.outputs.result || steps.history.outputs.result }}"}
 runs:
   using: composite
   steps:
@@ -20,6 +21,7 @@ runs:
         API: ${{ github.api_url }}
         RELEASE_BASE_URL: ${{ inputs.releaseBaseUrl }}
         TOKEN: ${{ github.token }}
+        HISTORY_ARTIFACT: ${{ inputs.historyArtifactName }}
         BINARY: ${{ env.NANOOM_LOCAL_BINARY }}
       run: bash "$GITHUB_ACTION_PATH/../_setup/setup.sh"
     - name: Download current timing samples
@@ -40,12 +42,21 @@ runs:
         API: ${{ github.api_url }}
         REPOSITORY: ${{ github.repository }}
         TOKEN: ${{ github.token }}
+        HISTORY_ARTIFACT: ${{ inputs.historyArtifactName }}
       run: bash "$GITHUB_ACTION_PATH/run.sh"
     - name: Upload merged timing history
       if: inputs.scheduler == 'artifact' && steps.history.outcome == 'success'
       uses: actions/upload-artifact@v4
       with:
-        name: nanoom-timing-history
+        name: ${{ inputs.historyArtifactName }}
         path: ${{ steps.history.outputs.history-path }}
         retention-days: 30
         if-no-files-found: error
+    - name: Record history upload cost
+      id: final
+      if: inputs.scheduler == 'artifact' && steps.history.outcome == 'success'
+      shell: bash
+      env:
+        BASE_RESULT: ${{ steps.history.outputs.result }}
+        UPLOAD_STARTED: ${{ steps.history.outputs.upload-started }}
+      run: echo "result=$(jq -c --argjson ms "$(( ($(date +%s) - UPLOAD_STARTED) * 1000 ))" '. + {uploadMs:$ms}' <<<"$BASE_RESULT")" >> "$GITHUB_OUTPUT"

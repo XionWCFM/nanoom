@@ -14,7 +14,7 @@ inputs:
 outputs:
   result:
     description: Canonical matrix-task result JSON
-    value: ${{ steps.run.outputs.result }}
+    value: ${{ steps.final.outputs.result || steps.run.outputs.result }}
 runs:
   using: composite
   steps:
@@ -50,3 +50,11 @@ runs:
         path: ${{ steps.run.outputs.sample-path }}
         retention-days: 30
         if-no-files-found: error
+    - name: Record timing upload cost
+      id: final
+      if: inputs.scheduler == 'artifact' && steps.run.outcome == 'success'
+      shell: bash
+      env:
+        BASE_RESULT: ${{ steps.run.outputs.result }}
+        UPLOAD_STARTED: ${{ steps.run.outputs.upload-started }}
+      run: echo "result=$(jq -c --argjson ms "$(( ($(date +%s) - UPLOAD_STARTED) * 1000 ))" '. + {telemetryUploadMs:$ms}' <<<"$BASE_RESULT")" >> "$GITHUB_OUTPUT"

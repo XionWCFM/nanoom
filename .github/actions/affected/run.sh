@@ -16,7 +16,7 @@ if [[ "$SCHEDULER" == artifact ]]; then
   history_started=$(date +%s); history_status=fallback
   archive="$RUNNER_TEMP/nanoom-history.zip"
   set +e
-  artifacts=$(curl --fail --silent --show-error -H "Authorization: Bearer $TOKEN" -H 'Accept: application/vnd.github+json' "$API/repos/$REPOSITORY/actions/artifacts?name=nanoom-timing-history&per_page=1")
+  artifacts=$(curl --fail --silent --show-error -H "Authorization: Bearer $TOKEN" -H 'Accept: application/vnd.github+json' "$API/repos/$REPOSITORY/actions/artifacts?name=$HISTORY_ARTIFACT&per_page=1")
   archive_url=$(jq -r '.artifacts | map(select(.expired | not)) | first | .archive_download_url // empty' <<<"$artifacts" 2>/dev/null)
   [[ -n "$archive_url" ]] && curl --fail --silent --show-error -L -H "Authorization: Bearer $TOKEN" -H 'Accept: application/vnd.github+json' "$archive_url" -o "$archive" && unzip -p "$archive" history.json > "$history_path" && jq -e '.samples | type == "array"' "$history_path" >/dev/null
   history_ok=$?
@@ -47,7 +47,8 @@ if [[ "$SCHEDULER" == http ]]; then
   report=$(jq -c --argjson matrix "$matrix" '.matrix=$matrix' <<<"$report")
 fi
 
-groups=$(jq -c 'with_entries(.value = {hasChange:((.value.include|length)>0),matrix:.value})' <<<"$matrix"); has=$(jq -r 'any(to_entries[]; .value.include | length > 0)' <<<"$matrix")
+compact_matrix=$(jq -c 'with_entries(.value.include |= map(if .items then {assignmentId,predictedDurationMs,reason,items:[.items[] | {group,name,task,shard,totalShards} | with_entries(select(.value != null))]} else {name,task,shard,totalShards} | with_entries(select(.value != null)) end))' <<<"$matrix")
+groups=$(jq -c 'with_entries(.value = {hasChange:((.value.include|length)>0),matrix:.value})' <<<"$compact_matrix"); has=$(jq -r 'any(to_entries[]; .value.include | length > 0)' <<<"$compact_matrix")
 result=$(jq -c --argjson groups "$groups" '. + {groups:($groups | with_entries(.value |= {hasChange,assignmentCount:(.matrix.include|length)}))}' <<<"$report")
 output_bytes=$(printf 'has_change=%s\ngroups=%s\nresult=%s\n' "$has" "$groups" "$result" | iconv -f UTF-8 -t UTF-16LE | wc -c | tr -d ' ')
 (( output_bytes <= 1048576 )) || { echo "Action outputs exceed GitHub's 1 MiB UTF-16 limit: $output_bytes bytes" >&2; false; }

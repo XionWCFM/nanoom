@@ -10,6 +10,7 @@ inputs:
   timingRunner: {description: "Runner identity used for timing prediction", default: auto}
   timingEnvironment: {description: "Stable hardware identity used for timing history", default: ''}
   coordinatorUrl: {description: "HTTPS coordinator base URL for scheduler=http", default: ''}
+  historyArtifactName: {description: "Artifact name used to load timing history", default: nanoom-timing-history}
   releaseBaseUrl: {description: "HTTPS origin hosting Nanoom release assets; use your GitHub Enterprise Server URL when it mirrors releases", default: "https://github.com"}
 outputs:
   has_change: {description: "Whether any group has work", value: "${{ steps.out.outputs.has_change }}"}
@@ -26,6 +27,7 @@ runs:
         API: ${{ github.api_url }}
         RELEASE_BASE_URL: ${{ inputs.releaseBaseUrl }}
         TOKEN: ${{ github.token }}
+        HISTORY_ARTIFACT: ${{ inputs.historyArtifactName }}
         BINARY: ${{ env.NANOOM_LOCAL_BINARY }}
       run: bash "$GITHUB_ACTION_PATH/../_setup/setup.sh"
     - name: Calculate affected assignments
@@ -49,4 +51,5 @@ runs:
         RUN_ID: ${{ github.run_id }}
         RUN_ATTEMPT: ${{ github.run_attempt }}
         TOKEN: ${{ github.token }}
+        HISTORY_ARTIFACT: ${{ inputs.historyArtifactName }}
       run: bash "$GITHUB_ACTION_PATH/run.sh"

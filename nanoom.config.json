@@ -3,13 +3,22 @@
   "group": {
     "ci": {
       "tasks": ["test", "build", "typecheck"],
+      "distribution": {
+        "small": { "maxAffectedPercent": 25, "concurrency": 3 },
+        "medium": { "maxAffectedPercent": 60, "concurrency": 6 },
+        "full": { "maxAffectedPercent": 100, "concurrency": 12 }
+      },
       "rules": [
-        { "name": "@nanoom/test", "ignore": true },
-        { "name": "@nanoom/run", "isolate": ["build"] }
+        { "name": "@nanoom/test", "ignore": true }
       ]
     },
     "e2e": {
       "tasks": ["test:e2e"],
+      "distribution": {
+        "small": { "maxAffectedPercent": 25, "concurrency": 2 },
+        "medium": { "maxAffectedPercent": 60, "concurrency": 4 },
+        "full": { "maxAffectedPercent": 100, "concurrency": 6 }
+      },
       "rules": [
         { "name": "@nanoom/core", "shard": [{ "task": "test:e2e", "shard": 4 }] }
       ]

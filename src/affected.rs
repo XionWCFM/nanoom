@@ -58,7 +58,7 @@ pub struct GroupOutput {
     pub distribution: Option<crate::scheduler::SelectedTier>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WorkspaceEntry {
     pub group: String,
     pub name: String,

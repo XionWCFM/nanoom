@@ -8,7 +8,7 @@ advanced/
 ├── pnpm-workspace.yaml
 ├── packages/
 │   ├── design-system/          # test를 3개 샤드로 분할
-│   ├── db-migrations/          # build는 격리(isolate) 실행
+│   ├── db-migrations/          # 일반 build work item
 │   └── legacy-admin/           # ci 그룹에서 완전 제외(ignore)
 ├── apps/
 │   ├── web/                    # e2e를 2개 샤드로, design-system에 의존
@@ -21,7 +21,7 @@ advanced/
 | 기능 | 어디서 | 무엇을 하는지 |
 | --- | --- | --- |
 | `ignore: true` | `@adv/legacy-admin` | 이 프로젝트는 ci 그룹 매트릭스에서 아예 빠짐 |
-| `isolate: ["build"]` | `@adv/db-migrations` | build 작업이 다른 프로젝트와 섞이지 않는 전용 항목으로 분리 |
+| `distribution` | `ci` | affected 비율에 따라 Nanoom assignment 수 상한을 선택 |
 | `shard: [{ task, shard }]` | `@adv/design-system`, `@adv/web` | 긴 테스트를 N개 조각으로 쪼개 병렬 실행 |
 | `globalDependencies` | 락파일, 워크플로우 파일 | 이 파일들이 바뀌면 모든 프로젝트가 영향받음으로 처리 |
 | `workspace.include/exclude` | `tools/*` 제외 | 발견기가 자동 찾은 후보 중 불필요한 디렉토리 드롭 |
@@ -33,8 +33,8 @@ cd examples/advanced
 git init -b main && git add . && git commit -m init
 
 # 패키지 하나 수정 후 커밋한 뒤:
-nanoom affected --format text
-nanoom affected --matrix           # 모든 그룹의 matrix 객체를 출력
+nanoom affected --base main --head HEAD
+nanoom affected --base main --head HEAD --json  # matrix와 선택 이유를 함께 출력
 nanoom run ci test                 # 영향받은 프로젝트만 순서대로 실행
 
 # 샤드 나눠 실행 (GitHub Actions의 각 잡에서)

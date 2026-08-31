@@ -1,5 +1,13 @@
 # @nanoom/cli
 
+## 0.3.0
+
+### Minor Changes
+
+- Add affected-percentage distribution tiers, deterministic timing-aware assignments, successful wall-time samples, artifact history, and the HTTPS coordinator client contract.
+- Support multi-workspace focused installs and sequential assignment execution with canonical completed/failed/pending results.
+- Remove the unobservable `isolate` config, CLI, and matrix contract. Use shards or separate groups for explicit isolation.
+
 ## 0.2.8
 
 ### Patch Changes

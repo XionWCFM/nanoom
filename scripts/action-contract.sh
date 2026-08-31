@@ -47,6 +47,11 @@ grep -q 'GITHUB_STEP_SUMMARY' .github/actions/status/run.sh
 grep -q 'needs must contain at least one job result' .github/actions/status/run.sh
 grep -q 'all needed jobs succeeded or were skipped' .github/actions/status/run.sh
 bash scripts/status-action-test.sh
+bash scripts/coordinator-contract-test.sh
+bash scripts/assignment-action-test.sh
+schema=$(mktemp); trap 'rm -f "$schema"' EXIT
+target/debug/nanoom schema --output "$schema" >/dev/null
+cmp nanoom.schema.json "$schema"
 ! grep -R -nE 'PUSH_REF_NAME|PULL_REQUEST_(BASE|HEAD)_REF|MERGE_GROUP_(BASE|HEAD)_REF|root-install|setup-nanoom|nanoom-(affected|install|run|status)' README.md docs/adr
 
 echo 'action contract passed'

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Creates a small JS monorepo fixture used by action-test.yml.
-# Usage: setup-fixture.sh [--shards] [--change]
+# Usage: setup-fixture.sh [--shards] [--distribution] [--change]
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"   # repo root
@@ -75,7 +75,7 @@ cat > "$FIXTURE/packages/app/package.json" << 'EOF'
   "name": "@fixture/app",
   "version": "1.0.0",
   "dependencies": { "@fixture/core": "workspace:*" },
-  "scripts": { "test": "node -e \"require('fs').appendFileSync(process.env.FIXTURE_LOG || 'fixture.log', 'app:' + (process.env.NANOOM_SHARD_INDEX || '0') + '\\n')\"" }
+  "scripts": { "test": "node -e \"setTimeout(() => require('fs').appendFileSync(process.env.FIXTURE_LOG || 'fixture.log', 'app:' + (process.env.NANOOM_SHARD_INDEX || '0') + '\\n'), 50)\"" }
 }
 EOF
 echo "module.exports = { name: '@fixture/app' };" > "$FIXTURE/packages/app/index.js"
@@ -85,7 +85,7 @@ cat > "$FIXTURE/packages/core/package.json" << 'EOF'
   "name": "@fixture/core",
   "version": "1.0.0",
   "dependencies": { "@fixture/shared": "workspace:*" },
-  "scripts": { "test": "node -e \"require('fs').appendFileSync(process.env.FIXTURE_LOG || 'fixture.log', 'core:' + (process.env.NANOOM_SHARD_INDEX || '0') + '\\n')\"" }
+  "scripts": { "test": "node -e \"setTimeout(() => require('fs').appendFileSync(process.env.FIXTURE_LOG || 'fixture.log', 'core:' + (process.env.NANOOM_SHARD_INDEX || '0') + '\\n'), 150)\"" }
 }
 EOF
 echo "module.exports = { name: '@fixture/core' };" > "$FIXTURE/packages/core/index.js"
@@ -94,7 +94,7 @@ cat > "$FIXTURE/packages/shared/package.json" << 'EOF'
 {
   "name": "@fixture/shared",
   "version": "1.0.0",
-  "scripts": { "test": "node -e \"require('fs').appendFileSync(process.env.FIXTURE_LOG || 'fixture.log', 'shared:' + (process.env.NANOOM_SHARD_INDEX || '0') + '\\n')\"" }
+  "scripts": { "test": "node -e \"setTimeout(() => require('fs').appendFileSync(process.env.FIXTURE_LOG || 'fixture.log', 'shared:' + (process.env.NANOOM_SHARD_INDEX || '0') + '\\n'), 300)\"" }
 }
 EOF
 echo "module.exports = { name: '@fixture/shared' };" > "$FIXTURE/packages/shared/index.js"
@@ -126,10 +126,12 @@ fs.writeFileSync(path.join(__dirname, 'install-verification.log'), `${target}\n`
 EOF
 
 SHARD_BLOCK=""
+DISTRIBUTION_BLOCK=""
 CHANGE=false
 for arg in "$@"; do
   case "$arg" in
     --shards) SHARD_BLOCK=', "rules": [{ "name": "@fixture/shared", "shard": [{ "task": "test", "shard": 2 }] }]' ;;
+    --distribution) DISTRIBUTION_BLOCK=', "distribution": { "small": { "maxAffectedPercent": 25, "concurrency": 1 }, "medium": { "maxAffectedPercent": 60, "concurrency": 2 }, "full": { "maxAffectedPercent": 100, "concurrency": 2 } }' ;;
     --change) CHANGE=true ;;
     *) echo "unknown option: $arg" >&2; exit 2 ;;
   esac
@@ -146,7 +148,7 @@ fi
 cat > "$FIXTURE/nanoom.config.json" << EOF
 {
   "group": {
-    "ci": { "tasks": ["test"]${SHARD_BLOCK} }
+    "ci": { "tasks": ["test"]${DISTRIBUTION_BLOCK}${SHARD_BLOCK} }
   },
   "globalDependencies": ["*.lock"]
 }
