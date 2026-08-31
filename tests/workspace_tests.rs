@@ -505,7 +505,6 @@ fn test_apply_rules_ignores_projects() {
     let rules = vec![Rule {
         name: "pkg1".to_string(),
         ignore: true,
-        isolate: vec![],
         shard: vec![],
     }];
 
@@ -530,7 +529,6 @@ fn test_apply_rules_keeps_non_ignored() {
     let rules = vec![Rule {
         name: "other".to_string(),
         ignore: true,
-        isolate: vec![],
         shard: vec![],
     }];
 

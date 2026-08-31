@@ -59,7 +59,7 @@ async fn test_calculate_affected_no_git_env() {
 }
 
 #[tokio::test]
-async fn test_calculate_with_override_tip_reports_isolation_and_shards() {
+async fn test_calculate_with_override_tip_reports_shards() {
     let dir = tempdir().unwrap();
     let git = |args: &[&str]| {
         let status = Command::new("git")
@@ -85,7 +85,7 @@ async fn test_calculate_with_override_tip_reports_isolation_and_shards() {
         r#"{"name":"app"}"#,
     )
     .unwrap();
-    fs::write(dir.path().join("nanoom.config.json"), r#"{"group":{"ci":{"tasks":["test","build"],"rules":[{"name":"app","isolate":["test"],"shard":[{"task":"build","shard":2}]}]}},"workspace":{"include":["packages/*"]}}"#).unwrap();
+    fs::write(dir.path().join("nanoom.config.json"), r#"{"group":{"ci":{"tasks":["test","build"],"rules":[{"name":"app","shard":[{"task":"build","shard":2}]}]}},"workspace":{"include":["packages/*"]}}"#).unwrap();
     git(&["add", "."]);
     git(&["commit", "-qm", "base"]);
     fs::write(dir.path().join("packages/app/changed.txt"), "changed").unwrap();
@@ -103,7 +103,6 @@ async fn test_calculate_with_override_tip_reports_isolation_and_shards() {
     .unwrap();
     std::env::remove_var("COMPARISON");
     let entries = &output.group["ci"].workspaces;
-    assert!(entries.iter().any(|entry| entry.isolate == Some(true)));
     assert_eq!(
         entries.iter().filter(|entry| entry.shard.is_some()).count(),
         2
@@ -126,7 +125,6 @@ fn test_generate_matrix() {
                             task: "test".to_string(),
                             shard: None,
                             total_shards: None,
-                            isolate: Some(false),
                         },
                         WorkspaceEntry {
                             group: "ci".into(),
@@ -135,9 +133,12 @@ fn test_generate_matrix() {
                             task: "build".to_string(),
                             shard: None,
                             total_shards: None,
-                            isolate: Some(false),
                         },
                     ],
+                    total_workspaces: 2,
+                    affected_workspaces: 2,
+                    affected_percent: 100.0,
+                    distribution: None,
                 },
             ),
             (
@@ -152,7 +153,6 @@ fn test_generate_matrix() {
                             task: "test:e2e".to_string(),
                             shard: Some(1),
                             total_shards: Some(2),
-                            isolate: Some(false),
                         },
                         WorkspaceEntry {
                             group: "e2e".into(),
@@ -161,9 +161,12 @@ fn test_generate_matrix() {
                             task: "test:e2e".to_string(),
                             shard: Some(2),
                             total_shards: Some(2),
-                            isolate: Some(false),
                         },
                     ],
+                    total_workspaces: 1,
+                    affected_workspaces: 1,
+                    affected_percent: 100.0,
+                    distribution: None,
                 },
             ),
         ]),
@@ -201,8 +204,11 @@ fn test_generate_matrix_for_group() {
                     task: "test".to_string(),
                     shard: Some(1),
                     total_shards: Some(2),
-                    isolate: Some(false),
                 }],
+                total_workspaces: 1,
+                affected_workspaces: 1,
+                affected_percent: 100.0,
+                distribution: None,
             },
         )]),
         has_change: true,
@@ -240,7 +246,6 @@ fn test_workspace_entry_serialization() {
         task: "test".to_string(),
         shard: Some(1),
         total_shards: Some(1),
-        isolate: Some(false),
     };
 
     let json = serde_json::to_value(&entry).unwrap();
@@ -248,22 +253,4 @@ fn test_workspace_entry_serialization() {
     assert_eq!(json["path"], "packages/pkg1");
     assert_eq!(json["task"], "test");
     assert_eq!(json["shard"], 1);
-    assert_eq!(json["isolate"], false);
-}
-
-#[test]
-fn test_workspace_entry_isolated() {
-    let entry = WorkspaceEntry {
-        group: "ci".into(),
-        name: "pkg1".to_string(),
-        path: "packages/pkg1".to_string(),
-        task: "build".to_string(),
-        shard: None,
-        total_shards: None,
-        isolate: Some(true),
-    };
-
-    let json = serde_json::to_value(&entry).unwrap();
-    assert_eq!(json["isolate"], true);
-    assert!(json["shard"].is_null());
 }

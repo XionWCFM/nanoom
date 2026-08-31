@@ -1,0 +1,179 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "definitions": {
+    "DistributionConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "full": {
+          "$ref": "#/definitions/DistributionTier"
+        },
+        "medium": {
+          "$ref": "#/definitions/DistributionTier"
+        },
+        "small": {
+          "$ref": "#/definitions/DistributionTier"
+        }
+      },
+      "required": [
+        "full",
+        "medium",
+        "small"
+      ],
+      "type": "object"
+    },
+    "DistributionTier": {
+      "additionalProperties": false,
+      "properties": {
+        "concurrency": {
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "maxAffectedPercent": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "concurrency",
+        "maxAffectedPercent"
+      ],
+      "type": "object"
+    },
+    "GroupConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "distribution": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/DistributionConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "rules": {
+          "default": [],
+          "items": {
+            "$ref": "#/definitions/Rule"
+          },
+          "type": "array"
+        },
+        "tasks": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "tasks"
+      ],
+      "type": "object"
+    },
+    "Rule": {
+      "additionalProperties": false,
+      "properties": {
+        "ignore": {
+          "default": false,
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "shard": {
+          "default": [],
+          "items": {
+            "$ref": "#/definitions/ShardRule"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "ShardRule": {
+      "additionalProperties": false,
+      "properties": {
+        "shard": {
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "task": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "shard",
+        "task"
+      ],
+      "type": "object"
+    },
+    "WorkspaceConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "exclude": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "include": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "description": "Configuration for nanoom monorepo task runner",
+  "properties": {
+    "$schema": {
+      "default": null,
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "globalDependencies": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "group": {
+      "additionalProperties": {
+        "$ref": "#/definitions/GroupConfig"
+      },
+      "default": {},
+      "type": "object"
+    },
+    "workspace": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/WorkspaceConfig"
+        }
+      ],
+      "default": {
+        "exclude": [],
+        "include": [
+          "packages/*",
+          "apps/*"
+        ]
+      }
+    }
+  },
+  "title": "nanoom Configuration",
+  "type": "object"
+}

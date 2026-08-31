@@ -1,6 +1,7 @@
-use crate::affected::{calculate_with_override, generate_matrix};
+use crate::affected::{calculate_with_override, generate_matrix_with_history};
 use crate::error::Result;
 use clap::Args;
+use std::path::PathBuf;
 
 #[derive(Args, Debug, Clone)]
 pub struct AffectedArgs {
@@ -12,6 +13,26 @@ pub struct AffectedArgs {
 
     #[arg(long, help = "Output the canonical affected report as JSON")]
     pub json: bool,
+
+    #[arg(
+        long,
+        help = "Best-effort timing history JSON used for runner assignments"
+    )]
+    pub history: Option<PathBuf>,
+
+    #[arg(
+        long,
+        default_value = "auto",
+        help = "Runner identity used for timing lookup"
+    )]
+    pub timing_runner: String,
+
+    #[arg(
+        long,
+        default_value = "default",
+        help = "Hardware/environment identity used for timing lookup"
+    )]
+    pub timing_environment: String,
 }
 
 pub async fn execute(
@@ -19,15 +40,39 @@ pub async fn execute(
     config: &crate::Config,
     cwd: &std::path::Path,
 ) -> Result<()> {
+    let timing_runner = resolve_timing_runner(cwd, &args.timing_runner)?;
     let result =
         calculate_with_override(config, cwd, args.base.as_deref(), args.head.as_deref()).await?;
+    let (history, history_status) = match args.history.as_deref() {
+        Some(path) => match crate::scheduler::TimingHistory::load(path) {
+            Ok(history) => (history, "loaded".to_string()),
+            Err(error) => {
+                eprintln!("timing history unavailable; using deterministic cold start: {error}");
+                (
+                    crate::scheduler::TimingHistory::default(),
+                    "fallback".to_string(),
+                )
+            }
+        },
+        None => (
+            crate::scheduler::TimingHistory::default(),
+            "disabled".to_string(),
+        ),
+    };
+    let matrix =
+        generate_matrix_with_history(&result, &history, &timing_runner, &args.timing_environment);
 
     if args.json {
         println!(
             "{}",
             serde_json::to_string(&serde_json::json!({
                 "affected": result,
-                "matrix": generate_matrix(&result)
+                "matrix": matrix,
+                "scheduling": {
+                    "historyStatus": history_status,
+                    "timingRunner": timing_runner,
+                    "timingEnvironment": args.timing_environment
+                }
             }))?
         );
         return Ok(());
@@ -64,11 +109,6 @@ pub async fn execute(
                 .shard
                 .map(|s| format!(" (shard {})", s))
                 .unwrap_or_default();
-            let isolate_str = ws
-                .isolate
-                .filter(|&b| b)
-                .map(|_| " [isolated]")
-                .unwrap_or_default();
             println!("    - {} / {} [{}]", ws.name, ws.task, ws.path);
             if let Some(reason) = result
                 .diagnostics
@@ -88,8 +128,8 @@ pub async fn execute(
                     }
                 );
             }
-            if !shard_str.is_empty() || !isolate_str.is_empty() {
-                println!("    {}{}", shard_str, isolate_str);
+            if !shard_str.is_empty() {
+                println!("    {}", shard_str);
             }
         }
     }
@@ -97,12 +137,34 @@ pub async fn execute(
     Ok(())
 }
 
+fn resolve_timing_runner(cwd: &std::path::Path, requested: &str) -> Result<String> {
+    if requested != "auto" {
+        return Ok(requested.to_string());
+    }
+    let turbo = cwd.join("turbo.json").exists();
+    let nx = cwd.join("nx.json").exists();
+    if turbo && nx {
+        return Err(crate::error::Error::InvalidRunner(
+            "both turbo.json and nx.json exist; set timingRunner explicitly".into(),
+        ));
+    }
+    Ok(if turbo {
+        "turbo".into()
+    } else if nx {
+        "nx".into()
+    } else {
+        crate::commands::install::detect_package_manager(cwd, None)?
+    })
+}
+
 #[cfg(test)]
 mod tests {
+    use super::resolve_timing_runner;
 
     use crate::affected::{AffectedOutput, GroupOutput, WorkspaceEntry};
 
     use std::collections::HashMap;
+    use tempfile::tempdir;
 
     fn mock_output() -> AffectedOutput {
         let workspaces = vec![WorkspaceEntry {
@@ -112,7 +174,6 @@ mod tests {
             task: "test".into(),
             shard: None,
             total_shards: None,
-            isolate: Some(false),
         }];
         let mut group = HashMap::new();
         group.insert(
@@ -120,6 +181,10 @@ mod tests {
             GroupOutput {
                 label: "ci".into(),
                 workspaces,
+                total_workspaces: 1,
+                affected_workspaces: 1,
+                affected_percent: 100.0,
+                distribution: None,
             },
         );
         AffectedOutput {
@@ -148,5 +213,27 @@ mod tests {
         );
         assert!(output.contains("Result: changes found"));
         assert!(output.contains("Matrix group: ci (1 entries)"));
+    }
+
+    #[test]
+    fn timing_runner_auto_resolves_the_execution_boundary() {
+        let explicit = tempdir().unwrap();
+        assert_eq!(
+            resolve_timing_runner(explicit.path(), "yarn").unwrap(),
+            "yarn"
+        );
+        for (marker, expected) in [("turbo.json", "turbo"), ("nx.json", "nx")] {
+            let dir = tempdir().unwrap();
+            std::fs::write(dir.path().join(marker), "{}").unwrap();
+            assert_eq!(resolve_timing_runner(dir.path(), "auto").unwrap(), expected);
+        }
+        let dir = tempdir().unwrap();
+        std::fs::write(dir.path().join("pnpm-lock.yaml"), "").unwrap();
+        assert_eq!(resolve_timing_runner(dir.path(), "auto").unwrap(), "pnpm");
+
+        let ambiguous = tempdir().unwrap();
+        std::fs::write(ambiguous.path().join("turbo.json"), "{}").unwrap();
+        std::fs::write(ambiguous.path().join("nx.json"), "{}").unwrap();
+        assert!(resolve_timing_runner(ambiguous.path(), "auto").is_err());
     }
 }

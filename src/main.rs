@@ -1,8 +1,8 @@
 use clap::{Parser, Subcommand};
 use nanoom::{
     commands::{
-        affected::AffectedArgs, cache_key::CacheKeyArgs, install::InstallArgs, run::RunArgs,
-        status::StatusArgs,
+        affected::AffectedArgs, cache_key::CacheKeyArgs, history::HistoryArgs,
+        install::InstallArgs, run::RunArgs, status::StatusArgs,
     },
     Config, Result,
 };
@@ -39,6 +39,9 @@ enum Commands {
 
     #[command(about = "Install dependencies")]
     Install(InstallArgs),
+
+    #[command(about = "Merge successful task timing samples")]
+    History(HistoryArgs),
 
     #[command(about = "Aggregate job status")]
     Status(StatusArgs),
@@ -88,7 +91,7 @@ async fn run_cli(cli: Cli) -> Result<()> {
         log_invocation(&cwd, &config_path, &cli.command);
     }
 
-    // Schema command does not require a config file; all others do.
+    // Metadata-only commands do not require a repository config.
     if let Commands::Version { json } = &cli.command {
         if *json {
             println!(
@@ -112,6 +115,10 @@ async fn run_cli(cli: Cli) -> Result<()> {
         return Ok(());
     }
 
+    if let Commands::History(args) = cli.command {
+        return nanoom::commands::history::execute(args);
+    }
+
     let config = Config::load(&config_path, &cwd)?;
 
     dispatch(cli.command, &config, &cwd).await
@@ -122,6 +129,7 @@ async fn dispatch(command: Commands, config: &Config, cwd: &std::path::Path) -> 
         Commands::Affected(args) => nanoom::commands::affected::execute(args, config, cwd).await,
         Commands::Run(args) => nanoom::commands::run::execute(args, config, cwd).await,
         Commands::Install(args) => nanoom::commands::install::execute(args, config, cwd).await,
+        Commands::History(args) => nanoom::commands::history::execute(args),
         Commands::Status(args) => nanoom::commands::status::execute(args, config).await,
         Commands::Schema { .. } => Ok(()),
         Commands::CacheKey(args) => nanoom::commands::cache_key::execute(args, cwd),

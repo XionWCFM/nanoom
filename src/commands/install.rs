@@ -9,8 +9,8 @@ pub struct InstallArgs {
     #[arg(long, help = "Package manager to use (auto, pnpm, yarn, npm)")]
     pub package_manager: Option<String>,
 
-    #[arg(long, help = "Install only this workspace and its dependency closure")]
-    pub filter: Option<String>,
+    #[arg(long, help = "Install these workspaces and their dependency closure")]
+    pub filter: Vec<String>,
 
     #[arg(long, help = "Output a JSON result")]
     pub json: bool,
@@ -32,10 +32,11 @@ pub async fn execute(
     // when packages do not have their own lockfile. Always install the root;
     // the opt-in flag retains the legacy per-workspace behavior for projects
     // that explicitly need it.
-    if let Some(filter) = &args.filter {
+    if !args.filter.is_empty() {
+        let filters = dedupe(&args.filter);
         if pm == "yarn" && is_yarn_berry(cwd) {
             let root = root_workspace_name(cwd)?;
-            let command_args = yarn_focused_args(&root, filter);
+            let command_args = yarn_focused_args(&root, &filters);
             run_command("yarn", command_args.clone(), cwd, args.json).await?;
             if args.json {
                 println!(
@@ -45,15 +46,15 @@ pub async fn execute(
                         "packageManager": pm,
                         "command": crate::commands::display_command("yarn", &command_args),
                         "cwd": cwd,
-                        "scope": {"root": root, "workspace": filter, "dependencyClosure": true, "devDependencies": true},
-                        "reason": "focused install includes root tooling, the selected workspace, and its dependency closure"
+                        "scope": {"root": root, "workspaces": filters, "dependencyClosure": true, "devDependencies": true},
+                        "reason": "focused install includes root tooling, the selected workspaces, and their dependency closure"
                     })
                 );
             }
             return Ok(());
         }
         if pm == "pnpm" {
-            let command_args = pnpm_focused_args(filter);
+            let command_args = pnpm_focused_args(&filters);
             run_command("pnpm", command_args.clone(), cwd, args.json).await?;
             if args.json {
                 println!(
@@ -63,8 +64,8 @@ pub async fn execute(
                         "packageManager": pm,
                         "command": crate::commands::display_command("pnpm", &command_args),
                         "cwd": cwd,
-                        "scope": {"root": ".", "workspace": filter, "dependencyClosure": true, "devDependencies": true},
-                        "reason": "focused install includes root tooling, the selected workspace, and its dependency closure"
+                        "scope": {"root": ".", "workspaces": filters, "dependencyClosure": true, "devDependencies": true},
+                        "reason": "focused install includes root tooling, the selected workspaces, and their dependency closure"
                     })
                 );
             }
@@ -93,13 +94,22 @@ pub async fn execute(
     Ok(())
 }
 
-fn yarn_focused_args(root: &str, filter: &str) -> Vec<String> {
-    vec![
-        "workspaces".into(),
-        "focus".into(),
-        root.into(),
-        filter.into(),
-    ]
+fn dedupe(filters: &[String]) -> Vec<String> {
+    let mut result = Vec::new();
+    for filter in filters {
+        if !result.contains(filter) {
+            result.push(filter.clone());
+        }
+    }
+    result
+}
+
+fn yarn_focused_args(root: &str, filters: &[String]) -> Vec<String> {
+    ["workspaces", "focus", root]
+        .into_iter()
+        .map(str::to_owned)
+        .chain(filters.iter().cloned())
+        .collect()
 }
 
 fn root_workspace_name(dir: &Path) -> Result<String> {
@@ -117,15 +127,17 @@ fn root_workspace_name(dir: &Path) -> Result<String> {
         })
 }
 
-fn pnpm_focused_args(filter: &str) -> Vec<String> {
-    vec![
+fn pnpm_focused_args(filters: &[String]) -> Vec<String> {
+    let mut args = vec![
         "install".into(),
         "--frozen-lockfile".into(),
         "--filter".into(),
         ".".into(),
-        "--filter".into(),
-        format!("{filter}..."),
-    ]
+    ];
+    for filter in filters {
+        args.extend(["--filter".into(), format!("{filter}...")]);
+    }
+    args
 }
 
 async fn run_command(cmd: &str, args: Vec<String>, dir: &Path, json: bool) -> Result<()> {
@@ -300,18 +312,20 @@ mod tests {
     #[test]
     fn focused_install_selects_root_and_dependency_closure_without_production_mode() {
         assert_eq!(
-            yarn_focused_args("repo-root", "@repo/app"),
-            ["workspaces", "focus", "repo-root", "@repo/app"]
+            yarn_focused_args("repo-root", &["@repo/app".into(), "@repo/lib".into()]),
+            ["workspaces", "focus", "repo-root", "@repo/app", "@repo/lib"]
         );
         assert_eq!(
-            pnpm_focused_args("@repo/app"),
+            pnpm_focused_args(&["@repo/app".into(), "@repo/lib".into()]),
             [
                 "install",
                 "--frozen-lockfile",
                 "--filter",
                 ".",
                 "--filter",
-                "@repo/app..."
+                "@repo/app...",
+                "--filter",
+                "@repo/lib..."
             ]
         );
     }
@@ -478,7 +492,7 @@ mod tests {
         execute(
             InstallArgs {
                 package_manager: Some("yarn".into()),
-                filter: None,
+                filter: vec![],
                 json: true,
             },
             &config,
@@ -510,7 +524,7 @@ mod tests {
             execute(
                 InstallArgs {
                     package_manager: Some(manager.into()),
-                    filter: Some("@repo/app".into()),
+                    filter: vec!["@repo/app".into(), "@repo/lib".into()],
                     json: true,
                 },
                 &config,
@@ -522,7 +536,7 @@ mod tests {
         let error = execute(
             InstallArgs {
                 package_manager: Some("npm".into()),
-                filter: Some("@repo/app".into()),
+                filter: vec!["@repo/app".into()],
                 json: true,
             },
             &config,

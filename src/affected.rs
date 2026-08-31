@@ -48,9 +48,17 @@ pub struct AffectedReason {
 pub struct GroupOutput {
     pub label: String,
     pub workspaces: Vec<WorkspaceEntry>,
+    #[serde(rename = "totalWorkspaces")]
+    pub total_workspaces: usize,
+    #[serde(rename = "affectedWorkspaces")]
+    pub affected_workspaces: usize,
+    #[serde(rename = "affectedPercent")]
+    pub affected_percent: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub distribution: Option<crate::scheduler::SelectedTier>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WorkspaceEntry {
     pub group: String,
     pub name: String,
@@ -60,8 +68,6 @@ pub struct WorkspaceEntry {
     pub shard: Option<usize>,
     #[serde(rename = "totalShards", skip_serializing_if = "Option::is_none")]
     pub total_shards: Option<usize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub isolate: Option<bool>,
 }
 
 pub async fn calculate(config: &Config, cwd: &Path) -> Result<AffectedOutput> {
@@ -128,6 +134,13 @@ pub async fn calculate_with_override(
                 GroupOutput {
                     label: group_name.clone(),
                     workspaces: vec![],
+                    total_workspaces: workspace.project_count(),
+                    affected_workspaces: 0,
+                    affected_percent: 0.0,
+                    distribution: group_config
+                        .distribution
+                        .as_ref()
+                        .map(|config| crate::scheduler::select_tier(config, 0.0)),
                 },
             );
             continue;
@@ -141,7 +154,6 @@ pub async fn calculate_with_override(
             for project in &filtered_projects {
                 let rule = group_config.rules.iter().find(|r| r.name == project.name);
 
-                let is_isolated = rule.map(|r| r.isolate.contains(task)).unwrap_or(false);
                 let shard_rule = rule.and_then(|r| r.shard.iter().find(|s| s.task == *task));
 
                 if let Some(shard_rule) = shard_rule {
@@ -153,19 +165,8 @@ pub async fn calculate_with_override(
                             task: task.clone(),
                             shard: Some(shard_idx),
                             total_shards: Some(shard_rule.shard),
-                            isolate: Some(false),
                         });
                     }
-                } else if is_isolated {
-                    workspaces.push(WorkspaceEntry {
-                        group: group_name.clone(),
-                        name: project.name.clone(),
-                        path: project.path.to_string_lossy().to_string(),
-                        task: task.clone(),
-                        shard: None,
-                        total_shards: None,
-                        isolate: Some(true),
-                    });
                 } else {
                     workspaces.push(WorkspaceEntry {
                         group: group_name.clone(),
@@ -174,17 +175,30 @@ pub async fn calculate_with_override(
                         task: task.clone(),
                         shard: None,
                         total_shards: None,
-                        isolate: Some(false),
                     });
                 }
             }
         }
+
+        let affected_workspace_count = filtered_projects.len();
+        let affected_percent = if workspace.project_count() == 0 {
+            0.0
+        } else {
+            affected_workspace_count as f64 * 100.0 / workspace.project_count() as f64
+        };
 
         group_outputs.insert(
             group_name.clone(),
             GroupOutput {
                 label: group_name.clone(),
                 workspaces,
+                total_workspaces: workspace.project_count(),
+                affected_workspaces: affected_workspace_count,
+                affected_percent,
+                distribution: group_config
+                    .distribution
+                    .as_ref()
+                    .map(|config| crate::scheduler::select_tier(config, affected_percent)),
             },
         );
     }
@@ -317,9 +331,38 @@ fn relative_paths(files: &[PathBuf], cwd: &Path) -> Vec<String> {
 }
 
 pub fn generate_matrix(output: &AffectedOutput) -> serde_json::Value {
+    generate_matrix_with_history(
+        output,
+        &crate::scheduler::TimingHistory::default(),
+        "auto",
+        "default",
+    )
+}
+
+pub fn generate_matrix_with_history(
+    output: &AffectedOutput,
+    history: &crate::scheduler::TimingHistory,
+    runner: &str,
+    environment: &str,
+) -> serde_json::Value {
     let mut matrix = serde_json::Map::new();
 
     for (group_name, group_output) in &output.group {
+        if let Some(distribution) = &group_output.distribution {
+            let assignments = crate::scheduler::assign(
+                group_name,
+                &group_output.workspaces,
+                distribution.concurrency,
+                history,
+                runner,
+                environment,
+            );
+            matrix.insert(
+                group_name.clone(),
+                serde_json::json!({ "include": assignments }),
+            );
+            continue;
+        }
         let include: Vec<serde_json::Value> = group_output
             .workspaces
             .iter()
@@ -336,9 +379,6 @@ pub fn generate_matrix(output: &AffectedOutput) -> serde_json::Value {
                 }
                 if let Some(total) = w.total_shards {
                     entry["totalShards"] = serde_json::Value::Number(total.into());
-                }
-                if let Some(isolate) = w.isolate {
-                    entry["isolate"] = serde_json::Value::Bool(isolate);
                 }
                 entry
             })
@@ -354,33 +394,8 @@ pub fn generate_matrix(output: &AffectedOutput) -> serde_json::Value {
 }
 
 pub fn generate_matrix_for_group(output: &AffectedOutput, group_name: &str) -> serde_json::Value {
-    if let Some(group_output) = output.group.get(group_name) {
-        let include: Vec<serde_json::Value> = group_output
-            .workspaces
-            .iter()
-            .map(|w| {
-                let mut entry = serde_json::json!({
-                    "group": group_name,
-                    "label": group_output.label,
-                    "name": w.name,
-                    "path": w.path,
-                    "task": w.task,
-                });
-                if let Some(shard) = w.shard {
-                    entry["shard"] = serde_json::Value::Number(shard.into());
-                }
-                if let Some(total) = w.total_shards {
-                    entry["totalShards"] = serde_json::Value::Number(total.into());
-                }
-                if let Some(isolate) = w.isolate {
-                    entry["isolate"] = serde_json::Value::Bool(isolate);
-                }
-                entry
-            })
-            .collect();
-
-        serde_json::json!({ "include": include })
-    } else {
-        serde_json::json!({ "include": [] })
-    }
+    generate_matrix(output)
+        .get(group_name)
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({ "include": [] }))
 }

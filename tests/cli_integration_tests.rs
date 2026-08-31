@@ -163,6 +163,51 @@ fn test_cli_version() {
 }
 
 #[test]
+fn test_history_merges_without_repository_config() {
+    let dir = tempdir().unwrap();
+    let first = dir.path().join("first.json");
+    let second = dir.path().join("second.json");
+    let merged = dir.path().join("history.json");
+    fs::write(&first, r#"{"samples":[{"group":"ci","workspace":"a","task":"test","runner":"nx","environment":"linux","durationMs":10}]}"#).unwrap();
+    fs::write(&second, r#"{"samples":[{"group":"ci","workspace":"a","task":"test","runner":"nx","environment":"linux","durationMs":20}]}"#).unwrap();
+    let output = Command::new(binary_path())
+        .args(["history", "--input"])
+        .arg(&first)
+        .arg("--input")
+        .arg(&second)
+        .arg("--output")
+        .arg(&merged)
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(result["sampleCount"], 2);
+    let history: serde_json::Value = serde_json::from_slice(&fs::read(merged).unwrap()).unwrap();
+    assert_eq!(history["samples"].as_array().unwrap().len(), 2);
+}
+
+#[test]
+fn test_history_rejects_corrupt_input() {
+    let dir = tempdir().unwrap();
+    let corrupt = dir.path().join("corrupt.json");
+    fs::write(&corrupt, "not json").unwrap();
+    let output = Command::new(binary_path())
+        .args(["history", "--input"])
+        .arg(&corrupt)
+        .arg("--output")
+        .arg(dir.path().join("history.json"))
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("Invalid config"));
+}
+
+#[test]
 fn test_schema_command_outputs_valid_json() {
     let dir = tempdir().unwrap();
     let (success, output) = run_cli(dir.path(), &["schema"], &[]);
@@ -592,7 +637,7 @@ fn test_global_cwd_flag_works_from_outside_repo() {
 }
 
 #[test]
-fn test_affected_preserves_all_entries_when_exceeding_concurrency() {
+fn test_affected_batches_all_entries_with_distribution_cap() {
     let dir = tempdir().unwrap();
     let root = dir.path();
     write_json(
@@ -621,6 +666,11 @@ fn test_affected_preserves_all_entries_when_exceeding_concurrency() {
             "group": {
                 "ci": {
                     "tasks": ["test"],
+                    "distribution": {
+                        "small": {"maxAffectedPercent": 25, "concurrency": 1},
+                        "medium": {"maxAffectedPercent": 60, "concurrency": 2},
+                        "full": {"maxAffectedPercent": 100, "concurrency": 2}
+                    },
                     "rules": [
                         { "name": "pkg-a", "shard": [{ "task": "test", "shard": 2 }] }
                     ]
@@ -671,6 +721,19 @@ fn test_affected_preserves_all_entries_when_exceeding_concurrency() {
         4,
         "all entries must survive regardless of concurrency: {:?}",
         workspaces
+    );
+    let assignments = parsed["matrix"]["ci"]["include"].as_array().unwrap();
+    assert_eq!(assignments.len(), 2);
+    assert_eq!(
+        assignments
+            .iter()
+            .flat_map(|assignment| assignment["items"].as_array().unwrap())
+            .count(),
+        4
+    );
+    assert_eq!(
+        parsed["affected"]["group"]["ci"]["distribution"]["name"],
+        "full"
     );
 
     for entry in workspaces {
@@ -939,43 +1002,4 @@ fn test_run_shards_execute_distinct_shard_contexts_end_to_end() {
     assert!(second_output.contains("2/2"));
     assert!(!first_output.contains("pkg-b"));
     assert!(!second_output.contains("pkg-b"));
-}
-
-#[test]
-fn test_run_isolate_selects_only_isolated_workspace_end_to_end() {
-    let dir = tempdir().unwrap();
-    setup_monorepo(dir.path());
-    write_json(
-        &dir.path().join("nanoom.config.json"),
-        &serde_json::json!({
-            "group": {
-                "ci": {
-                    "tasks": ["test"],
-                    "rules": [{ "name": "pkg-a", "isolate": ["test"] }]
-                }
-            }
-        }),
-    );
-    write_json(
-        &dir.path().join("packages/pkg-a/package.json"),
-        &serde_json::json!({
-            "name": "pkg-a", "version": "1.0.0",
-            "scripts": { "test": "node -e \"console.log('isolated-a')\"" }
-        }),
-    );
-    write_json(
-        &dir.path().join("packages/pkg-b/package.json"),
-        &serde_json::json!({
-            "name": "pkg-b", "version": "1.0.0",
-            "scripts": { "test": "node -e \"console.log('regular-b')\"" }
-        }),
-    );
-    let (success, output) = run_cli(
-        dir.path(),
-        &["run", "ci", "test", "--all", "--isolate"],
-        &[],
-    );
-    assert!(success, "isolate run failed: {}", output);
-    assert!(output.contains("isolated-a"));
-    assert!(!output.contains("regular-b"));
 }

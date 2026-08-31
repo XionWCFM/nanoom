@@ -3,9 +3,13 @@
   "group": {
     "ci": {
       "tasks": ["test", "build", "typecheck"],
+      "distribution": {
+        "small": { "maxAffectedPercent": 25, "concurrency": 3 },
+        "medium": { "maxAffectedPercent": 60, "concurrency": 6 },
+        "full": { "maxAffectedPercent": 100, "concurrency": 12 }
+      },
       "rules": [
         { "name": "@adv/legacy-admin", "ignore": true },
-        { "name": "@adv/db-migrations", "isolate": ["build"] },
         { "name": "@adv/design-system", "shard": [{ "task": "test", "shard": 3 }] }
       ]
     },
