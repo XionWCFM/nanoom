@@ -315,15 +315,20 @@ async fn run_task(
         invalid => return Err(Error::InvalidRunner(invalid.to_string())),
     };
 
+    let runner_root = if root.is_absolute() {
+        root.to_path_buf()
+    } else {
+        std::env::current_dir()?.join(root)
+    };
     let executable = package_manager_executable(&program);
     let mut cmd = Command::new(executable);
     cmd.current_dir(if matches!(detected_runner, "turbo" | "nx") {
-        root
+        &runner_root
     } else {
         &project.path
     });
     if matches!(detected_runner, "turbo" | "nx") {
-        let local_bin = root.join("node_modules").join(".bin");
+        let local_bin = runner_root.join("node_modules").join(".bin");
         let mut path_entries = vec![local_bin];
         if let Some(existing) = std::env::var_os("PATH") {
             path_entries.extend(std::env::split_paths(&existing));
@@ -784,6 +789,41 @@ mod tests {
         if let Some(path) = old_path {
             std::env::set_var("PATH", path);
         }
+    }
+
+    #[tokio::test]
+    #[cfg(not(windows))]
+    #[serial]
+    async fn nested_relative_root_resolves_local_runner_bin() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let current_dir = std::env::current_dir().unwrap();
+        let dir = tempfile::Builder::new()
+            .prefix("nanoom-relative-runner-")
+            .tempdir_in(&current_dir)
+            .unwrap();
+        let root = dir.path().join("nested");
+        let relative_root = root.strip_prefix(&current_dir).unwrap();
+        let local_bin = root.join("node_modules/.bin");
+        std::fs::create_dir_all(&local_bin).unwrap();
+        let nx = local_bin.join("nx");
+        std::fs::write(&nx, "#!/bin/sh\nexit 0\n").unwrap();
+        std::fs::set_permissions(&nx, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let execution = run_task(
+            &make_project("app", &root),
+            &TaskConfig {
+                command: "test".into(),
+                args: vec![],
+                env: HashMap::new(),
+            },
+            Some("nx"),
+            relative_root,
+            true,
+        )
+        .await
+        .unwrap();
+        assert_eq!(execution.runner, "nx");
     }
 
     #[tokio::test]

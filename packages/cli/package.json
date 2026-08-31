@@ -1,6 +1,6 @@
 {
   "name": "@nanoom/cli",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Monorepo task runner with affected project detection",
   "license": "MIT",
   "repository": {
@@ -18,11 +18,11 @@
     "postinstall": "node postinstall.js"
   },
   "optionalDependencies": {
-    "@nanoom/cli-linux-arm64": "0.3.0",
-    "@nanoom/cli-linux-x64": "0.3.0",
-    "@nanoom/cli-macos-arm64": "0.3.0",
-    "@nanoom/cli-macos-x64": "0.3.0",
-    "@nanoom/cli-windows-x64": "0.3.0"
+    "@nanoom/cli-linux-arm64": "0.3.1",
+    "@nanoom/cli-linux-x64": "0.3.1",
+    "@nanoom/cli-macos-arm64": "0.3.1",
+    "@nanoom/cli-macos-x64": "0.3.1",
+    "@nanoom/cli-windows-x64": "0.3.1"
   },
   "engines": {
     "node": ">=18"
