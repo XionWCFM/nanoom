@@ -19,7 +19,7 @@ serde_json = "1.0"
 globset = "0.4"
 thiserror = "1.0"
 tokio = { version = "1.38", features = ["full"] }
-gix = { version = "0.86", default-features = false, features = ["revision", "merge", "sha1"] }
+gix = { version = "0.87", default-features = false, features = ["revision", "merge", "sha1"] }
 schemars = { version = "0.8", features = ["derive"] }
 walkdir = "2.4"
 serde_yaml = "0.9"
