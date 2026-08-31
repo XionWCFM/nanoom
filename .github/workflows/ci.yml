@@ -216,7 +216,6 @@ jobs:
         with:
           version: local
           scheduler: artifact
-          timingRunner: yarn
           historyArtifactName: nanoom-timing-history-${{ github.run_id }}-${{ github.run_attempt }}
       - env:
           RESULT: ${{ steps.history.outputs.result }}
