@@ -52,22 +52,22 @@ history가 없거나 손상됐거나 권한이 없으면 CI를 실패시키지 �
 
 ```yaml
 - id: affected
-  uses: XionWCFM/nanoom/.github/actions/affected@v0.3.0
+  uses: XionWCFM/nanoom/.github/actions/affected@v0.3.1
   with:
     scheduler: artifact
 
-- uses: XionWCFM/nanoom/.github/actions/install@v0.3.0
+- uses: XionWCFM/nanoom/.github/actions/install@v0.3.1
   with:
     matrix: ${{ toJSON(matrix) }}
     packageManager: pnpm
 
-- uses: XionWCFM/nanoom/.github/actions/run@v0.3.0
+- uses: XionWCFM/nanoom/.github/actions/run@v0.3.1
   with:
     matrix: ${{ toJSON(matrix) }}
     group: ci
     scheduler: artifact
 
-- uses: XionWCFM/nanoom/.github/actions/history@v0.3.0
+- uses: XionWCFM/nanoom/.github/actions/history@v0.3.1
   with:
     scheduler: artifact
 ```

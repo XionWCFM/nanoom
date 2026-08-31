@@ -1,5 +1,11 @@
 # @nanoom/cli
 
+## 0.3.1
+
+### Patch Changes
+
+- Resolve Turbo and Nx executables from nested relative Action working directories.
+
 ## 0.3.0
 
 ### Minor Changes
