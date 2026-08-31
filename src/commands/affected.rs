@@ -1,6 +1,7 @@
-use crate::affected::{calculate_with_override, generate_matrix};
+use crate::affected::{calculate_with_override, generate_matrix_with_history};
 use crate::error::Result;
 use clap::Args;
+use std::path::PathBuf;
 
 #[derive(Args, Debug, Clone)]
 pub struct AffectedArgs {
@@ -12,6 +13,26 @@ pub struct AffectedArgs {
 
     #[arg(long, help = "Output the canonical affected report as JSON")]
     pub json: bool,
+
+    #[arg(
+        long,
+        help = "Best-effort timing history JSON used for runner assignments"
+    )]
+    pub history: Option<PathBuf>,
+
+    #[arg(
+        long,
+        default_value = "auto",
+        help = "Runner identity used for timing lookup"
+    )]
+    pub timing_runner: String,
+
+    #[arg(
+        long,
+        default_value = "default",
+        help = "Hardware/environment identity used for timing lookup"
+    )]
+    pub timing_environment: String,
 }
 
 pub async fn execute(
@@ -21,13 +42,40 @@ pub async fn execute(
 ) -> Result<()> {
     let result =
         calculate_with_override(config, cwd, args.base.as_deref(), args.head.as_deref()).await?;
+    let (history, history_status) = match args.history.as_deref() {
+        Some(path) => match crate::scheduler::TimingHistory::load(path) {
+            Ok(history) => (history, "loaded".to_string()),
+            Err(error) => {
+                eprintln!("timing history unavailable; using deterministic cold start: {error}");
+                (
+                    crate::scheduler::TimingHistory::default(),
+                    "fallback".to_string(),
+                )
+            }
+        },
+        None => (
+            crate::scheduler::TimingHistory::default(),
+            "disabled".to_string(),
+        ),
+    };
+    let matrix = generate_matrix_with_history(
+        &result,
+        &history,
+        &args.timing_runner,
+        &args.timing_environment,
+    );
 
     if args.json {
         println!(
             "{}",
             serde_json::to_string(&serde_json::json!({
                 "affected": result,
-                "matrix": generate_matrix(&result)
+                "matrix": matrix,
+                "scheduling": {
+                    "historyStatus": history_status,
+                    "timingRunner": args.timing_runner,
+                    "timingEnvironment": args.timing_environment
+                }
             }))?
         );
         return Ok(());
@@ -64,11 +112,6 @@ pub async fn execute(
                 .shard
                 .map(|s| format!(" (shard {})", s))
                 .unwrap_or_default();
-            let isolate_str = ws
-                .isolate
-                .filter(|&b| b)
-                .map(|_| " [isolated]")
-                .unwrap_or_default();
             println!("    - {} / {} [{}]", ws.name, ws.task, ws.path);
             if let Some(reason) = result
                 .diagnostics
@@ -88,8 +131,8 @@ pub async fn execute(
                     }
                 );
             }
-            if !shard_str.is_empty() || !isolate_str.is_empty() {
-                println!("    {}{}", shard_str, isolate_str);
+            if !shard_str.is_empty() {
+                println!("    {}", shard_str);
             }
         }
     }
@@ -112,7 +155,6 @@ mod tests {
             task: "test".into(),
             shard: None,
             total_shards: None,
-            isolate: Some(false),
         }];
         let mut group = HashMap::new();
         group.insert(
@@ -120,6 +162,10 @@ mod tests {
             GroupOutput {
                 label: "ci".into(),
                 workspaces,
+                total_workspaces: 1,
+                affected_workspaces: 1,
+                affected_percent: 100.0,
+                distribution: None,
             },
         );
         AffectedOutput {

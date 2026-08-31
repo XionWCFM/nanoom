@@ -1,20 +1,20 @@
 name: nanoom affected
-description: Calculate the authoritative flattened matrix
+description: Calculate affected work and assignment matrices
 inputs:
   version: {description: "Release tag matching the pinned Action ref, or local for repository tests", default: action}
   config: {description: "Config path relative to cwd", default: nanoom.config.json}
   cwd: {description: "Consumer working directory", default: '.'}
   base: {description: "Explicit comparison base; empty resolves from the GitHub event", default: ''}
   head: {description: "Explicit comparison head; empty resolves from the GitHub event", default: ''}
+  scheduler: {description: "Timing backend: off, artifact, or http", default: off}
+  timingRunner: {description: "Runner identity used for timing prediction", default: auto}
+  timingEnvironment: {description: "Stable hardware identity used for timing history", default: ''}
+  coordinatorUrl: {description: "HTTPS coordinator base URL for scheduler=http", default: ''}
   releaseBaseUrl: {description: "HTTPS origin hosting Nanoom release assets; use your GitHub Enterprise Server URL when it mirrors releases", default: "https://github.com"}
 outputs:
-  has_change:
-    value: ${{ steps.out.outputs.has_change }}
-  groups:
-    value: ${{ steps.out.outputs.groups }}
-  result:
-    description: Compact affected summary with resolved revisions and per-group entry counts
-    value: ${{ steps.out.outputs.result }}
+  has_change: {description: "Whether any group has work", value: "${{ steps.out.outputs.has_change }}"}
+  groups: {description: "Per-group assignment matrices", value: "${{ steps.out.outputs.groups }}"}
+  result: {description: "Canonical affected and scheduling report", value: "${{ steps.out.outputs.result }}"}
 runs:
   using: composite
   steps:
@@ -28,7 +28,7 @@ runs:
         TOKEN: ${{ github.token }}
         BINARY: ${{ env.NANOOM_LOCAL_BINARY }}
       run: bash "$GITHUB_ACTION_PATH/../_setup/setup.sh"
-    - name: Calculate affected workspaces
+    - name: Calculate affected assignments
       id: out
       shell: bash
       env:
@@ -39,88 +39,14 @@ runs:
         EVENT: ${{ github.event_name }}
         EVENT_BASE: ${{ github.event.before || github.base_ref || github.event.merge_group.base_sha }}
         EVENT_HEAD: ${{ github.sha }}
-      run: |
-        set -euo pipefail
-        trap 'echo "::error title=Affected calculation failed::Review the error above. Verify cwd/config and the GitHub event comparison refs."' ERR
-        cyan=$'\033[36m'; green=$'\033[32m'; yellow=$'\033[33m'; bold=$'\033[1m'; reset=$'\033[0m'
-        started=$(date +%s)
-        printf '%s◆ nanoom affected%s\n' "$bold$cyan" "$reset"
-        printf '  Inputs\n'
-        printf '    working directory: %s\n' "$CWD"
-        printf '    config: %s\n' "$CONFIG"
-        printf '    requested comparison: %s -> %s\n' "${BASE:-event-derived}" "${HEAD:-event-derived}"
-        printf '    selection: all configured groups\n'
-        if [[ -z "$BASE" ]]; then BASE="$EVENT_BASE"; fi
-        if [[ -z "$HEAD" ]]; then HEAD="$EVENT_HEAD"; fi
-        [[ -n "$BASE" ]] || { echo '::error title=Missing comparison base::affected could not resolve a base revision from inputs or the GitHub event.'; exit 2; }
-        [[ -n "$HEAD" ]] || HEAD=HEAD
-        if ! git -C "$CWD" rev-parse --verify "$BASE^{commit}" >/dev/null 2>&1; then
-          printf '  Fetch\n    base revision is missing; fetching origin with depth=1\n'
-          if [[ "$EVENT" == pull_request && "$BASE" != refs/* ]]; then
-            git -C "$CWD" fetch --no-tags --depth=1 origin "$BASE:refs/remotes/origin/$BASE"
-            BASE="refs/remotes/origin/$BASE"
-          else
-            git -C "$CWD" fetch --no-tags --depth=1 origin "$BASE"
-            BASE=FETCH_HEAD
-          fi
-          printf '    fetched base: %s\n' "$BASE"
-        else
-          printf '  Fetch\n    base revision already exists in checkout\n'
-        fi
-        args=(-C "$CWD" -c "$CONFIG" affected --json --base "$BASE" --head "$HEAD")
-        printf -v command '%q ' nanoom "${args[@]}"
-        printf '  Command\n    %s\n' "${command% }"
-        report=$(nanoom "${args[@]}")
-        matrix=$(jq -c .matrix <<<"$report")
-        # `group`, `label`, and `path` are already known at the workflow boundary
-        # and are not needed to select an install. Do not repeat them per entry.
-        groups=$(jq -c 'with_entries(.value = {hasChange: ((.value.include | length) > 0), matrix: {include: [.value.include[] | {name, task, shard, totalShards, isolate} | with_entries(select(.value != null and .value != false))]}})' <<<"$matrix")
-        has=$(jq -r 'any(to_entries[]; .value.include | length > 0)' <<<"$matrix")
-        result=$(jq -cn --argjson report "$report" --argjson groups "$groups" --argjson has "$has" '{status:"success",hasChange:$has,comparison:$report.affected.diagnostics.comparison,groups:($groups | with_entries(.value |= {hasChange, entryCount:(.matrix.include | length)}))}')
-        output_bytes=$(printf 'has_change=%s\ngroups=%s\nresult=%s\n' "$has" "$groups" "$result" | iconv -f UTF-8 -t UTF-16LE | wc -c | tr -d ' ')
-        if (( output_bytes > 1048576 )); then
-          largest_group=$(jq -r 'to_entries | max_by(.value.include | length) | .key' <<<"$matrix")
-          echo "::error title=Matrix output is too large::nanoom would write ${output_bytes} UTF-16 bytes across has_change, groups, and result; GitHub permits 1048576. Split group '$largest_group' into smaller configured groups." >&2
-          exit 2
-        fi
-        echo "has_change=$has" >> "$GITHUB_OUTPUT"
-        echo "groups=$groups" >> "$GITHUB_OUTPUT"
-        echo "result=$result" >> "$GITHUB_OUTPUT"
-        count=$(jq '[to_entries[].value.include[]] | length' <<<"$matrix")
-        elapsed=$(( $(date +%s) - started ))
-        base_commit=$(jq -r .affected.diagnostics.comparison.baseCommit <<<"$report")
-        head_commit=$(jq -r .affected.diagnostics.comparison.headCommit <<<"$report")
-        mode=$(jq -r .affected.diagnostics.comparison.mode <<<"$report")
-        changed=$(jq '.affected.diagnostics.changedFiles | length' <<<"$report")
-        echo "::notice title=Affected result::has_change=$has; $count matrix entries will run (${elapsed}s)"
-        printf '%s◆ affected result (%s entries)%s\n' "$bold$cyan" "$count" "$reset"
-        printf '  Resolved values\n'
-        printf '    base commit: %s\n' "$base_commit"
-        printf '    head commit: %s\n' "$head_commit"
-        printf '    comparison mode: %s\n' "$mode"
-        printf '    changed files: %s\n' "$changed"
-        jq -r '.affected.diagnostics.changedFiles[] | "    · " + .' <<<"$report"
-        printf '  Why these workspaces\n'
-        jq -r '.affected.diagnostics.reasons | to_entries[] | "    · \(.key): " + (if .value.kind == "direct" then "direct change: " + (.value.changedFiles | join(", ")) elif .value.kind == "globalDependency" then "global dependency: " + (.value.changedFiles | join(", ")) else "transitive dependency: " + (.value.dependencyPath | join(" -> ")) end)' <<<"$report"
-        printf '  Matrix plan\n'
-        if (( count )); then
-          jq -r 'to_entries[] as $group | $group.value.include[] | "    · \($group.key) / \(.name) / \(.task)" + (if .shard then " / shard \(.shard)/\(.totalShards)" else "" end) + (if .isolate then " / isolated" else "" end)' <<<"$matrix"
-        else
-          printf '    no workspace tasks matched; downstream matrix will be skipped\n'
-        fi
-        printf '  Result\n    has_change=%s; matrix entries=%s; elapsed=%ss\n' "$has" "$count" "$elapsed"
-        printf '  Final JSON\n'
-        jq . <<<"$report"
-        printf '  Action outputs\n    has_change=%s\n    groups=%s\n    result=<compact canonical summary; %s UTF-16 bytes total>\n' "$has" "$groups" "$output_bytes"
-        {
-          echo "### nanoom affected"
-          echo
-          echo "**Result:** \`has_change=$has\` — **$count** matrix entries across all groups"
-          echo
-          echo "Comparison (\`$mode\`): \`$base_commit\` -> \`$head_commit\`; **$changed** changed files."
-          echo
-          echo '| Group | Workspace | Task | Execution | Why |'
-          echo '|---|---|---|---|---|'
-          jq -r --argjson reasons "$(jq -c .affected.diagnostics.reasons <<<"$report")" 'to_entries[] as $group | $group.value.include[] | . as $entry | "| \($group.key) | \(.name) | \(.task) | " + (if .shard then "shard \(.shard)/\(.totalShards)" elif .isolate then "isolated" else "standard" end) + " | " + ($reasons[$entry.name] | if .kind == "direct" then "direct: " + (.changedFiles | join(", ")) elif .kind == "globalDependency" then "global: " + (.changedFiles | join(", ")) else "transitive: " + (.dependencyPath | join(" -> ")) end) + " |"' <<<"$matrix"
-          (( count )) || echo '| - | - | - | no work | no matching change |'
-        } >> "$GITHUB_STEP_SUMMARY"
+        SCHEDULER: ${{ inputs.scheduler }}
+        TIMING_RUNNER: ${{ inputs.timingRunner }}
+        TIMING_ENVIRONMENT: ${{ inputs.timingEnvironment || format('{0}-{1}', runner.os, runner.arch) }}
+        COORDINATOR_URL: ${{ inputs.coordinatorUrl }}
+        COORDINATOR_TOKEN: ${{ env.NANOOM_COORDINATOR_TOKEN }}
+        API: ${{ github.api_url }}
+        REPOSITORY: ${{ github.repository }}
+        RUN_ID: ${{ github.run_id }}
+        RUN_ATTEMPT: ${{ github.run_attempt }}
+        TOKEN: ${{ github.token }}
+      run: bash "$GITHUB_ACTION_PATH/run.sh"

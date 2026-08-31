@@ -26,6 +26,23 @@ pub struct GroupConfig {
     pub tasks: Vec<String>,
     #[serde(default)]
     pub rules: Vec<Rule>,
+    #[serde(default)]
+    pub distribution: Option<DistributionConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DistributionConfig {
+    pub small: DistributionTier,
+    pub medium: DistributionTier,
+    pub full: DistributionTier,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DistributionTier {
+    pub max_affected_percent: f64,
+    pub concurrency: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -34,8 +51,6 @@ pub struct Rule {
     pub name: String,
     #[serde(default)]
     pub ignore: bool,
-    #[serde(default)]
-    pub isolate: Vec<String>,
     #[serde(default)]
     pub shard: Vec<ShardRule>,
 }
@@ -103,6 +118,35 @@ impl Config {
                 }
             }
             let mut rules = HashSet::new();
+            if let Some(distribution) = &group.distribution {
+                let tiers = [
+                    ("small", &distribution.small),
+                    ("medium", &distribution.medium),
+                    ("full", &distribution.full),
+                ];
+                let mut previous = 0.0;
+                for (tier_name, tier) in tiers {
+                    if !tier.max_affected_percent.is_finite()
+                        || tier.max_affected_percent <= previous
+                        || tier.max_affected_percent > 100.0
+                    {
+                        return Err(Error::ConfigValidation(format!(
+                            "Group '{name}' distribution tier '{tier_name}' must have an increasing maxAffectedPercent in (0, 100]"
+                        )));
+                    }
+                    if tier.concurrency == 0 {
+                        return Err(Error::ConfigValidation(format!(
+                            "Group '{name}' distribution tier '{tier_name}' must have concurrency greater than 0"
+                        )));
+                    }
+                    previous = tier.max_affected_percent;
+                }
+                if distribution.full.max_affected_percent != 100.0 {
+                    return Err(Error::ConfigValidation(format!(
+                        "Group '{name}' distribution tier 'full' must end at maxAffectedPercent 100"
+                    )));
+                }
+            }
             for rule in &group.rules {
                 if rule.name.is_empty() {
                     return Err(Error::ConfigValidation(format!(
@@ -116,14 +160,6 @@ impl Config {
                         rule.name
                     )));
                 }
-                for task in &rule.isolate {
-                    if !tasks.contains(task) {
-                        return Err(Error::ConfigValidation(format!(
-                            "Group '{name}' rule '{}' isolates unknown task '{task}'",
-                            rule.name
-                        )));
-                    }
-                }
                 for shard in &rule.shard {
                     if !tasks.contains(&shard.task) {
                         return Err(Error::ConfigValidation(format!(
@@ -135,12 +171,6 @@ impl Config {
                         return Err(Error::ConfigValidation(format!(
                             "Group '{}' rule '{}' has shard count 0",
                             name, rule.name
-                        )));
-                    }
-                    if rule.isolate.contains(&shard.task) {
-                        return Err(Error::ConfigValidation(format!(
-                            "Group '{name}' rule '{}' cannot isolate and shard task '{}'",
-                            rule.name, shard.task
                         )));
                     }
                 }

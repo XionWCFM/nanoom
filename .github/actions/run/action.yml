@@ -5,6 +5,9 @@ inputs:
   group: {description: "Affected group that selected this matrix entry", required: true}
   packageManager: {description: "Package manager override: auto, pnpm, yarn, or npm", default: auto}
   monorepoTool: {description: "Runner override: auto, turbo, nx, pnpm, yarn, or npm", default: auto}
+  scheduler: {description: "Timing backend selected by affected: off, artifact, or http", default: off}
+  timingEnvironment: {description: "Stable hardware identity used for timing history", default: ''}
+  coordinatorUrl: {description: "HTTPS coordinator base URL for scheduler=http", default: ''}
   cwd: {description: "Consumer working directory", default: .}
   version: {description: "Release tag matching the pinned Action ref, or local for repository tests", default: action}
   releaseBaseUrl: {description: "HTTPS origin hosting Nanoom release assets; use your GitHub Enterprise Server URL when it mirrors releases", default: "https://github.com"}
@@ -34,40 +37,16 @@ runs:
         PM: ${{ inputs.packageManager }}
         TOOL: ${{ inputs.monorepoTool }}
         CWD: ${{ inputs.cwd }}
-      run: |
-        set -euo pipefail
-        trap 'echo "::error title=Matrix task failed::Review the task output above. Reproduce with the displayed nanoom command and verify the workspace script and runner selection."' ERR
-        cyan=$'\033[36m'; green=$'\033[32m'; bold=$'\033[1m'; reset=$'\033[0m'
-        started=$(date +%s)
-        e=$(jq -ce --arg group "$GROUP" '(.include[0] // .) | .group = $group | select(.group and .task and .name)' <<<"$MATRIX"); matrix_json=$(jq -c '{group, name, task, shard, totalShards, isolate} | with_entries(select(.value != null and .value != false))' <<<"$e"); group=$(jq -r .group <<<"$e"); task=$(jq -r .task <<<"$e"); name=$(jq -r .name <<<"$e"); args=(-C "$CWD" run "$group" "$task" --all --filter "$name" --json)
-        [[ -n $(jq -r '.shard // empty' <<<"$e") ]] && args+=(--shard "$(jq -r '.shard' <<<"$e")" --total-shards "$(jq -r '.totalShards' <<<"$e")"); [[ $(jq -r '.isolate // false' <<<"$e") == true ]] && args+=(--isolate)
-        if [[ "$TOOL" == turbo && ! -x "$CWD/node_modules/.bin/turbo" ]]; then
-          echo 'turbo is not present in the focused dependency closure; using the requested package-manager runner' >&2
-          args+=(--runner "$PM")
-        elif [[ "$TOOL" != auto ]]; then
-          args+=(--runner "$TOOL")
-        fi
-        printf -v command '%q ' nanoom "${args[@]}"
-        printf '%s◆ nanoom run%s\n' "$bold$cyan" "$reset"
-        printf '  Inputs\n    matrix: %s\n    workspace: %s\n    group/task: %s / %s\n    runner: %s/%s\n' "$matrix_json" "$name" "$group" "$task" "$TOOL" "$PM"
-        [[ -n $(jq -r '.shard // empty' <<<"$e") ]] && printf '    shard: %s/%s\n' "$(jq -r '.shard' <<<"$e")" "$(jq -r '.totalShards' <<<"$e")"
-        [[ $(jq -r '.isolate // false' <<<"$e") == true ]] && printf '    isolation: enabled\n'
-        printf '  Why\n    authoritative affected matrix selected this task\n  Command\n    %s\n' "${command% }"
-        cli_result=$(nanoom "${args[@]}")
-        elapsed=$(( $(date +%s) - started ))
-        result=$(jq -cn --argjson matrix "$matrix_json" --arg command "${command% }" --arg cwd "$CWD" --argjson cli "$cli_result" --argjson elapsed "$elapsed" '{status:"success", reason:"executed the task selected by the authoritative affected matrix entry", matrix:$matrix, command:$command, cwd:$cwd, cli:$cli, elapsedSeconds:$elapsed}')
-        echo "result=$result" >> "$GITHUB_OUTPUT"
-        printf '  Result\n    %s / %s / %s succeeded; elapsed=%ss\n' "$group" "$name" "$task" "$elapsed"
-        printf '  Final JSON\n'
-        jq . <<<"$result"
-        printf '  Action output\n    result=<same canonical JSON above>\n'
-        echo "::notice title=Matrix task complete::$group / $name / $task succeeded (${elapsed}s)"
-        {
-          echo '### nanoom run'
-          echo
-          echo "**Result:** \`$group / $name / $task\` succeeded in ${elapsed}s."
-          echo
-          echo "Reason: this task was selected by the authoritative affected matrix entry."
-          echo
-          echo "Command: \`${command% }\`"
-        } >> "$GITHUB_STEP_SUMMARY"
+        SCHEDULER: ${{ inputs.scheduler }}
+        TIMING_ENVIRONMENT: ${{ inputs.timingEnvironment || format('{0}-{1}', runner.os, runner.arch) }}
+        COORDINATOR_URL: ${{ inputs.coordinatorUrl }}
+        COORDINATOR_TOKEN: ${{ env.NANOOM_COORDINATOR_TOKEN }}
+      run: bash "$GITHUB_ACTION_PATH/run.sh"
+    - name: Upload successful timing sample
+      if: inputs.scheduler == 'artifact' && steps.run.outcome == 'success'
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ steps.run.outputs.sample-name }}
+        path: ${{ steps.run.outputs.sample-path }}
+        retention-days: 30
+        if-no-files-found: error

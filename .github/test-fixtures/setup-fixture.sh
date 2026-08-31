@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Creates a small JS monorepo fixture used by action-test.yml.
-# Usage: setup-fixture.sh [--shards] [--isolate] [--change]
+# Usage: setup-fixture.sh [--shards] [--change]
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"   # repo root
@@ -126,12 +126,10 @@ fs.writeFileSync(path.join(__dirname, 'install-verification.log'), `${target}\n`
 EOF
 
 SHARD_BLOCK=""
-ISOLATE_BLOCK=""
 CHANGE=false
 for arg in "$@"; do
   case "$arg" in
     --shards) SHARD_BLOCK=', "rules": [{ "name": "@fixture/shared", "shard": [{ "task": "test", "shard": 2 }] }]' ;;
-    --isolate) ISOLATE_BLOCK=', "rules": [{ "name": "@fixture/app", "isolate": ["test"] }]' ;;
     --change) CHANGE=true ;;
     *) echo "unknown option: $arg" >&2; exit 2 ;;
   esac
@@ -139,14 +137,6 @@ done
 
 RULES=""
 if [ -n "$SHARD_BLOCK" ]; then RULES="$SHARD_BLOCK"; fi
-if [ -n "$ISOLATE_BLOCK" ]; then
-  if [ -n "$RULES" ]; then
-    RULES=', "rules": [{ "name": "@fixture/shared", "shard": [{ "task": "test", "shard": 2 }] }, { "name": "@fixture/app", "isolate": ["test"] }]'
-  else
-    RULES="$ISOLATE_BLOCK"
-  fi
-fi
-
 if [ -n "$RULES" ]; then
   SHARD_BLOCK="${RULES%]}, { \"name\": \"@fixture/root-tool\", \"ignore\": true }]"
 else

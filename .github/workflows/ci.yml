@@ -131,7 +131,7 @@ jobs:
       - name: Build local CLI
         run: cargo build --locked --release
       - name: Create Yarn Berry + Turborepo fixture
-        run: bash .github/test-fixtures/setup-fixture.sh --shards --isolate --change
+        run: bash .github/test-fixtures/setup-fixture.sh --shards --change
       - id: affected
         uses: ./.github/actions/affected
         with:
@@ -164,7 +164,7 @@ jobs:
       - name: Build local CLI
         run: cargo build --locked --release
       - name: Create Yarn Berry fixture
-        run: bash .github/test-fixtures/setup-fixture.sh --shards --isolate --change
+        run: bash .github/test-fixtures/setup-fixture.sh --shards --change
       - id: install
         uses: ./.github/actions/install
         with:

@@ -14,7 +14,7 @@ fn test_load_valid_config() -> Result<()> {
                 "tasks": ["test", "build"],
                 "rules": [
                     { "name": "@org/test", "ignore": true },
-                    { "name": "@org/run", "isolate": ["build"] }
+                    { "name": "@org/run" }
                 ]
             },
             "e2e": {
@@ -231,7 +231,7 @@ fn test_validate_shard_zero() {
 }
 
 #[test]
-fn test_validate_rejects_ambiguous_rules_and_invalid_globs() {
+fn test_validate_rejects_duplicate_rules_and_invalid_globs() {
     let duplicate_rule: Config = serde_json::from_value(serde_json::json!({
         "group": {"ci": {"tasks": ["test"], "rules": [
             {"name": "app"}, {"name": "app"}
@@ -239,15 +239,6 @@ fn test_validate_rejects_ambiguous_rules_and_invalid_globs() {
     }))
     .unwrap();
     assert!(duplicate_rule.validate().is_err());
-
-    let conflicting_rule: Config = serde_json::from_value(serde_json::json!({
-        "group": {"ci": {"tasks": ["test"], "rules": [{
-            "name": "app", "isolate": ["test"],
-            "shard": [{"task": "test", "shard": 2}]
-        }]}}
-    }))
-    .unwrap();
-    assert!(conflicting_rule.validate().is_err());
 
     let invalid_glob: Config = serde_json::from_value(serde_json::json!({
         "group": {"ci": {"tasks": ["test"]}},
@@ -261,10 +252,34 @@ fn test_validate_rejects_ambiguous_rules_and_invalid_globs() {
 fn test_validate_rejects_duplicate_and_unknown_tasks() {
     for config in [
         serde_json::json!({"group":{"ci":{"tasks":["test","test"]}}}),
-        serde_json::json!({"group":{"ci":{"tasks":["test"],"rules":[{"name":"app","isolate":["build"]}]}}}),
         serde_json::json!({"group":{"ci":{"tasks":["test"],"rules":[{"name":"app","shard":[{"task":"build","shard":2}]}]}}}),
     ] {
         let config: Config = serde_json::from_value(config).unwrap();
+        assert!(config.validate().is_err());
+    }
+}
+
+#[test]
+fn test_validate_distribution() {
+    let valid: Config = serde_json::from_value(serde_json::json!({
+        "group": {"ci": {"tasks": ["test"], "distribution": {
+            "small": {"maxAffectedPercent": 25, "concurrency": 3},
+            "medium": {"maxAffectedPercent": 60, "concurrency": 6},
+            "full": {"maxAffectedPercent": 100, "concurrency": 12}
+        }}}
+    }))
+    .unwrap();
+    assert!(valid.validate().is_ok());
+
+    for distribution in [
+        serde_json::json!({"small":{"maxAffectedPercent":25,"concurrency":0},"medium":{"maxAffectedPercent":60,"concurrency":6},"full":{"maxAffectedPercent":100,"concurrency":12}}),
+        serde_json::json!({"small":{"maxAffectedPercent":60,"concurrency":3},"medium":{"maxAffectedPercent":25,"concurrency":6},"full":{"maxAffectedPercent":100,"concurrency":12}}),
+        serde_json::json!({"small":{"maxAffectedPercent":25,"concurrency":3},"medium":{"maxAffectedPercent":60,"concurrency":6},"full":{"maxAffectedPercent":99,"concurrency":12}}),
+    ] {
+        let config: Config = serde_json::from_value(serde_json::json!({
+            "group": {"ci": {"tasks": ["test"], "distribution": distribution}}
+        }))
+        .unwrap();
         assert!(config.validate().is_err());
     }
 }

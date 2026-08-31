@@ -1,0 +1,51 @@
+name: nanoom history
+description: Merge successful timing samples or complete coordinator runs
+inputs:
+  scheduler: {description: "Timing backend: artifact or http", required: true}
+  runIds: {description: "JSON array of HTTP coordinator run IDs", default: '[]'}
+  coordinatorUrl: {description: "HTTPS coordinator base URL for scheduler=http", default: ''}
+  version: {description: "Release tag matching the pinned Action ref, or local for repository tests", default: action}
+  releaseBaseUrl: {description: "HTTPS origin hosting Nanoom release assets", default: "https://github.com"}
+outputs:
+  result: {description: "Canonical history result", value: "${{ steps.history.outputs.result }}"}
+runs:
+  using: composite
+  steps:
+    - name: Set up nanoom
+      if: inputs.scheduler == 'artifact'
+      shell: bash
+      env:
+        REQUESTED: ${{ inputs.version }}
+        ACTION_REF: ${{ github.action_ref }}
+        API: ${{ github.api_url }}
+        RELEASE_BASE_URL: ${{ inputs.releaseBaseUrl }}
+        TOKEN: ${{ github.token }}
+        BINARY: ${{ env.NANOOM_LOCAL_BINARY }}
+      run: bash "$GITHUB_ACTION_PATH/../_setup/setup.sh"
+    - name: Download current timing samples
+      if: inputs.scheduler == 'artifact'
+      uses: actions/download-artifact@v4
+      with:
+        pattern: nanoom-timing-sample-${{ github.run_id }}-${{ github.run_attempt }}-*
+        path: ${{ runner.temp }}/nanoom-timing-samples
+        merge-multiple: true
+    - name: Merge history or complete runs
+      id: history
+      shell: bash
+      env:
+        SCHEDULER: ${{ inputs.scheduler }}
+        RUN_IDS: ${{ inputs.runIds }}
+        COORDINATOR_URL: ${{ inputs.coordinatorUrl }}
+        COORDINATOR_TOKEN: ${{ env.NANOOM_COORDINATOR_TOKEN }}
+        API: ${{ github.api_url }}
+        REPOSITORY: ${{ github.repository }}
+        TOKEN: ${{ github.token }}
+      run: bash "$GITHUB_ACTION_PATH/run.sh"
+    - name: Upload merged timing history
+      if: inputs.scheduler == 'artifact' && steps.history.outcome == 'success'
+      uses: actions/upload-artifact@v4
+      with:
+        name: nanoom-timing-history
+        path: ${{ steps.history.outputs.history-path }}
+        retention-days: 30
+        if-no-files-found: error

@@ -2,8 +2,10 @@ use crate::affected::calculate;
 use crate::config::Config;
 use crate::error::{Error, Result};
 use clap::Args;
+use serde::Serialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::time::Instant;
 use tokio::process::Command;
 
 #[derive(Args, Debug, Clone)]
@@ -30,9 +32,6 @@ pub struct RunArgs {
     #[arg(long, help = "Total number of shards")]
     pub total_shards: Option<usize>,
 
-    #[arg(long, help = "Run isolated (dedicated runner)")]
-    pub isolate: bool,
-
     #[arg(long, help = "Run on all projects, not just affected")]
     pub all: bool,
 
@@ -47,6 +46,14 @@ struct TaskConfig {
     command: String,
     args: Vec<String>,
     env: HashMap<String, String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TaskExecution {
+    workspace: String,
+    runner: String,
+    duration_ms: u64,
 }
 
 pub async fn execute(args: RunArgs, config: &Config, cwd: &std::path::Path) -> Result<()> {
@@ -82,13 +89,11 @@ pub async fn execute(args: RunArgs, config: &Config, cwd: &std::path::Path) -> R
                     rule.and_then(|r| r.shard.iter().find(|s| s.task == args.task))
                         .is_some_and(|spec| shard <= spec.shard)
                 });
-                let isolate_matches =
-                    !args.isolate || rule.is_some_and(|r| r.isolate.contains(&args.task));
                 let filter_matches = args
                     .filter
                     .as_ref()
                     .is_none_or(|filter| &project.name == filter);
-                !is_ignored && shard_matches && isolate_matches && filter_matches
+                !is_ignored && shard_matches && filter_matches
             })
             .cloned()
             .collect()
@@ -108,7 +113,8 @@ pub async fn execute(args: RunArgs, config: &Config, cwd: &std::path::Path) -> R
                 serde_json::json!({
                     "status": "success", "group": args.group, "task": args.task,
                     "projects": [], "runner": args.runner.as_deref().unwrap_or("auto"),
-                    "reason": "no workspace matched the requested group, task, filter, shard, and isolation constraints"
+                    "reason": "no workspace matched the requested group, task, filter, and shard constraints",
+                    "executions": []
                 })
             );
         } else {
@@ -152,13 +158,16 @@ pub async fn execute(args: RunArgs, config: &Config, cwd: &std::path::Path) -> R
         );
     }
 
+    let mut executions = Vec::new();
+    let mut failed = Vec::new();
+    let mut pending = Vec::new();
     let mut first_error = None;
-    for project in ordered_projects {
+    for (index, project) in ordered_projects.iter().enumerate() {
         if !args.json {
             eprintln!("\n--- {} ---", project.name);
         }
         let result = run_task(
-            &project,
+            project,
             &task_config,
             args.runner.as_deref(),
             cwd,
@@ -166,13 +175,34 @@ pub async fn execute(args: RunArgs, config: &Config, cwd: &std::path::Path) -> R
         )
         .await;
 
-        if let Err(e) = result {
-            eprintln!("Error in {}: {}", project.name, e);
-            if !args.continue_on_error {
-                return Err(e);
-            }
-            if first_error.is_none() {
-                first_error = Some(e);
+        match result {
+            Ok(execution) => executions.push(execution),
+            Err(error) => {
+                eprintln!("Error in {}: {}", project.name, error);
+                failed.push(project.name.clone());
+                if !args.continue_on_error {
+                    pending.extend(
+                        ordered_projects[index + 1..]
+                            .iter()
+                            .map(|project| project.name.clone()),
+                    );
+                    if args.json {
+                        println!(
+                            "{}",
+                            serde_json::json!({
+                                "status": "failure", "group": args.group, "task": args.task,
+                                "completed": executions.iter().map(|execution: &TaskExecution| &execution.workspace).collect::<Vec<_>>(),
+                                "failed": failed, "pending": pending, "executions": executions,
+                                "error": error.to_string()
+                            })
+                        );
+                        return Err(Error::ReportedFailure(error.to_string()));
+                    }
+                    return Err(error);
+                }
+                if first_error.is_none() {
+                    first_error = Some(error);
+                }
             }
         }
     }
@@ -193,8 +223,11 @@ pub async fn execute(args: RunArgs, config: &Config, cwd: &std::path::Path) -> R
                 "filter": args.filter,
                 "shard": args.shard,
                 "totalShards": args.total_shards,
-                "isolate": args.isolate,
                 "selection": if args.all { "all" } else { "affected" },
+                "completed": executions.iter().map(|execution| &execution.workspace).collect::<Vec<_>>(),
+                "failed": [],
+                "pending": [],
+                "executions": executions,
                 "reason": if args.all { "explicit --all selection constrained by matrix arguments" } else { "affected calculation selected these workspaces" }
             })
         );
@@ -212,7 +245,6 @@ fn select_affected_projects(
         .filter(|ws| ws.task == args.task)
         .filter(|ws| args.filter.as_ref().map(|f| &ws.name == f).unwrap_or(true))
         .filter(|ws| args.shard.map(|s| ws.shard == Some(s)).unwrap_or(true))
-        .filter(|ws| !args.isolate || ws.isolate == Some(true))
         .map(|ws| crate::workspace::Project {
             name: ws.name.clone(),
             path: PathBuf::from(&ws.path),
@@ -230,7 +262,7 @@ async fn run_task(
     runner: Option<&str>,
     root: &std::path::Path,
     json: bool,
-) -> Result<()> {
+) -> Result<TaskExecution> {
     // Tasks declared in package.json scripts are routed through the package
     // manager (`pnpm test`), anything else runs as a raw command.
     let selected_runner = runner.unwrap_or("auto");
@@ -312,6 +344,7 @@ async fn run_task(
         cmd.env(key, value);
     }
 
+    let started = Instant::now();
     let status = if json {
         crate::commands::run_streamed(&mut cmd).await?
     } else {
@@ -326,7 +359,11 @@ async fn run_task(
         });
     }
 
-    Ok(())
+    Ok(TaskExecution {
+        workspace: project.name.clone(),
+        runner: program,
+        duration_ms: started.elapsed().as_millis().try_into().unwrap_or(u64::MAX),
+    })
 }
 
 fn package_manager_executable(program: &str) -> &str {
@@ -392,6 +429,7 @@ mod tests {
             GroupConfig {
                 tasks: vec!["echo".to_string(), "true".to_string(), "false".to_string()],
                 rules: vec![],
+                distribution: None,
             },
         );
         Config {
@@ -500,7 +538,6 @@ mod tests {
             filter: None,
             shard: None,
             total_shards: None,
-            isolate: false,
             all: true,
             continue_on_error: false,
             json: false,
@@ -519,7 +556,6 @@ mod tests {
             filter: None,
             shard: None,
             total_shards: None,
-            isolate: false,
             all: true,
             continue_on_error: false,
             json: false,
@@ -542,7 +578,6 @@ mod tests {
                 filter: None,
                 shard: Some(1),
                 total_shards: Some(2),
-                isolate: false,
                 all: true,
                 continue_on_error: false,
                 json: true,
@@ -569,7 +604,6 @@ mod tests {
                 filter: Some("does-not-exist".to_string()),
                 shard: None,
                 total_shards: None,
-                isolate: false,
                 all: true,
                 continue_on_error: false,
                 json: false,
@@ -596,7 +630,6 @@ mod tests {
                 filter: None,
                 shard: None,
                 total_shards: None,
-                isolate: false,
                 all: true,
                 continue_on_error: false,
                 json: false,
@@ -623,7 +656,6 @@ mod tests {
                 filter: None,
                 shard: None,
                 total_shards: None,
-                isolate: false,
                 all: true,
                 continue_on_error: true,
                 json: false,
@@ -670,7 +702,7 @@ mod tests {
     }
 
     #[test]
-    fn select_affected_projects_applies_task_filter_shard_and_isolation() {
+    fn select_affected_projects_applies_task_filter_and_shard() {
         let output = crate::affected::GroupOutput {
             label: "ci".into(),
             workspaces: vec![
@@ -681,7 +713,6 @@ mod tests {
                     task: "test".into(),
                     shard: None,
                     total_shards: None,
-                    isolate: Some(true),
                 },
                 crate::affected::WorkspaceEntry {
                     group: "ci".into(),
@@ -690,9 +721,12 @@ mod tests {
                     task: "build".into(),
                     shard: Some(2),
                     total_shards: Some(2),
-                    isolate: Some(false),
                 },
             ],
+            total_workspaces: 1,
+            affected_workspaces: 1,
+            affected_percent: 100.0,
+            distribution: None,
         };
         let args = RunArgs {
             group: "ci".into(),
@@ -701,21 +735,11 @@ mod tests {
             filter: Some("app".into()),
             shard: Some(2),
             total_shards: Some(2),
-            isolate: false,
             all: false,
             continue_on_error: false,
             json: true,
         };
         assert_eq!(select_affected_projects(&output, &args).len(), 1);
-        let isolated = RunArgs {
-            task: "test".into(),
-            isolate: true,
-            filter: None,
-            shard: None,
-            total_shards: None,
-            ..args
-        };
-        assert_eq!(select_affected_projects(&output, &isolated).len(), 1);
     }
 
     #[tokio::test]
@@ -771,7 +795,6 @@ mod tests {
                 filter: None,
                 shard: Some(2),
                 total_shards: Some(1),
-                isolate: false,
                 all: true,
                 continue_on_error: false,
                 json: true,
