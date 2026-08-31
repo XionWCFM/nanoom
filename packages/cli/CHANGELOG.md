@@ -6,6 +6,7 @@
 
 - Add affected-percentage distribution tiers, deterministic timing-aware assignments, successful wall-time samples, artifact history, and the HTTPS coordinator client contract.
 - Support multi-workspace focused installs and sequential assignment execution with canonical completed/failed/pending results.
+- Keep pnpm/Yarn workspace globs from rediscovering installed packages under nested `node_modules` directories.
 - Remove the unobservable `isolate` config, CLI, and matrix contract. Use shards or separate groups for explicit isolation.
 
 ## 0.2.8
