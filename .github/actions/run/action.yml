@@ -7,6 +7,7 @@ inputs:
   monorepoTool: {description: "Runner override: auto, turbo, nx, pnpm, yarn, or npm", default: auto}
   scheduler: {description: "Timing backend selected by affected: off, artifact, or http", default: off}
   timingEnvironment: {description: "Stable hardware identity used for timing history", default: ''}
+  cleanupCheckout: {description: "Delete cwd after the run when it is an isolated .nanoom/ checkout", default: 'false'}
   coordinatorUrl: {description: "HTTPS coordinator base URL for scheduler=http", default: ''}
   cwd: {description: "Consumer working directory", default: .}
   version: {description: "Release tag matching the pinned Action ref, or local for repository tests", default: action}
@@ -58,3 +59,10 @@ runs:
         BASE_RESULT: ${{ steps.run.outputs.result }}
         UPLOAD_STARTED: ${{ steps.run.outputs.upload-started }}
       run: echo "result=$(jq -c --argjson ms "$(( ($(date +%s) - UPLOAD_STARTED) * 1000 ))" '. + {telemetryUploadMs:$ms}' <<<"$BASE_RESULT")" >> "$GITHUB_OUTPUT"
+    - name: Clean isolated checkout
+      if: ${{ always() && inputs.cleanupCheckout == 'true' }}
+      shell: bash
+      env:
+        CLEANUP_CHECKOUT: ${{ inputs.cleanupCheckout }}
+        CWD: ${{ inputs.cwd }}
+      run: bash "$GITHUB_ACTION_PATH/cleanup.sh"

@@ -71,7 +71,7 @@ fi
 elapsed=$(( $(date +%s) - started )); matrix_json=$(jq -c '{assignmentId,agentId,runId,mode,predictedDurationMs,items} | with_entries(select(.value != null))' <<<"$entry")
 result=$(jq -cn --argjson matrix "$matrix_json" --argjson results "$results" --argjson elapsed "$elapsed" '{status:"success",reason:"executed assignment items in order",matrix:$matrix,results:$results,elapsedSeconds:$elapsed}'); echo "result=$result" >> "$GITHUB_OUTPUT"
 if [[ "$SCHEDULER" == artifact ]]; then
-  sample_dir="$RUNNER_TEMP/nanoom-timing"; mkdir -p "$sample_dir"; assignment_id=$(jq -r '.assignmentId // "legacy"' <<<"$entry"); sample_name=$(printf '%s' "$assignment_id" | tr -c 'A-Za-z0-9._-' '-' | cut -c1-80); sample_path="$sample_dir/$sample_name.json"
+  sample_dir="$RUNNER_TEMP/nanoom-timing"; mkdir -p "$sample_dir"; assignment_id=$(jq -r '.assignmentId // "legacy"' <<<"$entry"); sample_name=$(printf '%s-%s' "${GITHUB_JOB:-local}" "$assignment_id" | tr -c 'A-Za-z0-9._-' '-' | cut -c1-80); sample_path="$sample_dir/$sample_name.json"
   jq -n --arg group "$GROUP" --arg environment "$TIMING_ENVIRONMENT" --argjson results "$results" '{samples:[$results[] | .item as $item | .cli.executions[] | {group:$group,workspace:.workspace,task:$item.task,shard:$item.shard,runner:.runner,environment:$environment,durationMs:.durationMs}]}' > "$sample_path"
   echo "sample-path=$sample_path" >> "$GITHUB_OUTPUT"; echo "sample-name=nanoom-timing-sample-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$sample_name" >> "$GITHUB_OUTPUT"; echo "upload-started=$(date +%s)" >> "$GITHUB_OUTPUT"
 fi

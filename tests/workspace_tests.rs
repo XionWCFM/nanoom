@@ -1,5 +1,5 @@
 use nanoom::config::{Config, WorkspaceConfig};
-use nanoom::workspace::{apply_rules, calculate_affected, Workspace};
+use nanoom::workspace::{apply_rules, calculate_affected, missing_workspace_manifests, Workspace};
 use std::fs;
 use std::path::Path;
 use tempfile::tempdir;
@@ -158,6 +158,8 @@ fn simple_config(include: &[&str], exclude: &[&str]) -> Config {
             include: include.iter().map(|s| s.to_string()).collect(),
             exclude: exclude.iter().map(|s| s.to_string()).collect(),
         },
+        affected: nanoom::config::AffectedConfig::default(),
+        checkout: nanoom::config::CheckoutConfig::default(),
     }
 }
 
@@ -168,6 +170,40 @@ fn test_discover_no_workspace_files() {
 
     let workspace = Workspace::discover(&config, dir.path()).unwrap();
     assert_eq!(workspace.project_count(), 0);
+}
+
+#[test]
+fn sparse_checkout_must_include_every_configured_manifest() {
+    let dir = tempdir().unwrap();
+    write_json(
+        &dir.path().join("packages/app/package.json"),
+        &package_json("app", &[]),
+    );
+    write_json(
+        &dir.path().join("packages/lib/package.json"),
+        &package_json("lib", &[]),
+    );
+    for args in [
+        &["init"][..],
+        &["add", "."][..],
+        &["config", "user.email", "test@example.com"][..],
+        &["config", "user.name", "Test User"][..],
+        &["commit", "-m", "manifests"][..],
+    ] {
+        assert!(std::process::Command::new("git")
+            .arg("-C")
+            .arg(dir.path())
+            .args(args)
+            .status()
+            .unwrap()
+            .success());
+    }
+    fs::remove_file(dir.path().join("packages/lib/package.json")).unwrap();
+
+    assert_eq!(
+        missing_workspace_manifests(&simple_config(&["packages/*"], &[]), dir.path()).unwrap(),
+        vec![std::path::PathBuf::from("packages/lib/package.json")]
+    );
 }
 
 #[test]
@@ -292,7 +328,7 @@ fn test_discover_nx_workspace() {
 }
 
 #[test]
-fn test_turbo_uses_package_manager_workspace_scope() {
+fn config_scope_does_not_require_turbo_metadata() {
     let dir = tempdir().unwrap();
     write_json(
         &dir.path().join("package.json"),
@@ -308,14 +344,14 @@ fn test_turbo_uses_package_manager_workspace_scope() {
         &package_json("unrelated", &[]),
     );
 
-    let config = simple_config(&["**"], &[]);
+    let config = simple_config(&["packages/*"], &[]);
     let workspace = Workspace::discover(&config, dir.path()).unwrap();
     assert!(workspace.get_project_by_name("app").is_some());
     assert!(workspace.get_project_by_name("unrelated").is_none());
 }
 
 #[test]
-fn test_nx_explicit_projects_scope() {
+fn config_scope_does_not_require_nx_metadata() {
     let dir = tempdir().unwrap();
     fs::write(
         dir.path().join("nx.json"),
@@ -331,7 +367,7 @@ fn test_nx_explicit_projects_scope() {
         &package_json("unrelated", &[]),
     );
 
-    let config = simple_config(&["**"], &[]);
+    let config = simple_config(&["apps/*"], &[]);
     let workspace = Workspace::discover(&config, dir.path()).unwrap();
     assert!(workspace.get_project_by_name("app").is_some());
     assert!(workspace.get_project_by_name("unrelated").is_none());
@@ -401,6 +437,9 @@ fn test_build_dependents() {
     let app = workspace.get_project_by_name("app").unwrap();
     assert!(app.dependencies.contains(&"lib".to_string()));
     assert!(app.dependents.is_empty());
+
+    let paths = workspace.dependency_closure_paths("app", dir.path());
+    assert_eq!(paths, vec!["packages/app", "packages/lib"]);
 }
 
 #[test]

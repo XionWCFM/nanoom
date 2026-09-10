@@ -121,6 +121,10 @@ pub async fn execute(
                         "direct" => format!("direct change: {}", reason.changed_files.join(", ")),
                         "globalDependency" =>
                             format!("global dependency: {}", reason.changed_files.join(", ")),
+                        "workspaceManifestStructure" => format!(
+                            "workspace manifest deleted or renamed: {}",
+                            reason.changed_files.join(", ")
+                        ),
                         _ => format!(
                             "transitive dependency: {}",
                             reason.dependency_path.join(" -> ")
@@ -174,6 +178,7 @@ mod tests {
             task: "test".into(),
             shard: None,
             total_shards: None,
+            checkout_paths: vec!["packages/proj-a".into()],
         }];
         let mut group = HashMap::new();
         group.insert(

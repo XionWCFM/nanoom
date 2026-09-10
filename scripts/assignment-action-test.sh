@@ -4,6 +4,10 @@ root=$(cd "$(dirname "$0")/.." && pwd); tmp=$(mktemp -d); trap 'rm -rf "$tmp"' E
 mkdir -p "$tmp/bin" "$tmp/work"
 cat > "$tmp/bin/nanoom" <<'SH'
 #!/usr/bin/env bash
+if [[ "${FAKE_SUCCESS:-}" == 1 ]]; then
+  printf '%s\n' '{"status":"success","item":{"name":"pkg-a","task":"test"},"executions":[{"workspace":"pkg-a","runner":"turbo","durationMs":1}]}'
+  exit 0
+fi
 printf '%s\n' '{"status":"failure","completed":[],"failed":["pkg-a"],"pending":[],"executions":[],"error":"expected"}'
 exit 1
 SH
@@ -14,4 +18,18 @@ export SCHEDULER=off TIMING_ENVIRONMENT=linux-x64 COORDINATOR_URL='' COORDINATOR
 if bash "$GITHUB_ACTION_PATH/run.sh" >/dev/null 2>&1; then echo 'failure assignment unexpectedly succeeded' >&2; exit 1; fi
 result=$(sed -n 's/^result=//p' "$GITHUB_OUTPUT")
 jq -e '.status == "failure" and [.failed[].name] == ["pkg-a"] and [.pending[].name] == ["pkg-b"] and (.completed | length) == 0' <<<"$result" >/dev/null
+
+export FAKE_SUCCESS=1 SCHEDULER=artifact MATRIX='{"assignmentId":"ci-1","items":[{"group":"ci","name":"pkg-a","task":"test"}]}'
+export GITHUB_JOB=yarn-run
+bash "$GITHUB_ACTION_PATH/run.sh" >/dev/null
+yarn_sample=$(sed -n 's/^sample-path=//p' "$GITHUB_OUTPUT")
+yarn_name=$(sed -n 's/^sample-name=//p' "$GITHUB_OUTPUT")
+: > "$GITHUB_OUTPUT"
+export GITHUB_JOB=pnpm-run
+bash "$GITHUB_ACTION_PATH/run.sh" >/dev/null
+pnpm_sample=$(sed -n 's/^sample-path=//p' "$GITHUB_OUTPUT")
+pnpm_name=$(sed -n 's/^sample-name=//p' "$GITHUB_OUTPUT")
+test "$yarn_sample" != "$pnpm_sample" && test "$yarn_name" != "$pnpm_name"
+test -s "$yarn_sample" && test -s "$pnpm_sample"
+jq -e '.samples | length == 1' "$yarn_sample" "$pnpm_sample" >/dev/null
 echo 'assignment failure contract passed'

@@ -24,7 +24,10 @@ npm install --save-dev @nanoom/cli
       ]
     }
   },
-  "globalDependencies": ["yarn.lock", "tsconfig.json"]
+  "globalDependencies": ["yarn.lock", "tsconfig.json"],
+  "workspace": { "include": ["packages/*", "tools/*"] },
+  "affected": { "maxFetchDepth": 2048 },
+  "checkout": { "always": ["scripts"] }
 }
 ```
 
@@ -41,6 +44,67 @@ nanoom history --input <sample-or-history.json>... --output <history.json>
 nanoom status <job,...> --results job=status,... [--json]
 nanoom schema [--output <file>]
 ```
+
+GitHub Actions의 `affected`는 명시적인 `base`/`head`가 없을 때 이벤트별 revision을
+해석합니다. pull request와 merge queue는 대상 revision을 사용하고, `push`는 현재
+workflow·branch의 마지막 성공한 push SHA부터 비교합니다. 따라서 main CI가 연속
+실패해도 그 사이의 변경이 다음 실행에서 빠지지 않습니다. 최초 실행이거나
+`actions: read` 권한이 없으면 Action은 축소 실행하지 않고 실패하므로, `actions: read`
+와 `contents: read`를 부여하거나 `base: <commit>`을 명시해 bootstrap합니다.
+
+`affected` Action의 canonical `result.revisionResolution`에는 `baseSource`, 실제
+full SHA의 `baseCommit`/`headCommit`, push일 때 `successfulRunId`가 포함됩니다.
+로그와 Step Summary에도 같은 값이 출력됩니다. CLI는 계속 명시적인
+`nanoom affected --base ... --head ...`만 받아 플랫폼 독립적으로 동작합니다.
+
+## Sparse checkout
+
+`affected` job은 non-cone으로 root `package.json`, `nanoom.config.json`, 그리고
+`workspace.include`에 해당하는 모든 workspace `package.json`만 checkout할 수 있습니다.
+Nanoom은 Nx/Turbo 설정을 읽지 않고 이 manifest들로 graph를 만들며, 빠진 manifest가
+있으면 불완전한 결과를 내지 않고 실패합니다. shallow history가 부족하면 tree와 blob 없이
+32 → 128 → 512 → `affected.maxFetchDepth` 순서로만 가져옵니다.
+configured workspace의 `package.json`이 삭제되거나 rename되면 현재 graph만으로 이전
+dependency를 복원하지 않고, 남아 있는 workspace 전체를 보수적으로 affected 처리합니다.
+
+각 matrix entry의 `checkout`은 affected workspace, 내부 dependency closure,
+`checkout.always`의 합집합입니다. run job은 이를 cone mode에 그대로 전달합니다.
+cone mode는 선택한 디렉터리와 root 파일을 함께 checkout하므로 lockfile과 root 설정은
+별도 pattern이 필요 없습니다.
+
+```yaml
+# affected job
+- uses: actions/checkout@v4
+  with:
+    fetch-depth: 1
+    sparse-checkout-cone-mode: false
+    sparse-checkout: |
+      /package.json
+      /nanoom.config.json
+      /packages/*/package.json
+      /tools/*/package.json
+
+# run matrix job env: self-hosted runner의 이전 worktree와 격리
+env:
+  NANOOM_WORKDIR: .nanoom/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}-${{ strategy.job-index }}
+
+- uses: actions/checkout@v4
+  with:
+    path: ${{ env.NANOOM_WORKDIR }}
+    fetch-depth: 1
+    sparse-checkout-cone-mode: ${{ matrix.checkout.coneMode }}
+    sparse-checkout: ${{ matrix.checkout.sparseCheckout }}
+
+- uses: XionWCFM/nanoom/.github/actions/run@v0.3.1
+  with:
+    cwd: ${{ env.NANOOM_WORKDIR }}
+    matrix: ${{ toJSON(matrix) }}
+    group: ci
+    cleanupCheckout: true
+```
+
+`cleanupCheckout`은 명시적으로 켠 경우에만 동작하며, `cwd`가 `.nanoom/` 아래의
+격리 경로가 아니면 삭제를 거부합니다.
 
 `run --json`은 성공 실행마다 `workspace`, 실제 `runner`, `durationMs`를 냅니다. 첫 실패 뒤에는 새 작업을 시작하지 않고 `completed`, `failed`, `pending`을 남깁니다. `install`은 assignment의 workspace union을 한 번에 focused install할 수 있습니다.
 

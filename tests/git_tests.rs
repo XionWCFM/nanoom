@@ -145,6 +145,6 @@ fn test_resolve_base_commit_tip_mode() {
         ref_name: "main".to_string(),
     };
 
-    let base = resolve_base_commit(&repo, &event, ComparisonMode::Tip).unwrap();
+    let base = resolve_base_commit(&repo, &event, ComparisonMode::Tip, 2048).unwrap();
     assert!(!base.is_empty());
 }

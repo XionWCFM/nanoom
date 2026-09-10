@@ -1,10 +1,9 @@
-use crate::config::{
-    Config, DiscoveredWorkspace, NxJson, PackageJson, PnpmWorkspaceYaml, TurboJson, WorkspacesField,
-};
+use crate::config::{Config, DiscoveredWorkspace, PackageJson};
 use crate::error::Result;
-use globset::{Glob, GlobMatcher, GlobSetBuilder};
+use globset::{Glob, GlobSetBuilder};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use walkdir::WalkDir;
 
 #[derive(Debug, Clone)]
@@ -124,43 +123,58 @@ impl Workspace {
     pub fn project_count(&self) -> usize {
         self.projects.len()
     }
+
+    pub fn dependency_closure_paths(&self, name: &str, cwd: &Path) -> Vec<String> {
+        let mut pending = vec![name.to_string()];
+        let mut seen = HashSet::new();
+        let mut paths = Vec::new();
+        while let Some(current) = pending.pop() {
+            if !seen.insert(current.clone()) {
+                continue;
+            }
+            let Some(project) = self.get_project_by_name(&current) else {
+                continue;
+            };
+            paths.push(
+                project
+                    .path
+                    .strip_prefix(cwd)
+                    .unwrap_or(&project.path)
+                    .to_string_lossy()
+                    .into_owned(),
+            );
+            pending.extend(
+                project
+                    .dependencies
+                    .iter()
+                    .filter(|dependency| self.get_project_by_name(dependency).is_some())
+                    .cloned(),
+            );
+        }
+        paths.sort();
+        paths.dedup();
+        paths
+    }
 }
 
 fn discover_workspaces(config: &Config, cwd: &Path) -> Result<Vec<DiscoveredWorkspace>> {
     let mut workspaces = Vec::new();
-    let mut seen_paths = HashSet::new();
+    for entry in WalkDir::new(cwd)
+        .follow_links(false)
+        .into_iter()
+        .filter_entry(|entry| !matches!(entry.file_name().to_str(), Some(".git" | "node_modules")))
+    {
+        let entry = entry?;
+        if entry.file_name() != "package.json" {
+            continue;
+        }
+        let Some(path) = entry.path().parent() else {
+            continue;
+        };
+        let relative = path.strip_prefix(cwd).unwrap_or(path);
 
-    let pnpm_workspaces = discover_pnpm_workspaces(cwd)?;
-    let turbo_workspaces = discover_turbo_workspaces(cwd)?;
-    let nx_workspaces = discover_nx_workspaces(cwd)?;
-    let yarn_workspaces = discover_yarn_workspaces(cwd)?;
-
-    let all_discovered = [
-        pnpm_workspaces,
-        turbo_workspaces,
-        nx_workspaces,
-        yarn_workspaces,
-    ]
-    .concat();
-
-    for ws in all_discovered {
-        let relative = ws.path.strip_prefix(cwd).unwrap_or(&ws.path);
-
-        let include = config.workspace.include.is_empty()
-            || config.workspace.include.iter().any(|pattern| {
-                Glob::new(pattern)
-                    .map(|g| g.compile_matcher().is_match(relative))
-                    .unwrap_or(false)
-            });
-
-        let exclude = config.workspace.exclude.iter().any(|pattern| {
-            Glob::new(pattern)
-                .map(|g| g.compile_matcher().is_match(relative))
-                .unwrap_or(false)
-        });
-
-        if include && !exclude && seen_paths.insert(ws.path.clone()) {
-            workspaces.push(ws);
+        if workspace_path_is_included(config, relative) {
+            workspaces.push(read_workspace(path, cwd)?);
         }
     }
 
@@ -168,139 +182,57 @@ fn discover_workspaces(config: &Config, cwd: &Path) -> Result<Vec<DiscoveredWork
     Ok(workspaces)
 }
 
-fn discover_pnpm_workspaces(cwd: &Path) -> Result<Vec<DiscoveredWorkspace>> {
-    let pnpm_yaml = cwd.join("pnpm-workspace.yaml");
-    if !pnpm_yaml.exists() {
+pub fn missing_workspace_manifests(config: &Config, cwd: &Path) -> Result<Vec<PathBuf>> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(cwd)
+        .args(["ls-files", "-z", "--", "*/package.json"])
+        .output()?;
+    if !output.status.success() {
         return Ok(vec![]);
     }
 
-    let content = std::fs::read_to_string(&pnpm_yaml)?;
-    let pnpm_ws: PnpmWorkspaceYaml = serde_yaml::from_str(&content)?;
-
-    let mut workspaces = Vec::new();
-    for pattern in pnpm_ws.packages {
-        let matcher = workspace_glob(&pattern)?;
-
-        for entry in WalkDir::new(cwd).follow_links(false) {
-            let path = entry?.path().to_path_buf();
-            if path.join("package.json").exists() {
-                let relative = path.strip_prefix(cwd).unwrap_or(&path);
-                if matcher.is_match(relative) {
-                    workspaces.push(read_workspace(&path, cwd)?);
-                }
-            }
-        }
-    }
-
-    Ok(workspaces)
-}
-
-fn discover_turbo_workspaces(cwd: &Path) -> Result<Vec<DiscoveredWorkspace>> {
-    let turbo_json = cwd.join("turbo.json");
-    if !turbo_json.exists() {
-        return Ok(vec![]);
-    }
-
-    let content = std::fs::read_to_string(&turbo_json)?;
-    let _turbo: TurboJson = serde_json::from_str(&content)?;
-
-    // Turbo normally delegates package membership to the package manager.
-    // Reuse the root package.json workspaces instead of walking node_modules,
-    // docs, fixtures, and nested unrelated packages.
-    let workspaces = discover_yarn_workspaces(cwd)?;
-    if !workspaces.is_empty() {
-        return Ok(workspaces);
-    }
-
-    discover_direct_package_dirs(cwd)
-}
-
-fn discover_nx_workspaces(cwd: &Path) -> Result<Vec<DiscoveredWorkspace>> {
-    let nx_json = cwd.join("nx.json");
-    if !nx_json.exists() {
-        return Ok(vec![]);
-    }
-
-    let content = std::fs::read_to_string(&nx_json)?;
-    let nx: NxJson = serde_json::from_str(&content)?;
-
-    if !nx.projects.is_empty() {
-        let mut workspaces = Vec::new();
-        for project_path in nx.projects.values() {
-            let path = cwd.join(project_path);
-            if path.join("package.json").exists() {
-                workspaces.push(read_workspace(&path, cwd)?);
-            }
-        }
-        return Ok(workspaces);
-    }
-
-    let workspaces = discover_yarn_workspaces(cwd)?;
-    if !workspaces.is_empty() {
-        return Ok(workspaces);
-    }
-
-    discover_direct_package_dirs(cwd)
-}
-
-fn discover_direct_package_dirs(cwd: &Path) -> Result<Vec<DiscoveredWorkspace>> {
-    let mut workspaces = Vec::new();
-    for container in ["packages", "apps", "libs"] {
-        let root = cwd.join(container);
-        if !root.is_dir() {
+    let mut missing = Vec::new();
+    for bytes in output
+        .stdout
+        .split(|byte| *byte == 0)
+        .filter(|path| !path.is_empty())
+    {
+        let relative = PathBuf::from(String::from_utf8_lossy(bytes).into_owned());
+        let Some(parent) = relative.parent() else {
             continue;
-        }
-        for entry in std::fs::read_dir(root)? {
-            let path = entry?.path();
-            if path.is_dir() && path.join("package.json").exists() {
-                workspaces.push(read_workspace(&path, cwd)?);
-            }
+        };
+        if workspace_path_is_included(config, parent) && !cwd.join(&relative).is_file() {
+            missing.push(relative);
         }
     }
-    Ok(workspaces)
+    missing.sort();
+    Ok(missing)
 }
 
-fn discover_yarn_workspaces(cwd: &Path) -> Result<Vec<DiscoveredWorkspace>> {
-    let package_json = cwd.join("package.json");
-    if !package_json.exists() {
-        return Ok(vec![]);
-    }
-
-    let content = std::fs::read_to_string(&package_json)?;
-    let root_pkg: PackageJson = serde_json::from_str(&content)?;
-
-    let patterns: Vec<String> = match root_pkg.workspaces {
-        WorkspacesField::Array(arr) => arr,
-        WorkspacesField::Object(obj) => obj.packages.unwrap_or_default(),
-    };
-
-    if patterns.is_empty() {
-        return Ok(vec![]);
-    }
-
-    let mut workspaces = Vec::new();
-    for pattern in &patterns {
-        let matcher = workspace_glob(pattern)?;
-
-        for entry in WalkDir::new(cwd).follow_links(false) {
-            let path = entry?.path().to_path_buf();
-            if path.join("package.json").exists() {
-                let relative = path.strip_prefix(cwd).unwrap_or(&path);
-                if matcher.is_match(relative) {
-                    workspaces.push(read_workspace(&path, cwd)?);
-                }
-            }
-        }
-    }
-
-    Ok(workspaces)
+pub fn is_workspace_manifest(config: &Config, path: &Path, cwd: &Path) -> bool {
+    let relative = path.strip_prefix(cwd).unwrap_or(path);
+    relative
+        .file_name()
+        .is_some_and(|name| name == "package.json")
+        && relative
+            .parent()
+            .is_some_and(|parent| workspace_path_is_included(config, parent))
 }
 
-fn workspace_glob(pattern: &str) -> Result<GlobMatcher> {
-    Ok(globset::GlobBuilder::new(pattern)
-        .literal_separator(true)
-        .build()?
-        .compile_matcher())
+fn workspace_path_is_included(config: &Config, relative: &Path) -> bool {
+    let include = config.workspace.include.is_empty()
+        || config.workspace.include.iter().any(|pattern| {
+            Glob::new(pattern)
+                .map(|glob| glob.compile_matcher().is_match(relative))
+                .unwrap_or(false)
+        });
+    let exclude = config.workspace.exclude.iter().any(|pattern| {
+        Glob::new(pattern)
+            .map(|glob| glob.compile_matcher().is_match(relative))
+            .unwrap_or(false)
+    });
+    include && !exclude
 }
 
 fn read_workspace(path: &Path, _root: &Path) -> Result<DiscoveredWorkspace> {
@@ -597,7 +529,7 @@ mod tests {
                 dev_dependencies: HashMap::new(),
                 peer_dependencies: HashMap::new(),
                 optional_dependencies: HashMap::new(),
-                workspaces: WorkspacesField::default(),
+                workspaces: crate::config::WorkspacesField::default(),
             },
             dependencies: vec![],
             dependency_specs: HashMap::new(),

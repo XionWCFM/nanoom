@@ -28,16 +28,22 @@ done
 ! grep -R -n 'XionWCFM/nanoom/.github/actions/_setup@main' .github/actions
 ! grep -R -nE 'PUSH_REF_NAME|PULL_REQUEST_(BASE|HEAD)_REF|MERGE_GROUP_(BASE|HEAD)_REF' .github/actions .github/workflows/ci.yml
 grep -q 'github.event.before' .github/actions/affected/action.yml
+grep -Fq 'EVENT_BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before || github.base_ref }}' .github/actions/affected/action.yml
 grep -q 'github.base_ref' .github/actions/affected/action.yml
 grep -q 'github.event.merge_group.base_sha' .github/actions/affected/action.yml
+grep -q 'github.workflow_ref' .github/actions/affected/action.yml
+grep -q 'github.ref_name' .github/actions/affected/action.yml
 grep -q '^  groups:' .github/actions/affected/action.yml
 grep -q 'output_bytes=.*has_change=.*groups=.*result' .github/actions/affected/run.sh
 grep -q 'UTF-16LE' .github/actions/affected/run.sh
 grep -q 'distribution' .github/actions/affected/run.sh
 grep -q 'historyStatus' .github/actions/affected/run.sh
+grep -q 'revisionResolution' .github/actions/affected/run.sh
 grep -q 'matrix:' .github/actions/install/action.yml
 grep -q 'matrix:' .github/actions/run/action.yml
 grep -q '^  group: {description: "Affected group' .github/actions/run/action.yml
+grep -q '^  cleanupCheckout:' .github/actions/run/action.yml
+grep -q 'always() && inputs.cleanupCheckout' .github/actions/run/action.yml
 grep -q 'items' .github/actions/run/run.sh
 grep -q 'durationMs' .github/actions/run/run.sh
 grep -q 'retention-days: 30' .github/actions/{run,history}/action.yml
@@ -49,6 +55,8 @@ grep -q 'all needed jobs succeeded or were skipped' .github/actions/status/run.s
 bash scripts/status-action-test.sh
 bash scripts/coordinator-contract-test.sh
 bash scripts/assignment-action-test.sh
+bash scripts/revision-action-test.sh
+bash scripts/cleanup-checkout-test.sh
 schema=$(mktemp); trap 'rm -f "$schema"' EXIT
 target/debug/nanoom schema --output "$schema" >/dev/null
 cmp nanoom.schema.json "$schema"

@@ -52,6 +52,8 @@ async fn test_calculate_affected_no_git_env() {
         group: std::collections::HashMap::new(),
         global_dependencies: vec![],
         workspace: nanoom::config::WorkspaceConfig::default(),
+        affected: nanoom::config::AffectedConfig::default(),
+        checkout: nanoom::config::CheckoutConfig::default(),
     };
 
     let result = calculate(&config, dir.path()).await;
@@ -109,6 +111,70 @@ async fn test_calculate_with_override_tip_reports_shards() {
     );
 }
 
+#[tokio::test]
+async fn deleted_workspace_manifest_conservatively_affects_every_remaining_workspace() {
+    let dir = tempdir().unwrap();
+    let git = |args: &[&str]| {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(dir.path())
+            .env("GIT_AUTHOR_NAME", "test")
+            .env("GIT_AUTHOR_EMAIL", "test@example.com")
+            .env("GIT_COMMITTER_NAME", "test")
+            .env("GIT_COMMITTER_EMAIL", "test@example.com")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    };
+    git(&["init", "-q"]);
+    for (name, deps) in [
+        ("app", vec![("core", "workspace:*")]),
+        ("core", vec![]),
+        ("unrelated", vec![]),
+    ] {
+        let path = dir.path().join(format!("packages/{name}"));
+        fs::create_dir_all(&path).unwrap();
+        create_package_json(&path, name, &deps);
+    }
+    fs::write(
+        dir.path().join("nanoom.config.json"),
+        r#"{"group":{"ci":{"tasks":["test"]}},"workspace":{"include":["packages/*"]}}"#,
+    )
+    .unwrap();
+    git(&["add", "."]);
+    git(&["commit", "-qm", "base"]);
+    fs::remove_file(dir.path().join("packages/core/package.json")).unwrap();
+    git(&["add", "-u"]);
+    git(&["commit", "-qm", "delete core manifest"]);
+
+    let config = Config::load(std::path::Path::new("nanoom.config.json"), dir.path()).unwrap();
+    let output = nanoom::affected::calculate_with_override(
+        &config,
+        dir.path(),
+        Some("HEAD~1"),
+        Some("HEAD"),
+    )
+    .await
+    .unwrap();
+    let mut names: Vec<_> = output.group["ci"]
+        .workspaces
+        .iter()
+        .map(|entry| entry.name.as_str())
+        .collect();
+    names.sort();
+    assert_eq!(names, ["app", "unrelated"]);
+    assert!(output
+        .diagnostics
+        .unwrap()
+        .reasons
+        .values()
+        .all(|reason| reason.kind == "workspaceManifestStructure"));
+}
+
 #[test]
 fn test_generate_matrix() {
     let output = AffectedOutput {
@@ -125,6 +191,7 @@ fn test_generate_matrix() {
                             task: "test".to_string(),
                             shard: None,
                             total_shards: None,
+                            checkout_paths: vec!["packages/pkg1".into()],
                         },
                         WorkspaceEntry {
                             group: "ci".into(),
@@ -133,6 +200,7 @@ fn test_generate_matrix() {
                             task: "build".to_string(),
                             shard: None,
                             total_shards: None,
+                            checkout_paths: vec!["packages/pkg2".into()],
                         },
                     ],
                     total_workspaces: 2,
@@ -153,6 +221,7 @@ fn test_generate_matrix() {
                             task: "test:e2e".to_string(),
                             shard: Some(1),
                             total_shards: Some(2),
+                            checkout_paths: vec!["packages/pkg1".into()],
                         },
                         WorkspaceEntry {
                             group: "e2e".into(),
@@ -161,6 +230,7 @@ fn test_generate_matrix() {
                             task: "test:e2e".to_string(),
                             shard: Some(2),
                             total_shards: Some(2),
+                            checkout_paths: vec!["packages/pkg1".into()],
                         },
                     ],
                     total_workspaces: 1,
@@ -182,6 +252,10 @@ fn test_generate_matrix() {
 
     let ci_include = matrix_obj["ci"]["include"].as_array().unwrap();
     assert_eq!(ci_include.len(), 2);
+    assert_eq!(
+        ci_include[0]["checkout"],
+        serde_json::json!({"coneMode": true, "sparseCheckout": "packages/pkg1"})
+    );
 
     let e2e_include = matrix_obj["e2e"]["include"].as_array().unwrap();
     assert_eq!(e2e_include.len(), 2);
@@ -204,6 +278,7 @@ fn test_generate_matrix_for_group() {
                     task: "test".to_string(),
                     shard: Some(1),
                     total_shards: Some(2),
+                    checkout_paths: vec!["packages/pkg1".into()],
                 }],
                 total_workspaces: 1,
                 affected_workspaces: 1,
@@ -246,6 +321,7 @@ fn test_workspace_entry_serialization() {
         task: "test".to_string(),
         shard: Some(1),
         total_shards: Some(1),
+        checkout_paths: vec!["packages/pkg1".into()],
     };
 
     let json = serde_json::to_value(&entry).unwrap();

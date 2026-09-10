@@ -304,8 +304,39 @@ fn test_workspace_config_defaults() {
         group: std::collections::HashMap::new(),
         global_dependencies: vec![],
         workspace: nanoom::config::WorkspaceConfig::default(),
+        affected: nanoom::config::AffectedConfig::default(),
+        checkout: nanoom::config::CheckoutConfig::default(),
     };
 
     assert_eq!(config.workspace.include, vec!["packages/*", "apps/*"]);
     assert_eq!(config.workspace.exclude, Vec::<String>::new());
+    assert_eq!(config.affected.max_fetch_depth, 2048);
+    assert!(config.checkout.always.is_empty());
+}
+
+#[test]
+fn checkout_paths_are_cone_directories_and_history_depth_is_bounded() {
+    let valid: Config = serde_json::from_value(serde_json::json!({
+        "group": {"ci": {"tasks": ["test"]}},
+        "affected": {"maxFetchDepth": 64},
+        "checkout": {"always": ["scripts", "tools/typescript-configs"]}
+    }))
+    .unwrap();
+    assert!(valid.validate().is_ok());
+
+    for value in [
+        serde_json::json!({"affected":{"maxFetchDepth":0}}),
+        serde_json::json!({"checkout":{"always":["../secret"]}}),
+        serde_json::json!({"checkout":{"always":["scripts/*"]}}),
+    ] {
+        let mut config = serde_json::json!({"group":{"ci":{"tasks":["test"]}}});
+        config
+            .as_object_mut()
+            .unwrap()
+            .extend(value.as_object().unwrap().clone());
+        assert!(serde_json::from_value::<Config>(config)
+            .unwrap()
+            .validate()
+            .is_err());
+    }
 }

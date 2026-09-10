@@ -39,8 +39,10 @@ runs:
         BASE: ${{ inputs.base }}
         HEAD: ${{ inputs.head }}
         EVENT: ${{ github.event_name }}
-        EVENT_BASE: ${{ github.event.before || github.base_ref || github.event.merge_group.base_sha }}
+        EVENT_BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before || github.base_ref }}
         EVENT_HEAD: ${{ github.sha }}
+        REF_NAME: ${{ github.ref_name }}
+        WORKFLOW_REF: ${{ github.workflow_ref }}
         SCHEDULER: ${{ inputs.scheduler }}
         TIMING_RUNNER: ${{ inputs.timingRunner }}
         TIMING_ENVIRONMENT: ${{ inputs.timingEnvironment || format('{0}-{1}', runner.os, runner.arch) }}

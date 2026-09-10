@@ -18,6 +18,38 @@ pub struct Config {
 
     #[serde(default)]
     pub workspace: WorkspaceConfig,
+
+    #[serde(default)]
+    pub affected: AffectedConfig,
+
+    #[serde(default)]
+    pub checkout: CheckoutConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AffectedConfig {
+    #[serde(default = "default_max_fetch_depth")]
+    pub max_fetch_depth: usize,
+}
+
+impl Default for AffectedConfig {
+    fn default() -> Self {
+        Self {
+            max_fetch_depth: default_max_fetch_depth(),
+        }
+    }
+}
+
+fn default_max_fetch_depth() -> usize {
+    2048
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CheckoutConfig {
+    #[serde(default)]
+    pub always: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -100,6 +132,27 @@ impl Config {
             return Err(Error::ConfigValidation(
                 "At least one group must be defined".to_string(),
             ));
+        }
+
+        if self.affected.max_fetch_depth == 0 {
+            return Err(Error::ConfigValidation(
+                "affected.maxFetchDepth must be greater than 0".to_string(),
+            ));
+        }
+
+        for path in &self.checkout.always {
+            let candidate = Path::new(path);
+            if path.is_empty()
+                || candidate.is_absolute()
+                || candidate
+                    .components()
+                    .any(|part| part == std::path::Component::ParentDir)
+                || path.contains(['*', '?', '[', ']'])
+            {
+                return Err(Error::ConfigValidation(format!(
+                    "checkout.always entry '{path}' must be a repository-relative directory without glob syntax"
+                )));
+            }
         }
 
         for (name, group) in &self.group {
