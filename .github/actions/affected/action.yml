@@ -1,7 +1,7 @@
 name: nanoom affected
 description: Calculate affected work and assignment matrices
 inputs:
-  version: {description: "Release tag matching the pinned Action ref, or local for repository tests", default: action}
+  version: {description: "Action ref (version tag or latest), explicit release tag, or local for repository tests", default: action}
   config: {description: "Config path relative to cwd", default: nanoom.config.json}
   cwd: {description: "Consumer working directory", default: '.'}
   base: {description: "Explicit comparison base; empty resolves from the GitHub event", default: ''}

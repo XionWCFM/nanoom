@@ -10,7 +10,7 @@ inputs:
   cleanupCheckout: {description: "Delete cwd after the run when it is an isolated .nanoom/ checkout", default: 'false'}
   coordinatorUrl: {description: "HTTPS coordinator base URL for scheduler=http", default: ''}
   cwd: {description: "Consumer working directory", default: .}
-  version: {description: "Release tag matching the pinned Action ref, or local for repository tests", default: action}
+  version: {description: "Action ref (version tag or latest), explicit release tag, or local for repository tests", default: action}
   releaseBaseUrl: {description: "HTTPS origin hosting Nanoom release assets; use your GitHub Enterprise Server URL when it mirrors releases", default: "https://github.com"}
 outputs:
   result:

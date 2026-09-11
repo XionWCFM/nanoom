@@ -59,6 +59,9 @@ full SHA의 `baseCommit`/`headCommit`, push일 때 `successfulRunId`가 포함�
 
 ## Sparse checkout
 
+공개 workflow는 `@latest`를 사용합니다. 릴리스가 검증된 뒤 `latest` Action tag가 이동하고,
+setup은 GitHub 최신 Release의 실제 versioned asset과 checksum을 사용합니다.
+
 `affected` job은 non-cone으로 root `package.json`, `nanoom.config.json`, 그리고
 `workspace.include`에 해당하는 모든 workspace `package.json`만 checkout할 수 있습니다.
 Nanoom은 Nx/Turbo 설정을 읽지 않고 이 manifest들로 graph를 만들며, 빠진 manifest가
@@ -95,7 +98,7 @@ env:
     sparse-checkout-cone-mode: ${{ matrix.checkout.coneMode }}
     sparse-checkout: ${{ matrix.checkout.sparseCheckout }}
 
-- uses: XionWCFM/nanoom/.github/actions/run@v0.4.0
+- uses: XionWCFM/nanoom/.github/actions/run@latest
   with:
     cwd: ${{ env.NANOOM_WORKDIR }}
     matrix: ${{ toJSON(matrix) }}
@@ -116,22 +119,22 @@ history가 없거나 손상됐거나 권한이 없으면 CI를 실패시키지 �
 
 ```yaml
 - id: affected
-  uses: XionWCFM/nanoom/.github/actions/affected@v0.4.0
+  uses: XionWCFM/nanoom/.github/actions/affected@latest
   with:
     scheduler: artifact
 
-- uses: XionWCFM/nanoom/.github/actions/install@v0.4.0
+- uses: XionWCFM/nanoom/.github/actions/install@latest
   with:
     matrix: ${{ toJSON(matrix) }}
     packageManager: pnpm
 
-- uses: XionWCFM/nanoom/.github/actions/run@v0.4.0
+- uses: XionWCFM/nanoom/.github/actions/run@latest
   with:
     matrix: ${{ toJSON(matrix) }}
     group: ci
     scheduler: artifact
 
-- uses: XionWCFM/nanoom/.github/actions/history@v0.4.0
+- uses: XionWCFM/nanoom/.github/actions/history@latest
   with:
     scheduler: artifact
 ```

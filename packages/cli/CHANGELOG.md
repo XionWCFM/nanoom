@@ -7,6 +7,7 @@
 - Add manifest-only affected calculation, bounded commit-only history deepening, and cone-mode checkout plans for affected workspaces and their dependency closure.
 - Resolve push comparisons from the last successful run of the same workflow and branch.
 - Support opt-in cleanup of dynamically isolated sparse-checkout worktrees.
+- Publish a `latest` Action tag that resolves and verifies the newest GitHub Release asset.
 
 ## 0.3.1
 
