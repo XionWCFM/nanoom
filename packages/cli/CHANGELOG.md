@@ -1,5 +1,11 @@
 # @nanoom/cli
 
+## 0.4.1
+
+### Patch Changes
+
+- Accept the fixture's three positive build, test, and typecheck run jobs in the hosted completion gate.
+
 ## 0.4.0
 
 ### Minor Changes
