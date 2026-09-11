@@ -493,6 +493,35 @@ mod tests {
     }
 
     #[test]
+    fn copied_paths_are_changed_but_not_structural() {
+        let dir = init_repo();
+        git(dir.path(), &["config", "diff.renames", "copies"]);
+        std::fs::copy(dir.path().join("a.txt"), dir.path().join("copy.txt")).unwrap();
+        std::fs::write(dir.path().join("a.txt"), "changed").unwrap();
+        git(dir.path(), &["add", "."]);
+        git(dir.path(), &["commit", "-m", "copy"]);
+
+        let repo = GitRepo::open(dir.path()).unwrap();
+        let (changed, structural) = repo
+            .get_changed_files_with_structure("HEAD^", None)
+            .unwrap();
+        assert_eq!(changed.len(), 2);
+        assert!(structural.is_empty());
+    }
+
+    #[test]
+    fn structured_diff_reports_an_invalid_revision() {
+        let dir = init_repo();
+        let error = GitRepo::open(dir.path())
+            .unwrap()
+            .get_changed_files_with_structure("missing", None)
+            .unwrap_err();
+        assert!(
+            matches!(error, Error::GitError(message) if message.contains("git diff --name-status failed"))
+        );
+    }
+
+    #[test]
     fn tip_comparison_includes_base_branch_divergence() {
         let dir = init_repo();
         git(dir.path(), &["checkout", "-b", "feature"]);

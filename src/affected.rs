@@ -224,7 +224,7 @@ pub async fn calculate_with_override(
                         workspaces.push(WorkspaceEntry {
                             group: group_name.clone(),
                             name: project.name.clone(),
-                            path: project.path.to_string_lossy().to_string(),
+                            path: project.path.to_string_lossy().replace('\\', "/"),
                             task: task.clone(),
                             shard: Some(shard_idx),
                             total_shards: Some(shard_rule.shard),
@@ -235,7 +235,7 @@ pub async fn calculate_with_override(
                     workspaces.push(WorkspaceEntry {
                         group: group_name.clone(),
                         name: project.name.clone(),
-                        path: project.path.to_string_lossy().to_string(),
+                        path: project.path.to_string_lossy().replace('\\', "/"),
                         task: task.clone(),
                         shard: None,
                         total_shards: None,
@@ -408,7 +408,7 @@ fn relative_paths(files: &[PathBuf], cwd: &Path) -> Vec<String> {
             file.strip_prefix(cwd)
                 .unwrap_or(file)
                 .to_string_lossy()
-                .into_owned()
+                .replace('\\', "/")
         })
         .collect()
 }

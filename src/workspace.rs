@@ -141,7 +141,7 @@ impl Workspace {
                     .strip_prefix(cwd)
                     .unwrap_or(&project.path)
                     .to_string_lossy()
-                    .into_owned(),
+                    .replace('\\', "/"),
             );
             pending.extend(
                 project
