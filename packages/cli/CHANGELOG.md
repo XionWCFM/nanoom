@@ -1,5 +1,11 @@
 # @nanoom/cli
 
+## 0.4.2
+
+### Patch Changes
+
+- Ignore generated manifests excluded by `.gitignore` and keep workspace `*` globs to one path segment.
+
 ## 0.4.1
 
 ### Patch Changes
