@@ -53,6 +53,7 @@ workspace를 현재 graph에서 놓치면 빠른 대신 잘못된 affected 결�
 - hosted fixture와 released Action 검증 전에는 릴리스 완료로 보지 않는다.
 - Nanoom과 nanoom-fixtures를 각각 main에 병합하고, 정식 release tag를 소비하는 fixture의
   post-merge hosted run과 aggregate status가 성공해야 작업 완료로 본다.
+- fixture completion gate는 build, test, typecheck의 세 run job과 aggregate status 성공을 검증한다.
 
 ## 결과
 

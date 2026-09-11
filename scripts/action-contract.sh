@@ -57,6 +57,7 @@ bash scripts/coordinator-contract-test.sh
 bash scripts/assignment-action-test.sh
 bash scripts/revision-action-test.sh
 bash scripts/cleanup-checkout-test.sh
+bash scripts/fixture-completion-test.sh
 schema=$(mktemp); trap 'rm -f "$schema"' EXIT
 target/debug/nanoom schema --output "$schema" >/dev/null
 cmp nanoom.schema.json "$schema"
