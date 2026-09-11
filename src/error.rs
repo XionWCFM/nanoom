@@ -33,8 +33,8 @@ pub enum Error {
     #[error("Glob error: {0}")]
     Glob(#[from] globset::Error),
 
-    #[error("Walkdir error: {0}")]
-    Walkdir(#[from] walkdir::Error),
+    #[error("Workspace walk error: {0}")]
+    WorkspaceWalk(#[from] ignore::Error),
 
     #[error("Task not found: {0}")]
     TaskNotFound(String),

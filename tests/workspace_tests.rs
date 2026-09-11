@@ -224,6 +224,43 @@ fn test_discover_yarn_workspaces_array_form() {
 }
 
 #[test]
+fn ignored_build_manifests_are_not_workspaces() {
+    let dir = tempdir().unwrap();
+    write_json(
+        &dir.path().join("services/app/package.json"),
+        &package_json("app", &[]),
+    );
+    write_json(
+        &dir.path().join("services/app/.next/package.json"),
+        &package_json(".next", &[]),
+    );
+    fs::write(dir.path().join(".gitignore"), ".next/\n").unwrap();
+
+    let workspace = Workspace::discover(&simple_config(&["services/**"], &[]), dir.path()).unwrap();
+
+    assert_eq!(workspace.project_count(), 1);
+    assert!(workspace.get_project_by_name("app").is_some());
+}
+
+#[test]
+fn workspace_star_does_not_match_nested_manifests() {
+    let dir = tempdir().unwrap();
+    write_json(
+        &dir.path().join("services/app/package.json"),
+        &package_json("app", &[]),
+    );
+    write_json(
+        &dir.path().join("services/app/generated/package.json"),
+        &package_json("generated", &[]),
+    );
+
+    let workspace = Workspace::discover(&simple_config(&["services/*"], &[]), dir.path()).unwrap();
+
+    assert_eq!(workspace.project_count(), 1);
+    assert!(workspace.get_project_by_name("app").is_some());
+}
+
+#[test]
 fn duplicate_workspace_names_are_rejected() {
     let dir = tempdir().unwrap();
     yarn_workspace_fixture(dir.path());

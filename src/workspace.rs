@@ -1,10 +1,10 @@
 use crate::config::{Config, DiscoveredWorkspace, PackageJson};
 use crate::error::Result;
-use globset::{Glob, GlobSetBuilder};
+use globset::{Glob, GlobBuilder, GlobSetBuilder};
+use ignore::WalkBuilder;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use walkdir::WalkDir;
 
 #[derive(Debug, Clone)]
 pub struct Project {
@@ -159,10 +159,12 @@ impl Workspace {
 
 fn discover_workspaces(config: &Config, cwd: &Path) -> Result<Vec<DiscoveredWorkspace>> {
     let mut workspaces = Vec::new();
-    for entry in WalkDir::new(cwd)
+    for entry in WalkBuilder::new(cwd)
         .follow_links(false)
-        .into_iter()
+        .hidden(false)
+        .require_git(false)
         .filter_entry(|entry| !matches!(entry.file_name().to_str(), Some(".git" | "node_modules")))
+        .build()
     {
         let entry = entry?;
         if entry.file_name() != "package.json" {
@@ -223,12 +225,16 @@ pub fn is_workspace_manifest(config: &Config, path: &Path, cwd: &Path) -> bool {
 fn workspace_path_is_included(config: &Config, relative: &Path) -> bool {
     let include = config.workspace.include.is_empty()
         || config.workspace.include.iter().any(|pattern| {
-            Glob::new(pattern)
+            GlobBuilder::new(pattern)
+                .literal_separator(true)
+                .build()
                 .map(|glob| glob.compile_matcher().is_match(relative))
                 .unwrap_or(false)
         });
     let exclude = config.workspace.exclude.iter().any(|pattern| {
-        Glob::new(pattern)
+        GlobBuilder::new(pattern)
+            .literal_separator(true)
+            .build()
             .map(|glob| glob.compile_matcher().is_match(relative))
             .unwrap_or(false)
     });
