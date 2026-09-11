@@ -23,7 +23,7 @@ work item 하나당 runner 하나를 만드는 기존 matrix는 affected 규모�
 - `install`: 정적 assignment의 workspace union을 한 번에 focused install한다. continuous agent는 미래 claim을 모르므로 전체 workspace closure를 설치한다.
 - workspace manifest의 `packages/*`에서 `*`는 경로 구분자를 넘지 않는다. focused install이 만든 nested `node_modules` package를 workspace로 다시 발견하지 않는다.
 - `run`: 정적 items를 순서대로 실행하거나 HTTP claim loop를 수행한다. 첫 실패 뒤 새 item을 시작하지 않으며 canonical JSON에 completed/failed/pending을 남긴다. nested relative `cwd`에서도 Turbo/Nx의 local `node_modules/.bin`은 절대 경로로 해석한다.
-- `history`: 성공 sample과 기존 history를 병합해 key별 최근 7개만 남긴다.
+- `history`: 성공 sample과 기존 history를 병합해 key별 최근 7개만 남긴다. Timing sample 이름은 GitHub job과 assignment ID를 함께 포함해 서로 다른 job의 동일 assignment ID가 충돌하지 않게 한다.
 - `status`: 오직 `needs` JSON을 평가한다.
 
 ## HTTP `/v1` 책임 경계

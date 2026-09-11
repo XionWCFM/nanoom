@@ -445,6 +445,8 @@ mod tests {
                 include,
                 exclude: vec![],
             },
+            affected: crate::config::AffectedConfig::default(),
+            checkout: crate::config::CheckoutConfig::default(),
         }
     }
 
@@ -718,6 +720,7 @@ mod tests {
                     task: "test".into(),
                     shard: None,
                     total_shards: None,
+                    checkout_paths: vec!["packages/app".into()],
                 },
                 crate::affected::WorkspaceEntry {
                     group: "ci".into(),
@@ -726,6 +729,7 @@ mod tests {
                     task: "build".into(),
                     shard: Some(2),
                     total_shards: Some(2),
+                    checkout_paths: vec!["packages/app".into()],
                 },
             ],
             total_workspaces: 1,

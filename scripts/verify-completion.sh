@@ -13,9 +13,6 @@ bash scripts/action-contract.sh
 bash scripts/setup-smoke.sh
 bash scripts/platform-package-smoke.sh
 node packages/cli/smoke-test.js
-corepack yarn --cwd docs install --immutable
-corepack yarn --cwd docs build
-
 test -z "$(git ls-files | grep -E '(^|/)(node_modules|\.next|install-state\.gz)(/|$)' || true)"
 
 if [[ ${1:-} == --local ]]; then

@@ -4,7 +4,7 @@ inputs:
   matrix: {description: "One matrix entry or include wrapper emitted by nanoom affected", required: true}
   packageManager: {description: "Package manager override: auto, pnpm, or yarn", default: auto}
   cwd: {description: "Consumer working directory", default: .}
-  version: {description: "Release tag matching the pinned Action ref, or local for repository tests", default: action}
+  version: {description: "Action ref (version tag or latest), explicit release tag, or local for repository tests", default: action}
   releaseBaseUrl: {description: "HTTPS origin hosting Nanoom release assets; use your GitHub Enterprise Server URL when it mirrors releases", default: "https://github.com"}
 outputs:
   result:

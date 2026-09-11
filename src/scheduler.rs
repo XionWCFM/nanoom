@@ -33,6 +33,7 @@ pub struct Assignment {
     pub items: Vec<WorkspaceEntry>,
     pub predicted_duration_ms: u64,
     pub reason: String,
+    pub checkout: crate::affected::CheckoutPlan,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -154,6 +155,7 @@ pub fn assign(
             items: vec![],
             predicted_duration_ms: 0,
             reason: "longest predicted item assigned to the least-loaded bucket".into(),
+            checkout: crate::affected::checkout_plan(Vec::new()),
         })
         .collect();
     for (item, prediction, _) in weighted {
@@ -164,6 +166,13 @@ pub fn assign(
             .map(|(index, _)| index)
             .unwrap_or(0);
         buckets[index].predicted_duration_ms += prediction;
+        buckets[index].checkout = crate::affected::checkout_plan(
+            buckets[index]
+                .items
+                .iter()
+                .flat_map(|item| item.checkout_paths.iter().cloned())
+                .chain(item.checkout_paths.iter().cloned()),
+        );
         buckets[index].items.push(item);
     }
     buckets
@@ -234,6 +243,7 @@ mod tests {
             task: "test".into(),
             shard: None,
             total_shards: None,
+            checkout_paths: vec![format!("packages/{name}")],
         }
     }
 

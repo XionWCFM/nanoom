@@ -5,7 +5,7 @@ inputs:
   runIds: {description: "JSON array of HTTP coordinator run IDs", default: '[]'}
   coordinatorUrl: {description: "HTTPS coordinator base URL for scheduler=http", default: ''}
   historyArtifactName: {description: "Artifact name used for merged timing history", default: nanoom-timing-history}
-  version: {description: "Release tag matching the pinned Action ref, or local for repository tests", default: action}
+  version: {description: "Action ref (version tag or latest), explicit release tag, or local for repository tests", default: action}
   releaseBaseUrl: {description: "HTTPS origin hosting Nanoom release assets", default: "https://github.com"}
 outputs:
   result: {description: "Canonical history result", value: "${{ steps.final.outputs.result || steps.history.outputs.result }}"}

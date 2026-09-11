@@ -19,13 +19,18 @@ if [[ "$requested" == local ]]; then
 fi
 
 if [[ "$requested" == action ]]; then
-  [[ "$action_ref" == v* ]] || {
-    echo "Cannot derive a release version from GitHub Action ref '$action_ref'. Pin the Action to a release or set version explicitly." >&2
+  [[ "$action_ref" == v* || "$action_ref" == latest ]] || {
+    echo "Cannot derive a release version from GitHub Action ref '$action_ref'. Use @latest, a versioned release ref, or set version explicitly." >&2
     exit 2
   }
   version=$action_ref
 else
   version=$requested
+fi
+
+if [[ "$version" == latest ]]; then
+  version=$(curl -fsSL -H "Authorization: Bearer $TOKEN" -H 'Accept: application/vnd.github+json' \
+    "$api/repos/$repository/releases/latest" | jq -er '.tag_name | select(startswith("v"))')
 fi
 
 case "$(uname -s)" in

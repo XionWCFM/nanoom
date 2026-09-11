@@ -59,6 +59,9 @@ pub enum Error {
     #[error("Shallow repository: need to fetch more history. Run 'git fetch --unshallow' or increase fetch depth")]
     ShallowRepository,
 
+    #[error("Shallow repository still has no common ancestor after fetching {max_depth} commits without trees or blobs; increase affected.maxFetchDepth")]
+    HistoryDepthExceeded { max_depth: usize },
+
     #[error("Schema generation error: {0}")]
     SchemaGeneration(String),
 

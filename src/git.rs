@@ -64,6 +64,61 @@ impl GitRepo {
         self.get_changed_files_for_range(&format!("{}..{}", base, head_rev))
     }
 
+    pub fn get_changed_files_with_structure(
+        &self,
+        base: &str,
+        head: Option<&str>,
+    ) -> Result<(Vec<PathBuf>, Vec<PathBuf>)> {
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(&self.workdir)
+            .args(["diff", "--name-status", "-z"])
+            .arg(format!("{}..{}", base, head.unwrap_or("HEAD")))
+            .output()?;
+        if !output.status.success() {
+            return Err(Error::GitError(format!(
+                "git diff --name-status failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            )));
+        }
+
+        let mut fields = output.stdout.split(|byte| *byte == 0);
+        let mut changed = Vec::new();
+        let mut structural = Vec::new();
+        while let Some(status) = fields.next().filter(|field| !field.is_empty()) {
+            match status[0] {
+                b'D' => {
+                    if let Some(path) = fields.next() {
+                        let path = self.workdir.join(String::from_utf8_lossy(path).as_ref());
+                        changed.push(path.clone());
+                        structural.push(path);
+                    }
+                }
+                b'R' => {
+                    for _ in 0..2 {
+                        if let Some(path) = fields.next() {
+                            let path = self.workdir.join(String::from_utf8_lossy(path).as_ref());
+                            changed.push(path.clone());
+                            structural.push(path);
+                        }
+                    }
+                }
+                b'C' => {
+                    let _ = fields.next();
+                    if let Some(path) = fields.next() {
+                        changed.push(self.workdir.join(String::from_utf8_lossy(path).as_ref()));
+                    }
+                }
+                _ => {
+                    if let Some(path) = fields.next() {
+                        changed.push(self.workdir.join(String::from_utf8_lossy(path).as_ref()));
+                    }
+                }
+            }
+        }
+        Ok((changed, structural))
+    }
+
     fn get_changed_files_for_range(&self, range: &str) -> Result<Vec<PathBuf>> {
         let output = Command::new("git")
             .arg("-C")
@@ -160,6 +215,7 @@ pub fn resolve_base_commit(
     repo: &GitRepo,
     event: &GitEvent,
     mode: ComparisonMode,
+    max_fetch_depth: usize,
 ) -> Result<String> {
     let base_ref = event.base_ref();
     let head_ref = event.head_ref();
@@ -173,75 +229,67 @@ pub fn resolve_base_commit(
             Ok(base_id.to_string())
         }
         ComparisonMode::MergeBase => {
-            let result = try_merge_base_with_deepen(repo, base_ref, head_ref);
-            match result {
-                Ok(base) => Ok(base),
-                Err(e) => {
-                    if repo.is_shallow()? {
-                        Err(Error::ShallowRepository)
-                    } else {
-                        Err(e)
-                    }
-                }
-            }
+            try_merge_base_with_deepen(repo, base_ref, head_ref, max_fetch_depth)
         }
     }
 }
 
-fn try_merge_base_with_deepen(repo: &GitRepo, base_ref: &str, head_ref: &str) -> Result<String> {
-    let mut fetch_depth = 128;
+fn try_merge_base_with_deepen(
+    repo: &GitRepo,
+    base_ref: &str,
+    head_ref: &str,
+    max_fetch_depth: usize,
+) -> Result<String> {
+    let mut fetch_depth = 32.min(max_fetch_depth);
 
     loop {
         match repo.get_merge_base(base_ref, head_ref) {
             Ok(base) => return Ok(base),
-            Err(Error::NoCommonAncestor { .. }) => {
+            Err(error @ (Error::NoCommonAncestor { .. } | Error::GitError(_))) => {
                 if !repo.is_shallow()? {
-                    return Err(Error::NoCommonAncestor {
-                        base: base_ref.to_string(),
-                        head: head_ref.to_string(),
-                    });
+                    return Err(error);
                 }
                 eprintln!(
-                    "affected: shallow repository; deepening origin by {} commits (base={} head={})",
+                    "affected: shallow repository; fetching commit-only origin history to depth {} (base={} head={})",
                     fetch_depth, base_ref, head_ref
                 );
-                if !deepen_fetch(repo, fetch_depth)? {
-                    return Err(Error::NoCommonAncestor {
-                        base: base_ref.to_string(),
-                        head: head_ref.to_string(),
+                fetch_history(repo, base_ref, head_ref, fetch_depth)?;
+                if fetch_depth == max_fetch_depth {
+                    return repo.get_merge_base(base_ref, head_ref).map_err(|_| {
+                        Error::HistoryDepthExceeded {
+                            max_depth: max_fetch_depth,
+                        }
                     });
                 }
-                fetch_depth = fetch_depth.saturating_mul(2);
+                fetch_depth = fetch_depth.saturating_mul(4).min(max_fetch_depth);
             }
             Err(e) => return Err(e),
         }
     }
 }
 
-fn deepen_fetch(repo: &GitRepo, depth: usize) -> Result<bool> {
-    let shallow_path = repo.workdir.join(".git/shallow");
-    let before = std::fs::read(&shallow_path).unwrap_or_default();
+fn fetch_history(repo: &GitRepo, base_ref: &str, head_ref: &str, depth: usize) -> Result<()> {
     let output = Command::new("git")
         .arg("-C")
         .arg(&repo.workdir)
         .arg("fetch")
-        // Preserve the bounded checkout history and add only the next chunk.
-        // `--depth` replaces the shallow boundary; `--deepen` is cumulative.
-        .arg("--deepen")
-        .arg(depth.to_string())
+        .arg("--no-tags")
+        .arg("--filter=tree:0")
+        .arg(format!("--depth={depth}"))
         .arg("origin")
+        .arg(base_ref)
+        .arg(head_ref)
         .output()?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(Error::GitError(format!(
-            "Failed to deepen fetch from origin by {} commits: {}",
+            "Failed to fetch commit-only history from origin to depth {}: {}",
             depth, stderr
         )));
     }
 
-    let after = std::fs::read(&shallow_path).unwrap_or_default();
-    Ok(before != after || !shallow_path.exists())
+    Ok(())
 }
 
 pub fn detect_default_branch(repo: &GitRepo) -> Result<String> {
@@ -423,6 +471,57 @@ mod tests {
     }
 
     #[test]
+    fn deleted_and_renamed_paths_include_both_sides_of_a_rename() {
+        let dir = init_repo();
+        std::fs::write(dir.path().join("b.txt"), "delete me").unwrap();
+        git(dir.path(), &["add", "."]);
+        git(dir.path(), &["commit", "-m", "add b"]);
+        let base = rev_parse(dir.path(), "HEAD");
+        git(dir.path(), &["mv", "a.txt", "renamed.txt"]);
+        git(dir.path(), &["rm", "b.txt"]);
+        git(dir.path(), &["commit", "-m", "rename and delete"]);
+
+        let repo = GitRepo::open(dir.path()).unwrap();
+        let (changed, structural) = repo.get_changed_files_with_structure(&base, None).unwrap();
+        let mut names: Vec<_> = structural
+            .into_iter()
+            .map(|path| path.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        assert_eq!(names, ["a.txt", "b.txt", "renamed.txt"]);
+        assert_eq!(changed.len(), 3);
+    }
+
+    #[test]
+    fn copied_paths_are_changed_but_not_structural() {
+        let dir = init_repo();
+        git(dir.path(), &["config", "diff.renames", "copies"]);
+        std::fs::copy(dir.path().join("a.txt"), dir.path().join("copy.txt")).unwrap();
+        std::fs::write(dir.path().join("a.txt"), "changed").unwrap();
+        git(dir.path(), &["add", "."]);
+        git(dir.path(), &["commit", "-m", "copy"]);
+
+        let repo = GitRepo::open(dir.path()).unwrap();
+        let (changed, structural) = repo
+            .get_changed_files_with_structure("HEAD^", None)
+            .unwrap();
+        assert_eq!(changed.len(), 2);
+        assert!(structural.is_empty());
+    }
+
+    #[test]
+    fn structured_diff_reports_an_invalid_revision() {
+        let dir = init_repo();
+        let error = GitRepo::open(dir.path())
+            .unwrap()
+            .get_changed_files_with_structure("missing", None)
+            .unwrap_err();
+        assert!(
+            matches!(error, Error::GitError(message) if message.contains("git diff --name-status failed"))
+        );
+    }
+
+    #[test]
     fn tip_comparison_includes_base_branch_divergence() {
         let dir = init_repo();
         git(dir.path(), &["checkout", "-b", "feature"]);
@@ -470,7 +569,7 @@ mod tests {
         let event = GitEvent::Push {
             ref_name: "main".to_string(),
         };
-        let base = resolve_base_commit(&repo, &event, ComparisonMode::Tip).unwrap();
+        let base = resolve_base_commit(&repo, &event, ComparisonMode::Tip, 2048).unwrap();
         assert_eq!(base, rev_parse(dir.path(), "main"));
     }
 
@@ -483,7 +582,7 @@ mod tests {
             ref_name: "nope".to_string(),
         };
         assert!(matches!(
-            resolve_base_commit(&repo, &event, ComparisonMode::Tip),
+            resolve_base_commit(&repo, &event, ComparisonMode::Tip, 2048),
             Err(Error::GitError(_))
         ));
     }
@@ -496,13 +595,70 @@ mod tests {
         let event = GitEvent::Push {
             ref_name: "main".to_string(),
         };
-        let base = resolve_base_commit(&repo, &event, ComparisonMode::MergeBase).unwrap();
+        let base = resolve_base_commit(&repo, &event, ComparisonMode::MergeBase, 2048).unwrap();
         assert_eq!(base, rev_parse(dir.path(), "HEAD"));
     }
 
     #[test]
     #[serial]
-    fn test_resolve_base_commit_shallow_reports_shallow_error() {
+    fn shallow_clone_fetches_bounded_commit_only_history() {
+        let source = init_repo();
+        let base = rev_parse(source.path(), "HEAD");
+        let base_tree = rev_parse(source.path(), "HEAD^{tree}");
+        for index in 1..=3 {
+            std::fs::write(source.path().join("a.txt"), index.to_string()).unwrap();
+            git(source.path(), &["add", "."]);
+            git(source.path(), &["commit", "-m", &format!("change {index}")]);
+        }
+
+        let remote = tempfile::tempdir().unwrap();
+        git(
+            remote.path(),
+            &[
+                "clone",
+                "--bare",
+                source.path().to_str().unwrap(),
+                "origin.git",
+            ],
+        );
+        git(
+            &remote.path().join("origin.git"),
+            &["config", "uploadpack.allowFilter", "true"],
+        );
+        git(
+            remote.path(),
+            &[
+                "clone",
+                "--depth=1",
+                "--filter=blob:none",
+                "--no-local",
+                "origin.git",
+                "checkout",
+            ],
+        );
+
+        let checkout = remote.path().join("checkout");
+        let repo = GitRepo::open(&checkout).unwrap();
+        let event = GitEvent::PullRequest {
+            base_ref: base.clone(),
+            head_ref: "HEAD".into(),
+        };
+        assert_eq!(
+            resolve_base_commit(&repo, &event, ComparisonMode::MergeBase, 32).unwrap(),
+            base
+        );
+        let missing = Command::new("git")
+            .arg("-C")
+            .arg(&checkout)
+            .args(["rev-list", "--objects", "--all", "--missing=print"])
+            .output()
+            .unwrap();
+        assert!(String::from_utf8_lossy(&missing.stdout).contains(&format!("?{base_tree}")));
+    }
+
+    #[test]
+    #[serial]
+    fn test_resolve_base_commit_shallow_fetch_failure_is_explicit() {
         let dir = init_repo();
         make_orphan_branch(dir.path());
         std::fs::write(dir.path().join(".git/shallow"), "").unwrap();
@@ -512,8 +668,8 @@ mod tests {
             head_ref: "isolated".to_string(),
         };
         assert!(matches!(
-            resolve_base_commit(&repo, &event, ComparisonMode::MergeBase),
-            Err(Error::ShallowRepository)
+            resolve_base_commit(&repo, &event, ComparisonMode::MergeBase, 2048),
+            Err(Error::GitError(_))
         ));
     }
 
@@ -528,7 +684,7 @@ mod tests {
             head_ref: "isolated".to_string(),
         };
         assert!(matches!(
-            resolve_base_commit(&repo, &event, ComparisonMode::MergeBase),
+            resolve_base_commit(&repo, &event, ComparisonMode::MergeBase, 2048),
             Err(Error::NoCommonAncestor { .. })
         ));
     }

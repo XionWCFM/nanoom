@@ -68,6 +68,25 @@ pub struct WorkspaceEntry {
     pub shard: Option<usize>,
     #[serde(rename = "totalShards", skip_serializing_if = "Option::is_none")]
     pub total_shards: Option<usize>,
+    #[serde(skip)]
+    pub checkout_paths: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckoutPlan {
+    pub cone_mode: bool,
+    pub sparse_checkout: String,
+}
+
+pub fn checkout_plan(paths: impl IntoIterator<Item = String>) -> CheckoutPlan {
+    let mut paths: Vec<String> = paths.into_iter().collect();
+    paths.sort();
+    paths.dedup();
+    CheckoutPlan {
+        cone_mode: true,
+        sparse_checkout: paths.join("\n"),
+    }
 }
 
 pub async fn calculate(config: &Config, cwd: &Path) -> Result<AffectedOutput> {
@@ -101,29 +120,60 @@ pub async fn calculate_with_override(
         }
     };
     let mode = ComparisonMode::from_env();
-    let base_commit = resolve_base_commit(&git, &event, mode)?;
+    let base_commit = resolve_base_commit(&git, &event, mode, config.affected.max_fetch_depth)?;
 
     let head_ref = event.head_ref();
     let head_commit = git.resolve_commit(head_ref)?;
-    let changed_files = match mode {
-        ComparisonMode::MergeBase => git.get_changed_files(&base_commit, Some(head_ref))?,
-        ComparisonMode::Tip => git.get_changed_files_from_tip(&base_commit, Some(head_ref))?,
-    };
+    let (changed_files, structural_changes) =
+        git.get_changed_files_with_structure(&base_commit, Some(head_ref))?;
+    let structural_changes: Vec<PathBuf> = structural_changes
+        .into_iter()
+        .filter(|path| crate::workspace::is_workspace_manifest(config, path, cwd))
+        .collect();
 
+    let missing_manifests = crate::workspace::missing_workspace_manifests(config, cwd)?;
+    if !missing_manifests.is_empty() {
+        let shown = missing_manifests
+            .iter()
+            .take(20)
+            .map(|path| path.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(crate::error::Error::ConfigValidation(format!(
+            "affected sparse checkout is missing {} workspace package.json file(s): {}{}",
+            missing_manifests.len(),
+            shown,
+            if missing_manifests.len() > 20 {
+                ", ..."
+            } else {
+                ""
+            }
+        )));
+    }
     let workspace = Workspace::discover(config, cwd)?;
-    let reasons = explain_affected(&workspace, &changed_files, &config.global_dependencies, cwd);
+    let reasons = explain_affected(
+        &workspace,
+        &changed_files,
+        &structural_changes,
+        &config.global_dependencies,
+        cwd,
+    );
 
     let mut group_outputs = HashMap::new();
     let mut has_any_change = false;
 
     for (group_name, group_config) in &config.group {
-        let affected_projects = calculate_affected(
-            &workspace,
-            &changed_files,
-            &config.global_dependencies,
-            cwd,
-            true,
-        );
+        let affected_projects = if structural_changes.is_empty() {
+            calculate_affected(
+                &workspace,
+                &changed_files,
+                &config.global_dependencies,
+                cwd,
+                true,
+            )
+        } else {
+            workspace.all_projects().to_vec()
+        };
 
         let filtered_projects =
             apply_rules(affected_projects, &group_config.rules, &group_config.tasks);
@@ -149,6 +199,19 @@ pub async fn calculate_with_override(
         has_any_change = true;
 
         let mut workspaces = Vec::new();
+        let checkout_paths: HashMap<_, _> = filtered_projects
+            .iter()
+            .map(|project| {
+                (
+                    project.name.as_str(),
+                    workspace
+                        .dependency_closure_paths(&project.name, cwd)
+                        .into_iter()
+                        .chain(config.checkout.always.iter().cloned())
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .collect();
 
         for task in &group_config.tasks {
             for project in &filtered_projects {
@@ -161,20 +224,22 @@ pub async fn calculate_with_override(
                         workspaces.push(WorkspaceEntry {
                             group: group_name.clone(),
                             name: project.name.clone(),
-                            path: project.path.to_string_lossy().to_string(),
+                            path: project.path.to_string_lossy().replace('\\', "/"),
                             task: task.clone(),
                             shard: Some(shard_idx),
                             total_shards: Some(shard_rule.shard),
+                            checkout_paths: checkout_paths[project.name.as_str()].clone(),
                         });
                     }
                 } else {
                     workspaces.push(WorkspaceEntry {
                         group: group_name.clone(),
                         name: project.name.clone(),
-                        path: project.path.to_string_lossy().to_string(),
+                        path: project.path.to_string_lossy().replace('\\', "/"),
                         task: task.clone(),
                         shard: None,
                         total_shards: None,
+                        checkout_paths: checkout_paths[project.name.as_str()].clone(),
                     });
                 }
             }
@@ -226,9 +291,27 @@ pub async fn calculate_with_override(
 fn explain_affected(
     workspace: &Workspace,
     changed_files: &[PathBuf],
+    structural_changes: &[PathBuf],
     global_dependencies: &[String],
     cwd: &Path,
 ) -> BTreeMap<String, AffectedReason> {
+    if !structural_changes.is_empty() {
+        let files = relative_paths(structural_changes, cwd);
+        return workspace
+            .all_projects()
+            .iter()
+            .map(|project| {
+                (
+                    project.name.clone(),
+                    AffectedReason {
+                        kind: "workspaceManifestStructure".into(),
+                        changed_files: files.clone(),
+                        dependency_path: vec![],
+                    },
+                )
+            })
+            .collect();
+    }
     let global_files =
         crate::workspace::matching_global_files(changed_files, global_dependencies, cwd);
     if !global_files.is_empty() {
@@ -325,7 +408,7 @@ fn relative_paths(files: &[PathBuf], cwd: &Path) -> Vec<String> {
             file.strip_prefix(cwd)
                 .unwrap_or(file)
                 .to_string_lossy()
-                .into_owned()
+                .replace('\\', "/")
         })
         .collect()
 }
@@ -380,6 +463,9 @@ pub fn generate_matrix_with_history(
                 if let Some(total) = w.total_shards {
                     entry["totalShards"] = serde_json::Value::Number(total.into());
                 }
+                entry["checkout"] =
+                    serde_json::to_value(checkout_plan(w.checkout_paths.iter().cloned()))
+                        .expect("checkout plan serializes");
                 entry
             })
             .collect();

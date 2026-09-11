@@ -33,9 +33,10 @@ EOF
 chmod +x "$tmp/bin/curl"
 
 PATH="$tmp/bin:$PATH" RUNNER_TEMP="$tmp/runner" GITHUB_PATH="$tmp/github-path" \
-  TOKEN=fixture-token FIXTURE_ARCHIVE="$tmp/nanoom-linux-x64.tar.gz" FIXTURE_REQUESTS="$tmp/requests" REQUESTED=v0.0.0 RELEASE_BASE_URL=https://github.example.test \
+  TOKEN=fixture-token FIXTURE_ARCHIVE="$tmp/nanoom-linux-x64.tar.gz" FIXTURE_REQUESTS="$tmp/requests" REQUESTED=action ACTION_REF=latest RELEASE_BASE_URL=https://github.example.test \
   bash "$root/.github/actions/_setup/setup.sh"
 grep -q '/nanoom-bin$' "$tmp/github-path"
+grep -Fq 'https://api.github.com/repos/XionWCFM/nanoom/releases/latest' "$tmp/requests"
 grep -Fq 'https://github.example.test/XionWCFM/nanoom/releases/download/v0.0.0/nanoom-' "$tmp/requests"
 "$tmp/runner/nanoom-bin/nanoom"
 echo 'setup authentication smoke passed'

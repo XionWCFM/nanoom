@@ -2,6 +2,31 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
   "definitions": {
+    "AffectedConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "maxFetchDepth": {
+          "default": 2048,
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "CheckoutConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "always": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
     "DistributionConfig": {
       "additionalProperties": false,
       "properties": {
@@ -144,6 +169,26 @@
         "string",
         "null"
       ]
+    },
+    "affected": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/AffectedConfig"
+        }
+      ],
+      "default": {
+        "maxFetchDepth": 2048
+      }
+    },
+    "checkout": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/CheckoutConfig"
+        }
+      ],
+      "default": {
+        "always": []
+      }
     },
     "globalDependencies": {
       "default": [],
