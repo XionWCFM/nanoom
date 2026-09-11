@@ -74,7 +74,7 @@ cone mode는 선택한 디렉터리와 root 파일을 함께 checkout하므로 l
 
 ```yaml
 # affected job
-- uses: actions/checkout@v4
+- uses: actions/checkout@v7
   with:
     fetch-depth: 1
     sparse-checkout-cone-mode: false
@@ -88,14 +88,14 @@ cone mode는 선택한 디렉터리와 root 파일을 함께 checkout하므로 l
 env:
   NANOOM_WORKDIR: .nanoom/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}-${{ strategy.job-index }}
 
-- uses: actions/checkout@v4
+- uses: actions/checkout@v7
   with:
     path: ${{ env.NANOOM_WORKDIR }}
     fetch-depth: 1
     sparse-checkout-cone-mode: ${{ matrix.checkout.coneMode }}
     sparse-checkout: ${{ matrix.checkout.sparseCheckout }}
 
-- uses: XionWCFM/nanoom/.github/actions/run@v0.3.1
+- uses: XionWCFM/nanoom/.github/actions/run@v0.4.0
   with:
     cwd: ${{ env.NANOOM_WORKDIR }}
     matrix: ${{ toJSON(matrix) }}
@@ -116,22 +116,22 @@ history가 없거나 손상됐거나 권한이 없으면 CI를 실패시키지 �
 
 ```yaml
 - id: affected
-  uses: XionWCFM/nanoom/.github/actions/affected@v0.3.1
+  uses: XionWCFM/nanoom/.github/actions/affected@v0.4.0
   with:
     scheduler: artifact
 
-- uses: XionWCFM/nanoom/.github/actions/install@v0.3.1
+- uses: XionWCFM/nanoom/.github/actions/install@v0.4.0
   with:
     matrix: ${{ toJSON(matrix) }}
     packageManager: pnpm
 
-- uses: XionWCFM/nanoom/.github/actions/run@v0.3.1
+- uses: XionWCFM/nanoom/.github/actions/run@v0.4.0
   with:
     matrix: ${{ toJSON(matrix) }}
     group: ci
     scheduler: artifact
 
-- uses: XionWCFM/nanoom/.github/actions/history@v0.3.1
+- uses: XionWCFM/nanoom/.github/actions/history@v0.4.0
   with:
     scheduler: artifact
 ```
