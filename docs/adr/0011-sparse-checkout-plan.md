@@ -29,6 +29,8 @@ workspace를 현재 graph에서 놓치면 빠른 대신 잘못된 affected 결�
    하위 경로인지 검증한 후 삭제한다.
 7. configured workspace manifest가 삭제되거나 rename되면 이전 graph를 추가로 복원하지
    않고 현재 graph에 남은 모든 workspace를 affected 처리한다.
+8. `nanoom-fixtures`는 branch ref나 local binary를 소비하지 않고, 먼저 배포된 고정
+   release tag만 사용한다.
 
 ## 검토한 대안
 
