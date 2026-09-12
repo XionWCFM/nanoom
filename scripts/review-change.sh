@@ -53,7 +53,7 @@ fi
 if ((!dependency_only)) && any '^\.github/(actions|workflows)/' && ! any '^docs/(content|adr)/'; then
   echo 'BLOCKED: public Action/workflow change has no docs or ADR change.'; fail=1
 fi
-if ((!dependency_only)) && any '(package\.json|yarn\.lock|Cargo\.toml|Cargo\.lock|install|dependency)' && ! any '(^|/)(test|tests|fixtures|scripts)/|verify-install'; then
+if ((!dependency_only)) && any '(package\.json|yarn\.lock|Cargo\.toml|Cargo\.lock|install|dependency)' && ! any '(^|/)(test|tests|fixtures|scripts)/|smoke-test\.js|verify-install'; then
   echo 'BLOCKED: dependency/install change has no focused-install or dependency regression evidence.'; fail=1
 fi
 if ((!dependency_only)) && any '(^|/)(Cargo\.toml|package\.json|src/|\.github/actions/)' && ! any '^docs/(content|adr)/'; then

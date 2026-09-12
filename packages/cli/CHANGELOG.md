@@ -1,5 +1,11 @@
 # @nanoom/cli
 
+## 0.5.1
+
+### Patch Changes
+
+- Restore the executable bit that npm package archives remove from Unix platform binaries before running them.
+
 ## 0.5.0
 
 ### Minor Changes

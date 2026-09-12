@@ -35,3 +35,7 @@ task subprocess 시간만으로 LPT를 수행하면 runtime은 균등해도 같�
 ## Consequences
 
 runtime 균형을 희생하지 않는 범위에서 반복 sparse checkout closure를 줄인다. 첫 run은 history가 없어 cold이지만 이후 성공 run부터 재사용한다. GitHub.com은 기본 Action, GHES는 명시적 `-ghes` Action으로 플랫폼 제약을 드러낸다. released fixture가 개선을 보이지 않으면 v0.5.0 완료로 보지 않는다.
+
+v0.5.1은 npm이 platform package의 Unix binary mode를 0644로 정규화하는
+consumer-path 결함을 수정한다. wrapper와 postinstall이 실행 직전에 0755를
+복구하며 smoke test는 의도적으로 0644에서 시작한다.
