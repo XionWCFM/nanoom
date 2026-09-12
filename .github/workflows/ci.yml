@@ -83,7 +83,7 @@ jobs:
         run: mkdir -p coverage && cargo llvm-cov --locked --workspace --all-features --cobertura --output-path coverage/cobertura.xml --fail-under-lines 96
 
       - name: Upload coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3.2.2
         with:
           name: coverage-report
           path: coverage/cobertura.xml
@@ -143,9 +143,7 @@ jobs:
           cwd: .fixture
           base: main
           head: HEAD
-          scheduler: artifact
           timingRunner: yarn
-          historyArtifactName: nanoom-timing-history-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Test affected matrix contract
         env:
           GROUPS: ${{ steps.affected.outputs.groups }}
@@ -195,7 +193,6 @@ jobs:
           monorepoTool: turbo
           matrix: ${{ toJSON(matrix) }}
           group: ci
-          scheduler: artifact
       - name: Verify run result
         env:
           RESULT: ${{ steps.task.outputs.result }}
@@ -215,47 +212,14 @@ jobs:
         uses: ./.github/actions/history
         with:
           version: local
-          scheduler: artifact
-          historyArtifactName: nanoom-timing-history-${{ github.run_id }}-${{ github.run_attempt }}
       - env:
           RESULT: ${{ steps.history.outputs.result }}
         run: jq -e '.status == "success" and .scheduler == "artifact" and .cli.sampleCount == 4' <<< "$RESULT"
 
-  fixture-rebalanced:
-    name: Fixture loaded-history rebalance
-    needs: [fixture-affected, fixture-history]
-    runs-on: ubuntu-latest
-    env:
-      NANOOM_LOCAL_BINARY: ${{ github.workspace }}/target/release/nanoom
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 100
-      - uses: dtolnay/rust-toolchain@stable
-      - run: cargo build --locked --release
-      - run: bash .github/test-fixtures/setup-fixture.sh --shards --distribution --change
-      - id: affected
-        uses: ./.github/actions/affected
-        with:
-          version: local
-          cwd: .fixture
-          base: main
-          head: HEAD
-          scheduler: artifact
-          timingRunner: yarn
-          historyArtifactName: nanoom-timing-history-${{ github.run_id }}-${{ github.run_attempt }}
-      - env:
-          FIRST_GROUPS: ${{ needs.fixture-affected.outputs.groups }}
-          SECOND_GROUPS: ${{ steps.affected.outputs.groups }}
-          RESULT: ${{ steps.affected.outputs.result }}
-        run: |
-          jq -e '.scheduling.historyStatus == "loaded" and .scheduling.historyDownloadMs >= 0' <<< "$RESULT"
-          test "$FIRST_GROUPS" != "$SECOND_GROUPS"
-
   fixture-aggregate:
     name: Fixture aggregate status
     if: always()
-    needs: [fixture-affected, fixture-run]
+    needs: [fixture-affected, fixture-run, fixture-history]
     runs-on: ubuntu-latest
     env:
       NANOOM_LOCAL_BINARY: ${{ github.workspace }}/target/release/nanoom
@@ -274,4 +238,4 @@ jobs:
       - name: Verify status result
         env:
           RESULT: ${{ steps.aggregate.outputs.result }}
-        run: jq -e '.status == "success" and (.jobs | length) == 2 and .reason != ""' <<< "$RESULT"
+        run: jq -e '.status == "success" and (.jobs | length) == 3 and .reason != ""' <<< "$RESULT"

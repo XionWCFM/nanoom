@@ -466,6 +466,9 @@ pub fn generate_matrix_with_history(
                 entry["checkout"] =
                     serde_json::to_value(checkout_plan(w.checkout_paths.iter().cloned()))
                         .expect("checkout plan serializes");
+                entry["checkoutPathCount"] = serde_json::Value::Number(
+                    w.checkout_paths.iter().collect::<HashSet<_>>().len().into(),
+                );
                 entry
             })
             .collect();

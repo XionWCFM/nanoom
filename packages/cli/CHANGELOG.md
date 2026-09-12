@@ -1,5 +1,13 @@
 # @nanoom/cli
 
+## 0.5.0
+
+### Minor Changes
+
+- Enable artifact-backed historical scheduling by default and scope history to the last successful run of the same workflow and branch.
+- Prefer lower total sparse-checkout path duplication when candidate assignments have the same predicted runtime makespan.
+- Use the GHES-compatible Node 24 artifact v3 backend and expose prediction-source and checkout-cost diagnostics.
+
 ## 0.4.2
 
 ### Patch Changes

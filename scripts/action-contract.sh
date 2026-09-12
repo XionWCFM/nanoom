@@ -47,6 +47,10 @@ grep -q 'always() && inputs.cleanupCheckout' .github/actions/run/action.yml
 grep -q 'items' .github/actions/run/run.sh
 grep -q 'durationMs' .github/actions/run/run.sh
 grep -q 'retention-days: 30' .github/actions/{run,history}/action.yml
+test "$(rg -uu -l 'actions/upload-artifact@v3.2.2' .github | wc -l | tr -d ' ')" -eq 4
+! rg -uu -n 'actions/(upload|download)-artifact@v4' .github
+grep -q 'default: artifact' .github/actions/{affected,run,history}/action.yml
+grep -q 'runner.environment.*self-hosted' .github/actions/{affected,run}/action.yml
 grep -q 'GITHUB_STEP_SUMMARY' .github/actions/status/run.sh
 ! grep -q '^  version:' .github/actions/status/action.yml
 ! grep -qE 'affectedJob|matrixJob|GROUP|AFFECTED|MATRIX|FORMAT' .github/actions/status/action.yml .github/actions/status/run.sh
@@ -55,6 +59,7 @@ grep -q 'all needed jobs succeeded or were skipped' .github/actions/status/run.s
 bash scripts/status-action-test.sh
 bash scripts/coordinator-contract-test.sh
 bash scripts/assignment-action-test.sh
+bash scripts/history-artifact-test.sh
 bash scripts/revision-action-test.sh
 bash scripts/cleanup-checkout-test.sh
 bash scripts/fixture-completion-test.sh

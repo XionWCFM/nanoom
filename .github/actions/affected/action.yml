@@ -6,7 +6,7 @@ inputs:
   cwd: {description: "Consumer working directory", default: '.'}
   base: {description: "Explicit comparison base; empty resolves from the GitHub event", default: ''}
   head: {description: "Explicit comparison head; empty resolves from the GitHub event", default: ''}
-  scheduler: {description: "Timing backend: off, artifact, or http", default: off}
+  scheduler: {description: "Timing backend: artifact (default), off, or http", default: artifact}
   timingRunner: {description: "Runner identity used for timing prediction", default: auto}
   timingEnvironment: {description: "Stable hardware identity used for timing history", default: ''}
   coordinatorUrl: {description: "HTTPS coordinator base URL for scheduler=http", default: ''}
@@ -42,10 +42,11 @@ runs:
         EVENT_BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before || github.base_ref }}
         EVENT_HEAD: ${{ github.sha }}
         REF_NAME: ${{ github.ref_name }}
+        HISTORY_REF: ${{ github.head_ref || github.ref_name }}
         WORKFLOW_REF: ${{ github.workflow_ref }}
         SCHEDULER: ${{ inputs.scheduler }}
         TIMING_RUNNER: ${{ inputs.timingRunner }}
-        TIMING_ENVIRONMENT: ${{ inputs.timingEnvironment || format('{0}-{1}', runner.os, runner.arch) }}
+        TIMING_ENVIRONMENT: ${{ inputs.timingEnvironment || (runner.environment == 'self-hosted' && format('{0}-{1}-{2}', runner.os, runner.arch, runner.name) || format('{0}-{1}', runner.os, runner.arch)) }}
         COORDINATOR_URL: ${{ inputs.coordinatorUrl }}
         COORDINATOR_TOKEN: ${{ env.NANOOM_COORDINATOR_TOKEN }}
         API: ${{ github.api_url }}
