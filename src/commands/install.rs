@@ -290,8 +290,6 @@ mod tests {
     use super::*;
     #[cfg(not(windows))]
     use serial_test::serial;
-    #[cfg(not(windows))]
-    use std::os::unix::fs::PermissionsExt;
     use tempfile::tempdir;
 
     #[cfg(not(windows))]
@@ -300,8 +298,7 @@ mod tests {
         std::fs::create_dir_all(&bin).unwrap();
         for manager in ["yarn", "pnpm", "npm"] {
             let executable = bin.join(manager);
-            std::fs::write(&executable, "#!/bin/sh\nexit 0\n").unwrap();
-            std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o755)).unwrap();
+            std::os::unix::fs::symlink("/usr/bin/true", executable).unwrap();
         }
         let original = std::env::var_os("PATH").unwrap_or_default();
         let paths = std::iter::once(bin).chain(std::env::split_paths(&original));

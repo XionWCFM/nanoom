@@ -1,5 +1,5 @@
-name: nanoom run
-description: Run one authoritative matrix entry
+name: nanoom run (GHES)
+description: Run one authoritative matrix entry and upload timing with the GHES v3 backend
 inputs:
   matrix: {description: "One matrix entry or include wrapper emitted by nanoom affected", required: true}
   group: {description: "Affected group that selected this matrix entry", required: true}
@@ -10,12 +10,10 @@ inputs:
   cleanupCheckout: {description: "Delete cwd after the run when it is an isolated .nanoom/ checkout", default: 'false'}
   coordinatorUrl: {description: "HTTPS coordinator base URL for scheduler=http", default: ''}
   cwd: {description: "Consumer working directory", default: .}
-  version: {description: "Action ref (version tag or latest), explicit release tag, or local for repository tests", default: action}
-  releaseBaseUrl: {description: "HTTPS origin hosting Nanoom release assets; use your GitHub Enterprise Server URL when it mirrors releases", default: "https://github.com"}
+  version: {description: "Action ref, explicit release tag, or local for repository tests", default: action}
+  releaseBaseUrl: {description: "HTTPS origin hosting Nanoom release assets", default: "https://github.com"}
 outputs:
-  result:
-    description: Canonical matrix-task result JSON
-    value: ${{ steps.final.outputs.result || steps.run.outputs.result }}
+  result: {description: "Canonical matrix-task result JSON", value: "${{ steps.final.outputs.result || steps.run.outputs.result }}"}
 runs:
   using: composite
   steps:
@@ -39,14 +37,14 @@ runs:
         TOOL: ${{ inputs.monorepoTool }}
         CWD: ${{ inputs.cwd }}
         SCHEDULER: ${{ inputs.scheduler }}
-        ARTIFACT_VERSION: v4
+        ARTIFACT_VERSION: v3
         TIMING_ENVIRONMENT: ${{ inputs.timingEnvironment || (runner.environment == 'self-hosted' && format('{0}-{1}-{2}', runner.os, runner.arch, runner.name) || format('{0}-{1}', runner.os, runner.arch)) }}
         COORDINATOR_URL: ${{ inputs.coordinatorUrl }}
         COORDINATOR_TOKEN: ${{ env.NANOOM_COORDINATOR_TOKEN }}
-      run: bash "$GITHUB_ACTION_PATH/run.sh"
+      run: bash "$GITHUB_ACTION_PATH/../run/run.sh"
     - name: Upload successful timing sample
       if: inputs.scheduler == 'artifact' && steps.run.outcome == 'success'
-      uses: actions/upload-artifact@v4.6.2
+      uses: actions/upload-artifact@v3.2.2
       with:
         name: ${{ steps.run.outputs.sample-name }}
         path: ${{ steps.run.outputs.sample-path }}
@@ -66,4 +64,4 @@ runs:
       env:
         CLEANUP_CHECKOUT: ${{ inputs.cleanupCheckout }}
         CWD: ${{ inputs.cwd }}
-      run: bash "$GITHUB_ACTION_PATH/cleanup.sh"
+      run: bash "$GITHUB_ACTION_PATH/../run/cleanup.sh"

@@ -1,6 +1,6 @@
 # ADR-0009: 실행시간 기반 분산 실행
 
-- 상태: Accepted
+- 상태: Superseded by ADR-0012
 - 대상 릴리스: v0.3.0
 
 ## 맥락

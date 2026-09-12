@@ -2,6 +2,7 @@
 set -Eeuo pipefail
 ACTION_NAME=affected ACTION_CWD=$CWD ACTION_PHASE=input-resolution ACTION_COMMAND=not-started
 source "$GITHUB_ACTION_PATH/../_setup/log.sh"; trap 'nanoom_fail "$?"' ERR
+source "$GITHUB_ACTION_PATH/../_setup/artifacts.sh"
 started=$(date +%s)
 [[ "$SCHEDULER" =~ ^(off|artifact|http)$ ]] || { echo "scheduler must be off, artifact, or http" >&2; false; }
 revision_source=explicit; successful_run_id=''
@@ -46,17 +47,28 @@ fi
 ACTION_PHASE=revision-validation
 resolved_head=$(git -C "$CWD" rev-parse --verify "$HEAD^{commit}")
 
-history_status=disabled; history_download_ms=0; history_path="$RUNNER_TEMP/nanoom-history.json"
+history_status=disabled; history_download_ms=0; history_source_run_id=''; history_path="$RUNNER_TEMP/nanoom-history.json"
 if [[ "$SCHEDULER" == artifact ]]; then
-  history_started=$(date +%s); history_status=fallback
-  archive="$RUNNER_TEMP/nanoom-history.zip"
-  set +e
-  artifacts=$(curl --fail --silent --show-error -H "Authorization: Bearer $TOKEN" -H 'Accept: application/vnd.github+json' "$API/repos/$REPOSITORY/actions/artifacts?name=$HISTORY_ARTIFACT&per_page=1")
-  archive_url=$(jq -r '.artifacts | map(select(.expired | not)) | first | .archive_download_url // empty' <<<"$artifacts" 2>/dev/null)
-  [[ -n "$archive_url" ]] && curl --fail --silent --show-error -L -H "Authorization: Bearer $TOKEN" -H 'Accept: application/vnd.github+json' "$archive_url" -o "$archive" && unzip -p "$archive" history.json > "$history_path" && jq -e '.samples | type == "array"' "$history_path" >/dev/null
-  history_ok=$?
-  set -e
-  if (( history_ok == 0 )); then history_status=loaded; else rm -f "$history_path"; echo 'timing history unavailable; using deterministic equal-weight scheduling' >&2; fi
+  history_started=$(date +%s); history_status=bootstrap-fallback
+  ACTION_PHASE=history-resolution
+  history_source_run_id=$(nanoom_previous_successful_run "$WORKFLOW_REF" "$HISTORY_REF" "$RUN_ID")
+  if [[ -n "$history_source_run_id" ]]; then
+    artifacts=$(nanoom_run_artifacts "$history_source_run_id")
+    history_dir="$RUNNER_TEMP/nanoom-previous-history"
+    if nanoom_download_artifacts "$artifacts" exact "$HISTORY_ARTIFACT" "$history_dir" &&
+      [[ -f "$history_dir/history.json" ]] &&
+      jq -e '.samples | type == "array"' "$history_dir/history.json" >/dev/null; then
+      cp "$history_dir/history.json" "$history_path"
+      history_status=loaded
+    elif nanoom_artifact_exists "$artifacts" prefix "nanoom-timing-sample-v2-$history_source_run_id-"; then
+      echo "successful run $history_source_run_id uploaded timing samples but no merged '$HISTORY_ARTIFACT' history; add the standard nanoom history job" >&2
+      false
+    else
+      echo "no timing history exists in successful run $history_source_run_id; using deterministic cold-start scheduling" >&2
+    fi
+  else
+    echo 'no previous successful workflow run exists; using deterministic cold-start scheduling' >&2
+  fi
   history_download_ms=$(( ($(date +%s) - history_started) * 1000 ))
 fi
 
@@ -72,7 +84,7 @@ git -C "$CWD" merge-base --is-ancestor "$resolved_base" "$resolved_head" || {
   false
 }
 report=$(jq -c --arg source "$revision_source" --arg base "$resolved_base" --arg head "$resolved_head" --arg successful "$successful_run_id" '. + {revisionResolution:{baseSource:$source,baseCommit:$base,headCommit:$head,successfulRunId:(if $successful == "" then null else ($successful | tonumber) end)}}' <<<"$report")
-report=$(jq -c --arg historyStatus "$history_status" --argjson downloadMs "$history_download_ms" '.scheduling.historyStatus=(if .scheduling.historyStatus == "fallback" then "corrupt" else $historyStatus end) | .scheduling.historyDownloadMs=$downloadMs | .scheduling.reason=(if .scheduling.historyStatus == "loaded" then "recent successful samples loaded" elif .scheduling.historyStatus == "disabled" then "telemetry disabled; deterministic equal weights" else "history unavailable or invalid; deterministic equal weights" end)' <<<"$report")
+report=$(jq -c --arg historyStatus "$history_status" --arg sourceRun "$history_source_run_id" --argjson downloadMs "$history_download_ms" '.scheduling.historyStatus=(if .scheduling.historyStatus == "fallback" then "corrupt" else $historyStatus end) | .scheduling.historySourceRunId=(if $sourceRun == "" then null else ($sourceRun | tonumber) end) | .scheduling.historyDownloadMs=$downloadMs | .scheduling.reason=(if .scheduling.historyStatus == "loaded" then "recent successful samples loaded from the same workflow and branch" elif .scheduling.historyStatus == "disabled" then "historical scheduling explicitly disabled; deterministic equal weights" else "no usable previous history; deterministic cold-start scheduling" end)' <<<"$report")
 history_status=$(jq -r .scheduling.historyStatus <<<"$report")
 matrix=$(jq -c .matrix <<<"$report")
 
@@ -93,7 +105,7 @@ if [[ "$SCHEDULER" == http ]]; then
   report=$(jq -c --argjson matrix "$matrix" '.matrix=$matrix' <<<"$report")
 fi
 
-compact_matrix=$(jq -c 'with_entries(.value.include |= map(if .items then {assignmentId,predictedDurationMs,reason,checkout,items:[.items[] | {group,name,task,shard,totalShards} | with_entries(select(.value != null))]} elif .mode == "continuous" then {agentId,runId,mode,checkout} else {name,task,shard,totalShards,checkout} | with_entries(select(.value != null)) end))' <<<"$matrix")
+compact_matrix=$(jq -c 'with_entries(.value.include |= map(if .items then {assignmentId,predictedDurationMs,checkoutPathCount,predictionSources,reason,checkout,items:[.items[] | {group,name,task,shard,totalShards} | with_entries(select(.value != null))]} elif .mode == "continuous" then {agentId,runId,mode,checkout} else {name,task,shard,totalShards,checkoutPathCount} | with_entries(select(.value != null)) end))' <<<"$matrix")
 groups=$(jq -c 'with_entries(.value = {hasChange:((.value.include|length)>0),matrix:.value})' <<<"$compact_matrix"); has=$(jq -r 'any(to_entries[]; .value.include | length > 0)' <<<"$compact_matrix")
 result=$(jq -c --argjson groups "$groups" '. + {groups:($groups | with_entries(.value |= {hasChange,assignmentCount:(.matrix.include|length)}))}' <<<"$report")
 output_bytes=$(printf 'has_change=%s\ngroups=%s\nresult=%s\n' "$has" "$groups" "$result" | iconv -f UTF-8 -t UTF-16LE | wc -c | tr -d ' ')

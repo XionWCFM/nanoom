@@ -1,6 +1,7 @@
 use crate::affected::{calculate_with_override, generate_matrix_with_history};
 use crate::error::Result;
 use clap::Args;
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 #[derive(Args, Debug, Clone)]
@@ -14,10 +15,7 @@ pub struct AffectedArgs {
     #[arg(long, help = "Output the canonical affected report as JSON")]
     pub json: bool,
 
-    #[arg(
-        long,
-        help = "Best-effort timing history JSON used for runner assignments"
-    )]
+    #[arg(long, help = "Timing history JSON used for runner assignments")]
     pub history: Option<PathBuf>,
 
     #[arg(
@@ -61,6 +59,52 @@ pub async fn execute(
     };
     let matrix =
         generate_matrix_with_history(&result, &history, &timing_runner, &args.timing_environment);
+    let total_checkout_path_count: usize = matrix
+        .as_object()
+        .into_iter()
+        .flat_map(|groups| groups.values())
+        .filter_map(|group| group.get("include").and_then(serde_json::Value::as_array))
+        .flatten()
+        .filter_map(|entry| {
+            entry
+                .get("checkoutPathCount")
+                .and_then(serde_json::Value::as_u64)
+        })
+        .map(|count| count as usize)
+        .sum();
+    let unique_checkout_path_count = result
+        .group
+        .values()
+        .flat_map(|group| group.workspaces.iter())
+        .flat_map(|item| item.checkout_paths.iter())
+        .collect::<HashSet<_>>()
+        .len();
+    let prediction_sources = matrix
+        .as_object()
+        .into_iter()
+        .flat_map(|groups| groups.values())
+        .filter_map(|group| group.get("include").and_then(serde_json::Value::as_array))
+        .flatten()
+        .filter_map(|entry| entry.get("predictionSources"))
+        .fold([0_u64; 4], |mut counts, sources| {
+            counts[0] += sources
+                .get("exact")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(0);
+            counts[1] += sources
+                .get("group")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(0);
+            counts[2] += sources
+                .get("cold")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(0);
+            counts[3] += sources
+                .get("sampleCount")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(0);
+            counts
+        });
 
     if args.json {
         println!(
@@ -71,7 +115,17 @@ pub async fn execute(
                 "scheduling": {
                     "historyStatus": history_status,
                     "timingRunner": timing_runner,
-                    "timingEnvironment": args.timing_environment
+                    "timingEnvironment": args.timing_environment,
+                    "objective": ["predictedRuntimeMakespanMs", "totalCheckoutPathCount", "targetBucketRuntimeMs", "assignmentId"],
+                    "totalCheckoutPathCount": total_checkout_path_count,
+                    "uniqueCheckoutPathCount": unique_checkout_path_count,
+                    "duplicatedCheckoutPathCount": total_checkout_path_count.saturating_sub(unique_checkout_path_count),
+                    "predictionSources": {
+                        "exact": prediction_sources[0],
+                        "group": prediction_sources[1],
+                        "cold": prediction_sources[2],
+                        "sampleCount": prediction_sources[3]
+                    }
                 }
             }))?
         );

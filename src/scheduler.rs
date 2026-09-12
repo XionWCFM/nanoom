@@ -1,7 +1,7 @@
 use crate::affected::WorkspaceEntry;
 use crate::config::DistributionConfig;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 type TimingKey = (String, String, String, Option<usize>, String, String);
@@ -11,6 +11,16 @@ type TimingKey = (String, String, String, Option<usize>, String, String);
 pub struct TimingHistory {
     #[serde(default)]
     pub samples: Vec<TimingSample>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub batch: Option<TimingBatch>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TimingBatch {
+    pub assignment_id: String,
+    pub predicted_duration_ms: u64,
+    pub checkout_path_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -32,8 +42,33 @@ pub struct Assignment {
     pub assignment_id: String,
     pub items: Vec<WorkspaceEntry>,
     pub predicted_duration_ms: u64,
+    pub checkout_path_count: usize,
+    pub prediction_sources: PredictionSources,
     pub reason: String,
     pub checkout: crate::affected::CheckoutPlan,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PredictionSources {
+    pub exact: usize,
+    pub group: usize,
+    pub cold: usize,
+    pub sample_count: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum PredictionSource {
+    Exact,
+    Group,
+    Cold,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Prediction {
+    duration_ms: u64,
+    source: PredictionSource,
+    sample_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -55,8 +90,8 @@ impl TimingHistory {
         item: &WorkspaceEntry,
         runner: &str,
         environment: &str,
-        group_fallback: u64,
-    ) -> u64 {
+        group_fallback: Prediction,
+    ) -> Prediction {
         let mut exact: Vec<u64> = self
             .samples
             .iter()
@@ -76,11 +111,15 @@ impl TimingHistory {
         if exact.is_empty() {
             group_fallback
         } else {
-            median(&mut exact)
+            Prediction {
+                duration_ms: median(&mut exact),
+                source: PredictionSource::Exact,
+                sample_count: exact.len(),
+            }
         }
     }
 
-    fn group_fallback(&self, group: &str, runner: &str, environment: &str) -> u64 {
+    fn group_fallback(&self, group: &str, runner: &str, environment: &str) -> Prediction {
         let mut values: Vec<u64> = self
             .samples
             .iter()
@@ -93,9 +132,17 @@ impl TimingHistory {
             .map(|sample| sample.duration_ms)
             .collect();
         if values.is_empty() {
-            1
+            Prediction {
+                duration_ms: 1,
+                source: PredictionSource::Cold,
+                sample_count: 0,
+            }
         } else {
-            median(&mut values)
+            Prediction {
+                duration_ms: median(&mut values),
+                source: PredictionSource::Group,
+                sample_count: values.len(),
+            }
         }
     }
 }
@@ -137,7 +184,7 @@ pub fn assign(
         return vec![];
     }
     let fallback = history.group_fallback(group, runner, environment);
-    let mut weighted: Vec<(WorkspaceEntry, u64, String)> = items
+    let mut weighted: Vec<(WorkspaceEntry, Prediction, String)> = items
         .iter()
         .cloned()
         .map(|item| {
@@ -146,7 +193,11 @@ pub fn assign(
             (item, prediction, id)
         })
         .collect();
-    weighted.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.2.cmp(&b.2)));
+    weighted.sort_by(|a, b| {
+        b.1.duration_ms
+            .cmp(&a.1.duration_ms)
+            .then_with(|| a.2.cmp(&b.2))
+    });
 
     let count = concurrency.min(weighted.len());
     let mut buckets: Vec<Assignment> = (1..=count)
@@ -154,18 +205,48 @@ pub fn assign(
             assignment_id: format!("{group}-{index}"),
             items: vec![],
             predicted_duration_ms: 0,
-            reason: "longest predicted item assigned to the least-loaded bucket".into(),
+            checkout_path_count: 0,
+            prediction_sources: PredictionSources::default(),
+            reason: "minimized predicted runtime makespan, then total sparse checkout paths".into(),
             checkout: crate::affected::checkout_plan(Vec::new()),
         })
         .collect();
     for (item, prediction, _) in weighted {
+        let current_checkout_total: usize = buckets
+            .iter()
+            .map(|bucket| bucket.checkout_path_count)
+            .sum();
         let index = buckets
             .iter()
             .enumerate()
-            .min_by_key(|(_, bucket)| (&bucket.predicted_duration_ms, &bucket.assignment_id))
+            .min_by_key(|(candidate_index, bucket)| {
+                let target_load = bucket.predicted_duration_ms + prediction.duration_ms;
+                let makespan = buckets
+                    .iter()
+                    .enumerate()
+                    .map(|(index, existing)| {
+                        if index == *candidate_index {
+                            target_load
+                        } else {
+                            existing.predicted_duration_ms
+                        }
+                    })
+                    .max()
+                    .unwrap_or(target_load);
+                let target_checkout_count = bucket
+                    .items
+                    .iter()
+                    .flat_map(|existing| existing.checkout_paths.iter())
+                    .chain(item.checkout_paths.iter())
+                    .collect::<HashSet<_>>()
+                    .len();
+                let checkout_total =
+                    current_checkout_total - bucket.checkout_path_count + target_checkout_count;
+                (makespan, checkout_total, target_load, &bucket.assignment_id)
+            })
             .map(|(index, _)| index)
             .unwrap_or(0);
-        buckets[index].predicted_duration_ms += prediction;
+        buckets[index].predicted_duration_ms += prediction.duration_ms;
         buckets[index].checkout = crate::affected::checkout_plan(
             buckets[index]
                 .items
@@ -173,6 +254,18 @@ pub fn assign(
                 .flat_map(|item| item.checkout_paths.iter().cloned())
                 .chain(item.checkout_paths.iter().cloned()),
         );
+        buckets[index].checkout_path_count = buckets[index]
+            .checkout
+            .sparse_checkout
+            .lines()
+            .filter(|path| !path.is_empty())
+            .count();
+        match prediction.source {
+            PredictionSource::Exact => buckets[index].prediction_sources.exact += 1,
+            PredictionSource::Group => buckets[index].prediction_sources.group += 1,
+            PredictionSource::Cold => buckets[index].prediction_sources.cold += 1,
+        }
+        buckets[index].prediction_sources.sample_count += prediction.sample_count;
         buckets[index].items.push(item);
     }
     buckets
@@ -217,7 +310,10 @@ pub fn merge_histories(histories: impl IntoIterator<Item = TimingHistory>) -> Ti
                 &b.environment,
             ))
     });
-    TimingHistory { samples }
+    TimingHistory {
+        samples,
+        batch: None,
+    }
 }
 
 fn work_item_id(item: &WorkspaceEntry) -> String {
@@ -244,6 +340,18 @@ mod tests {
             shard: None,
             total_shards: None,
             checkout_paths: vec![format!("packages/{name}")],
+        }
+    }
+
+    fn sample(name: &str, duration_ms: u64) -> TimingSample {
+        TimingSample {
+            group: "ci".into(),
+            workspace: name.into(),
+            task: "test".into(),
+            shard: None,
+            runner: "yarn".into(),
+            environment: "linux-x64".into(),
+            duration_ms,
         }
     }
 
@@ -286,6 +394,7 @@ mod tests {
                     duration_ms,
                 })
                 .collect(),
+            batch: None,
         };
         let result = assign(
             "ci",
@@ -329,6 +438,154 @@ mod tests {
         assert_eq!(result[0].predicted_duration_ms, 2);
         assert_eq!(result[0].items[0].shard, Some(1));
         assert_eq!(result[0].items[1].shard, Some(2));
+        assert_eq!(result[0].prediction_sources.cold, 2);
+    }
+
+    #[test]
+    fn runtime_makespan_wins_over_checkout_affinity() {
+        let mut a = item("a");
+        a.checkout_paths = vec!["shared".into()];
+        let b = item("b");
+        let mut c = item("c");
+        c.checkout_paths = vec!["shared".into()];
+        let history = TimingHistory {
+            samples: vec![sample("a", 10), sample("b", 9), sample("c", 1)],
+            batch: None,
+        };
+
+        let result = assign("ci", &[a, b, c], 2, &history, "yarn", "linux-x64");
+
+        let bucket_with_c = result
+            .iter()
+            .find(|bucket| bucket.items.iter().any(|entry| entry.name == "c"))
+            .unwrap();
+        assert!(bucket_with_c.items.iter().any(|entry| entry.name == "b"));
+        assert_eq!(
+            result
+                .iter()
+                .map(|bucket| bucket.predicted_duration_ms)
+                .max(),
+            Some(10)
+        );
+    }
+
+    #[test]
+    fn equal_makespan_minimizes_total_sparse_checkout_paths() {
+        let mut a = item("a");
+        a.checkout_paths = vec!["shared".into()];
+        let b = item("b");
+        let mut c = item("c");
+        c.checkout_paths = vec!["shared".into()];
+        let history = TimingHistory {
+            samples: vec![sample("a", 10), sample("b", 10), sample("c", 1)],
+            batch: None,
+        };
+
+        let result = assign("ci", &[a, b, c], 2, &history, "yarn", "linux-x64");
+
+        let bucket_with_c = result
+            .iter()
+            .find(|bucket| bucket.items.iter().any(|entry| entry.name == "c"))
+            .unwrap();
+        assert!(bucket_with_c.items.iter().any(|entry| entry.name == "a"));
+        assert_eq!(
+            result
+                .iter()
+                .map(|bucket| bucket.checkout_path_count)
+                .sum::<usize>(),
+            2
+        );
+        assert_eq!(
+            result
+                .iter()
+                .map(|bucket| bucket.prediction_sources.exact)
+                .sum::<usize>(),
+            3
+        );
+        assert_eq!(
+            result
+                .iter()
+                .map(|bucket| bucket.prediction_sources.sample_count)
+                .sum::<usize>(),
+            3
+        );
+
+        let oracle = (1_u8..7)
+            .map(|mask| {
+                let mut loads = [0_u64; 2];
+                let mut paths = [HashSet::new(), HashSet::new()];
+                for (index, (duration, checkout)) in
+                    [(10, "shared"), (10, "packages/b"), (1, "shared")]
+                        .into_iter()
+                        .enumerate()
+                {
+                    let bucket = usize::from(mask & (1 << index) != 0);
+                    loads[bucket] += duration;
+                    paths[bucket].insert(checkout);
+                }
+                (
+                    *loads.iter().max().unwrap(),
+                    paths.iter().map(HashSet::len).sum::<usize>(),
+                )
+            })
+            .min()
+            .unwrap();
+        assert_eq!(
+            (
+                result
+                    .iter()
+                    .map(|bucket| bucket.predicted_duration_ms)
+                    .max()
+                    .unwrap(),
+                result
+                    .iter()
+                    .map(|bucket| bucket.checkout_path_count)
+                    .sum::<usize>()
+            ),
+            oracle
+        );
+    }
+
+    #[test]
+    fn large_cold_schedule_is_deterministic() {
+        let items: Vec<_> = (0..128)
+            .flat_map(|index| {
+                ["build", "test", "typecheck"].map(move |task| {
+                    let mut entry = item(&format!("next-app-{index:03}"));
+                    entry.task = task.into();
+                    entry
+                })
+            })
+            .collect();
+        let first = assign(
+            "ci",
+            &items,
+            24,
+            &TimingHistory::default(),
+            "yarn",
+            "linux-x64",
+        );
+        let second = assign(
+            "ci",
+            &items,
+            24,
+            &TimingHistory::default(),
+            "yarn",
+            "linux-x64",
+        );
+        assert_eq!(first, second);
+        assert_eq!(first.len(), 24);
+        assert_eq!(
+            first.iter().map(|bucket| bucket.items.len()).sum::<usize>(),
+            384
+        );
+        assert!(
+            first
+                .iter()
+                .map(|bucket| bucket.checkout_path_count)
+                .sum::<usize>()
+                <= 384
+        );
     }
 
     #[test]
@@ -344,7 +601,10 @@ mod tests {
                 duration_ms,
             })
             .collect();
-        let merged = merge_histories([TimingHistory { samples }]);
+        let merged = merge_histories([TimingHistory {
+            samples,
+            batch: None,
+        }]);
         assert_eq!(merged.samples.len(), 7);
         assert_eq!(merged.samples.first().unwrap().duration_ms, 2);
         assert_eq!(merged.samples.last().unwrap().duration_ms, 8);

@@ -59,5 +59,6 @@ workspace를 현재 graph에서 놓치면 빠른 대신 잘못된 affected 결�
 
 정상 run은 필요한 dependency closure만 받으며 affected history는 commit object로
 제한된다. workspace 구조 변경은 평소보다 많은 job을 실행할 수 있지만 누락하지 않는다.
-run마다 checkout 요청은 남고, matrix output 1 MiB 한도와 task별 추가 경로는 실제
-fixture에서 한도나 누락이 확인될 때 별도 결정한다.
+run마다 checkout 요청은 남지만 ADR-0012부터 runtime makespan이 같은 후보에서는
+assignment 전체의 중복 closure path 수가 적은 배치를 선택한다. byte 전송량과 실제 GHES
+부하는 GHES 환경이 제공될 때 별도로 검증한다.
