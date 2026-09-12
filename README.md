@@ -138,19 +138,16 @@ historical scheduler는 기본으로 켜져 있습니다. 같은 workflow와 bra
 
 history job은 run 성공 뒤 실행하고 aggregate `status`의 `needs`에 포함합니다. status 판정 자체는 계속 `${{ toJSON(needs) }}`만 사용합니다.
 
-artifact upload는 기본적으로 GitHub.com용 `artifactVersion: v4`(`actions/upload-artifact@v4.6.2`)를 사용합니다. GHES에서는 `run`과 `history` Action 모두 `artifactVersion: v3`를 명시하면 Node 24 보안 백포트 `actions/upload-artifact@v3.2.2`를 사용합니다. v3는 Actions Runner `2.327.1` 이상이 필요하며 서버를 자동 감지하지 않습니다. GitHub-hosted timing environment는 OS/architecture, self-hosted는 OS/architecture/runner name으로 분리됩니다. autoscaled pool은 안정적인 pool 또는 image revision을 `timingEnvironment`로 지정하세요.
+기본 `run`과 `history`는 GitHub.com용 `actions/upload-artifact@v4.6.2`를 사용합니다. GHES에서는 같은 입력과 결과 계약을 공유하는 `run-ghes`와 `history-ghes`가 Node 24 보안 백포트 `actions/upload-artifact@v3.2.2`를 사용합니다. composite Action의 `uses:`는 파라미터화할 수 없고 조건부 step도 사전 다운로드되므로 진입점을 분리했으며 서버를 자동 감지하지 않습니다. v3는 Actions Runner `2.327.1` 이상이 필요합니다. GitHub-hosted timing environment는 OS/architecture, self-hosted는 OS/architecture/runner name으로 분리됩니다. autoscaled pool은 안정적인 pool 또는 image revision을 `timingEnvironment`로 지정하세요.
 
 ```yaml
-# GHES only; GitHub.com은 기본 v4를 그대로 사용합니다.
-- uses: XionWCFM/nanoom/.github/actions/run@latest
+# GHES only; GitHub.com은 기본 run/history를 그대로 사용합니다.
+- uses: XionWCFM/nanoom/.github/actions/run-ghes@latest
   with:
-    artifactVersion: v3
     matrix: ${{ toJSON(matrix) }}
     group: ci
 
-- uses: XionWCFM/nanoom/.github/actions/history@latest
-  with:
-    artifactVersion: v3
+- uses: XionWCFM/nanoom/.github/actions/history-ghes@latest
 ```
 
 ## HTTP continuous assignment

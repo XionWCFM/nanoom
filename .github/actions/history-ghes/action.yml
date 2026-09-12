@@ -1,11 +1,11 @@
-name: nanoom history
-description: Merge successful timing samples or complete coordinator runs
+name: nanoom history (GHES)
+description: Merge timing samples with the GHES v3 artifact backend
 inputs:
   scheduler: {description: "Timing backend: artifact (default), off, or http", default: artifact}
   runIds: {description: "JSON array of HTTP coordinator run IDs", default: '[]'}
   coordinatorUrl: {description: "HTTPS coordinator base URL for scheduler=http", default: ''}
   historyArtifactName: {description: "Artifact name used for merged timing history", default: nanoom-timing-history}
-  version: {description: "Action ref (version tag or latest), explicit release tag, or local for repository tests", default: action}
+  version: {description: "Action ref, explicit release tag, or local for repository tests", default: action}
   releaseBaseUrl: {description: "HTTPS origin hosting Nanoom release assets", default: "https://github.com"}
 outputs:
   result: {description: "Canonical history result", value: "${{ steps.final.outputs.result || steps.history.outputs.result }}"}
@@ -29,7 +29,7 @@ runs:
       shell: bash
       env:
         SCHEDULER: ${{ inputs.scheduler }}
-        ARTIFACT_VERSION: v4
+        ARTIFACT_VERSION: v3
         RUN_IDS: ${{ inputs.runIds }}
         COORDINATOR_URL: ${{ inputs.coordinatorUrl }}
         COORDINATOR_TOKEN: ${{ env.NANOOM_COORDINATOR_TOKEN }}
@@ -42,10 +42,10 @@ runs:
         RUN_ID: ${{ github.run_id }}
         RUN_ATTEMPT: ${{ github.run_attempt }}
         RUNNER_TEMP: ${{ runner.temp }}
-      run: bash "$GITHUB_ACTION_PATH/run.sh"
+      run: bash "$GITHUB_ACTION_PATH/../history/run.sh"
     - name: Upload merged timing history
       if: inputs.scheduler == 'artifact' && steps.history.outcome == 'success'
-      uses: actions/upload-artifact@v4.6.2
+      uses: actions/upload-artifact@v3.2.2
       with:
         name: ${{ inputs.historyArtifactName }}
         path: ${{ steps.history.outputs.history-path }}
