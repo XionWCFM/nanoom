@@ -1,5 +1,14 @@
 #!/usr/bin/env bash
 
+nanoom_artifact_version() {
+  local scheduler=$1 version=${2:-v4}
+  [[ "$scheduler" != artifact || "$version" =~ ^(v3|v4)$ ]] || {
+    echo "artifactVersion must be v4 or v3" >&2
+    return 1
+  }
+  printf '%s' "$version"
+}
+
 nanoom_workflow_file() {
   local value=${1#*/}
   value=${value#*/}

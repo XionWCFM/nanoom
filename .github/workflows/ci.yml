@@ -83,7 +83,7 @@ jobs:
         run: mkdir -p coverage && cargo llvm-cov --locked --workspace --all-features --cobertura --output-path coverage/cobertura.xml --fail-under-lines 96
 
       - name: Upload coverage report
-        uses: actions/upload-artifact@v3.2.2
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: coverage-report
           path: coverage/cobertura.xml

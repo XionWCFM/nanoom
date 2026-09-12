@@ -11,7 +11,7 @@ task subprocess 시간만으로 LPT를 수행하면 runtime은 균등해도 같�
 ## Decision
 
 - artifact scheduler를 기본값으로 하고 `off`를 명시적 opt-out으로 둔다. 첫 run은 cold fallback을 허용하지만 표준 workflow는 run 뒤 history job을 실행한다.
-- artifact upload는 GHES용 Node 24 백포트 `v3.2.2`를 사용한다. v3 download에 없는 prefix fan-in은 GitHub REST API로 구현한다.
+- artifact upload의 기본값은 GitHub.com용 `artifactVersion: v4`와 `actions/upload-artifact@v4.6.2`다. GHES 사용자는 `run`과 `history`에 `artifactVersion: v3`를 명시해 Node 24 백포트 `v3.2.2`를 선택한다. 서버는 자동 감지하지 않으며 prefix fan-in은 공통 GitHub REST API로 구현한다.
 - history는 같은 repository, workflow, branch의 마지막 성공·완료 run만 사용한다. 현재 run, 실패 run, 다른 provenance, expired/corrupt artifact는 제외한다.
 - exact 최근 7개 median, group median, cold `1`과 deterministic LPT를 유지한다. 후보 비용은 `(predicted runtime makespan, total checkout path count, target bucket runtime, assignment ID)` 순서로 비교한다.
 - checkout 비용은 assignment별 고유 closure path 수의 합이다. byte 추정을 위한 추가 Git object fetch나 사람이 관리하는 milliseconds weight는 사용하지 않는다.
@@ -28,10 +28,10 @@ task subprocess 시간만으로 LPT를 수행하면 runtime은 균등해도 같�
 
 - runtime makespan이 다른 후보에서는 runtime이 우선하고, 같은 후보에서는 전체 checkout path 합이 더 작은 배치를 고른다.
 - canonical JSON이 history provenance, exact/group/cold sample coverage, 총/고유/중복 checkout path 수를 설명한다.
-- v3 REST fan-in과 동일 workflow/branch 성공 run 선택을 Action contract로 검증한다.
+- v4 기본 경로, 명시적 v3 경로, 잘못된 version 거부, REST fan-in과 동일 workflow/branch 성공 run 선택을 Action contract로 검증한다.
 - released `v0.5.0`과 `latest`를 사용하는 `nanoom-fixtures`가 small, medium, full의 cold/warm run, focused install, task, history, aggregate status를 모두 통과한다.
 - 실제 GHES가 제공되지 않은 동안에는 공식 v3 contract와 GitHub.com hosted 실행만 증명하며 GHES hosted 검증을 주장하지 않는다.
 
 ## Consequences
 
-runtime 균형을 희생하지 않는 범위에서 반복 sparse checkout closure를 줄인다. 첫 run은 history가 없어 cold이지만 이후 성공 run부터 재사용한다. GitHub.com에서 v3 backend가 거부되거나 released fixture가 개선을 보이지 않으면 v0.5.0 완료로 보지 않는다.
+runtime 균형을 희생하지 않는 범위에서 반복 sparse checkout closure를 줄인다. 첫 run은 history가 없어 cold이지만 이후 성공 run부터 재사용한다. GitHub.com은 v4, GHES는 명시적 v3로 플랫폼 제약을 드러낸다. released fixture가 개선을 보이지 않으면 v0.5.0 완료로 보지 않는다.

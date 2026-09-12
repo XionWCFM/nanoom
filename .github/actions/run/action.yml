@@ -6,6 +6,7 @@ inputs:
   packageManager: {description: "Package manager override: auto, pnpm, yarn, or npm", default: auto}
   monorepoTool: {description: "Runner override: auto, turbo, nx, pnpm, yarn, or npm", default: auto}
   scheduler: {description: "Timing backend selected by affected: artifact (default), off, or http", default: artifact}
+  artifactVersion: {description: "Artifact upload backend: v4 (GitHub.com default) or v3 (GHES)", default: v4}
   timingEnvironment: {description: "Stable hardware identity used for timing history", default: ''}
   cleanupCheckout: {description: "Delete cwd after the run when it is an isolated .nanoom/ checkout", default: 'false'}
   coordinatorUrl: {description: "HTTPS coordinator base URL for scheduler=http", default: ''}
@@ -39,12 +40,21 @@ runs:
         TOOL: ${{ inputs.monorepoTool }}
         CWD: ${{ inputs.cwd }}
         SCHEDULER: ${{ inputs.scheduler }}
+        ARTIFACT_VERSION: ${{ inputs.artifactVersion }}
         TIMING_ENVIRONMENT: ${{ inputs.timingEnvironment || (runner.environment == 'self-hosted' && format('{0}-{1}-{2}', runner.os, runner.arch, runner.name) || format('{0}-{1}', runner.os, runner.arch)) }}
         COORDINATOR_URL: ${{ inputs.coordinatorUrl }}
         COORDINATOR_TOKEN: ${{ env.NANOOM_COORDINATOR_TOKEN }}
       run: bash "$GITHUB_ACTION_PATH/run.sh"
-    - name: Upload successful timing sample
-      if: inputs.scheduler == 'artifact' && steps.run.outcome == 'success'
+    - name: Upload successful timing sample (GitHub.com)
+      if: inputs.scheduler == 'artifact' && inputs.artifactVersion == 'v4' && steps.run.outcome == 'success'
+      uses: actions/upload-artifact@v4.6.2
+      with:
+        name: ${{ steps.run.outputs.sample-name }}
+        path: ${{ steps.run.outputs.sample-path }}
+        retention-days: 30
+        if-no-files-found: error
+    - name: Upload successful timing sample (GHES)
+      if: inputs.scheduler == 'artifact' && inputs.artifactVersion == 'v3' && steps.run.outcome == 'success'
       uses: actions/upload-artifact@v3.2.2
       with:
         name: ${{ steps.run.outputs.sample-name }}

@@ -2,9 +2,11 @@
 set -Eeuo pipefail
 ACTION_NAME=run ACTION_CWD=$CWD ACTION_PHASE=input-validation ACTION_COMMAND=not-started
 source "$GITHUB_ACTION_PATH/../_setup/log.sh"; trap 'nanoom_fail "$?"' ERR
+source "$GITHUB_ACTION_PATH/../_setup/artifacts.sh"
 started=$(date +%s)
 entry=$(jq -ce '(.include[0] // .)' <<<"$MATRIX"); mode=$(jq -r '.mode // "static"' <<<"$entry")
 [[ "$SCHEDULER" =~ ^(off|artifact|http)$ ]] || { echo "invalid scheduler: $SCHEDULER" >&2; false; }
+artifact_version=$(nanoom_artifact_version "$SCHEDULER" "${ARTIFACT_VERSION:-}")
 
 run_item() {
   local item=$1 group task name cli_result
@@ -69,7 +71,7 @@ else
 fi
 
 elapsed=$(( $(date +%s) - started )); matrix_json=$(jq -c '{assignmentId,agentId,runId,mode,predictedDurationMs,items} | with_entries(select(.value != null))' <<<"$entry")
-result=$(jq -cn --argjson matrix "$matrix_json" --argjson results "$results" --argjson elapsed "$elapsed" '{status:"success",reason:"executed assignment items in order",matrix:$matrix,results:$results,elapsedSeconds:$elapsed}'); echo "result=$result" >> "$GITHUB_OUTPUT"
+result=$(jq -cn --argjson matrix "$matrix_json" --argjson results "$results" --argjson elapsed "$elapsed" --arg artifactVersion "$artifact_version" --arg scheduler "$SCHEDULER" '{status:"success",reason:"executed assignment items in order",matrix:$matrix,results:$results,elapsedSeconds:$elapsed} + (if $scheduler == "artifact" then {artifactVersion:$artifactVersion} else {} end)'); echo "result=$result" >> "$GITHUB_OUTPUT"
 if [[ "$SCHEDULER" == artifact ]]; then
   sample_dir="$RUNNER_TEMP/nanoom-timing"; mkdir -p "$sample_dir"; assignment_id=$(jq -r '.assignmentId // "legacy"' <<<"$entry"); sample_name=$(printf '%s-%s' "${GITHUB_JOB:-local}" "$assignment_id" | tr -c 'A-Za-z0-9._-' '-' | cut -c1-80); sample_path="$sample_dir/$sample_name.json"
   jq -n --arg group "$GROUP" --arg environment "$TIMING_ENVIRONMENT" --argjson entry "$entry" --argjson results "$results" '{batch:{assignmentId:($entry.assignmentId // "legacy"),predictedDurationMs:($entry.predictedDurationMs // 0),checkoutPathCount:($entry.checkoutPathCount // 0)},samples:[$results[] | .item as $item | .cli.executions[] | {group:$group,workspace:.workspace,task:$item.task,shard:$item.shard,runner:.runner,environment:$environment,durationMs:.durationMs}]}' > "$sample_path"

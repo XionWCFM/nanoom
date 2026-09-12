@@ -47,9 +47,13 @@ grep -q 'always() && inputs.cleanupCheckout' .github/actions/run/action.yml
 grep -q 'items' .github/actions/run/run.sh
 grep -q 'durationMs' .github/actions/run/run.sh
 grep -q 'retention-days: 30' .github/actions/{run,history}/action.yml
-test "$(grep -R -l 'actions/upload-artifact@v3.2.2' .github | wc -l | tr -d ' ')" -eq 4
-! grep -R -nE 'actions/(upload|download)-artifact@v4' .github
+test "$(grep -R -l 'actions/upload-artifact@v3.2.2' .github | wc -l | tr -d ' ')" -eq 2
+test "$(grep -R -l 'actions/upload-artifact@v4.6.2' .github | wc -l | tr -d ' ')" -eq 4
+! grep -R -nE 'actions/(upload|download)-artifact@(v4$|v3$)' .github
 grep -q 'default: artifact' .github/actions/{affected,run,history}/action.yml
+grep -q '^  artifactVersion: .*default: v4' .github/actions/{run,history}/action.yml
+grep -q "inputs.artifactVersion == 'v3'" .github/actions/{run,history}/action.yml
+grep -q "inputs.artifactVersion == 'v4'" .github/actions/{run,history}/action.yml
 grep -q 'runner.environment.*self-hosted' .github/actions/{affected,run}/action.yml
 grep -q 'GITHUB_STEP_SUMMARY' .github/actions/status/run.sh
 ! grep -q '^  version:' .github/actions/status/action.yml

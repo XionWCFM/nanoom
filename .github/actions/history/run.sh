@@ -2,6 +2,7 @@
 set -Eeuo pipefail
 started=$(date +%s)
 source "$GITHUB_ACTION_PATH/../_setup/artifacts.sh"
+artifact_version=$(nanoom_artifact_version "$SCHEDULER" "${ARTIFACT_VERSION:-}")
 if [[ "$SCHEDULER" == off ]]; then
   result='{"status":"success","scheduler":"off","reason":"historical scheduling explicitly disabled"}'
 elif [[ "$SCHEDULER" == http ]]; then
@@ -36,7 +37,7 @@ else
   fi
   inputs+=("${current_inputs[@]}")
   cli_result=$(nanoom history "${inputs[@]}" --output "$output")
-  elapsed=$(( $(date +%s) - started )); result=$(jq -cn --argjson cli "$cli_result" --argjson current "$current_summary" --arg sourceRun "$source_run_id" --argjson elapsed "$elapsed" '{status:"success",scheduler:"artifact",historySourceRunId:(if $sourceRun == "" then null else ($sourceRun | tonumber) end),current:$current,cli:$cli,mergeMs:($elapsed*1000)}')
+  elapsed=$(( $(date +%s) - started )); result=$(jq -cn --argjson cli "$cli_result" --argjson current "$current_summary" --arg sourceRun "$source_run_id" --argjson elapsed "$elapsed" --arg artifactVersion "$artifact_version" '{status:"success",scheduler:"artifact",artifactVersion:$artifactVersion,historySourceRunId:(if $sourceRun == "" then null else ($sourceRun | tonumber) end),current:$current,cli:$cli,mergeMs:($elapsed*1000)}')
   echo "history-path=$output" >> "$GITHUB_OUTPUT"
   echo "upload-started=$(date +%s)" >> "$GITHUB_OUTPUT"
 fi

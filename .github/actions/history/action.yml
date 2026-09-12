@@ -2,6 +2,7 @@ name: nanoom history
 description: Merge successful timing samples or complete coordinator runs
 inputs:
   scheduler: {description: "Timing backend: artifact (default), off, or http", default: artifact}
+  artifactVersion: {description: "Artifact upload backend: v4 (GitHub.com default) or v3 (GHES)", default: v4}
   runIds: {description: "JSON array of HTTP coordinator run IDs", default: '[]'}
   coordinatorUrl: {description: "HTTPS coordinator base URL for scheduler=http", default: ''}
   historyArtifactName: {description: "Artifact name used for merged timing history", default: nanoom-timing-history}
@@ -29,6 +30,7 @@ runs:
       shell: bash
       env:
         SCHEDULER: ${{ inputs.scheduler }}
+        ARTIFACT_VERSION: ${{ inputs.artifactVersion }}
         RUN_IDS: ${{ inputs.runIds }}
         COORDINATOR_URL: ${{ inputs.coordinatorUrl }}
         COORDINATOR_TOKEN: ${{ env.NANOOM_COORDINATOR_TOKEN }}
@@ -42,8 +44,16 @@ runs:
         RUN_ATTEMPT: ${{ github.run_attempt }}
         RUNNER_TEMP: ${{ runner.temp }}
       run: bash "$GITHUB_ACTION_PATH/run.sh"
-    - name: Upload merged timing history
-      if: inputs.scheduler == 'artifact' && steps.history.outcome == 'success'
+    - name: Upload merged timing history (GitHub.com)
+      if: inputs.scheduler == 'artifact' && inputs.artifactVersion == 'v4' && steps.history.outcome == 'success'
+      uses: actions/upload-artifact@v4.6.2
+      with:
+        name: ${{ inputs.historyArtifactName }}
+        path: ${{ steps.history.outputs.history-path }}
+        retention-days: 30
+        if-no-files-found: error
+    - name: Upload merged timing history (GHES)
+      if: inputs.scheduler == 'artifact' && inputs.artifactVersion == 'v3' && steps.history.outcome == 'success'
       uses: actions/upload-artifact@v3.2.2
       with:
         name: ${{ inputs.historyArtifactName }}
