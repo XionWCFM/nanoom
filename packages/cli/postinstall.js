@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Verifies that a usable platform binary was installed via optionalDependencies.
 const { execFileSync } = require('child_process');
+const fs = require('fs');
 const path = require('path');
 
 const PLATFORM_PACKAGES = {
@@ -21,6 +22,7 @@ if (!pkg) {
 try {
   const pkgDir = path.dirname(require.resolve(`${pkg}/package.json`));
   const exe = path.join(pkgDir, process.platform === 'win32' ? 'nanoom.exe' : 'nanoom');
+  if (process.platform !== 'win32') fs.chmodSync(exe, 0o755);
   execFileSync(exe, ['--version'], { stdio: 'ignore' });
   console.log('[nanoom] binary installed successfully.');
 } catch {

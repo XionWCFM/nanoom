@@ -35,7 +35,10 @@ function installedBinary(info) {
   try {
     const pkgDir = path.dirname(require.resolve(`${info.pkg}/package.json`));
     const exe = path.join(pkgDir, process.platform === 'win32' ? 'nanoom.exe' : 'nanoom');
-    if (fs.existsSync(exe)) return exe;
+    if (fs.existsSync(exe)) {
+      if (process.platform !== 'win32') fs.chmodSync(exe, 0o755);
+      return exe;
+    }
   } catch {
     // Fall through to the release download.
   }
