@@ -28,6 +28,7 @@ task subprocess 시간만으로 LPT를 수행하면 runtime은 균등해도 같�
 
 - runtime makespan이 다른 후보에서는 runtime이 우선하고, 같은 후보에서는 전체 checkout path 합이 더 작은 배치를 고른다.
 - canonical JSON이 history provenance, exact/group/cold sample coverage, 총/고유/중복 checkout path 수를 설명한다.
+- `history`의 `sampleCount`는 이전 성공 history와 현재 sample을 합친 누적 수이므로 반복 run에서 증가할 수 있다.
 - v4 기본 진입점, 명시적 GHES v3 진입점, 공통 실행 결과의 backend 표시, REST fan-in과 동일 workflow/branch 성공 run 선택을 Action contract로 검증한다.
 - released `v0.5.0`과 `latest`를 사용하는 `nanoom-fixtures`가 small, medium, full의 cold/warm run, focused install, task, history, aggregate status를 모두 통과한다.
 - 실제 GHES가 제공되지 않은 동안에는 공식 v3 contract와 GitHub.com hosted 실행만 증명하며 GHES hosted 검증을 주장하지 않는다.
