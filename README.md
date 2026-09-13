@@ -136,7 +136,7 @@ historical scheduler는 기본으로 켜져 있습니다. 같은 workflow와 bra
 - uses: XionWCFM/nanoom/.github/actions/history@latest
 ```
 
-history job은 run 성공 뒤 실행하고 aggregate `status`의 `needs`에 포함합니다. status 판정 자체는 계속 `${{ toJSON(needs) }}`만 사용합니다.
+history job은 run 성공 뒤 실행하고 aggregate `status`의 dependency에 포함합니다. 작은 workflow는 `${{ toJSON(needs) }}`를 그대로 전달할 수 있습니다. 대규모 matrix에서는 outputs까지 포함한 JSON이 runner process 한도를 넘을 수 있으므로 `results`에 필요한 job 결과만 `job=${{ needs.job.result }}` 형식으로 전달합니다.
 
 기본 `run`과 `history`는 GitHub.com용 `actions/upload-artifact@v4.6.2`를 사용합니다. GHES에서는 같은 입력과 결과 계약을 공유하는 `run-ghes`와 `history-ghes`가 Node 24 보안 백포트 `actions/upload-artifact@v3.2.2`를 사용합니다. composite Action의 `uses:`는 파라미터화할 수 없고 조건부 step도 사전 다운로드되므로 진입점을 분리했으며 서버를 자동 감지하지 않습니다. v3는 Actions Runner `2.327.1` 이상이 필요합니다. GitHub-hosted timing environment는 OS/architecture, self-hosted는 OS/architecture/runner name으로 분리됩니다. autoscaled pool은 안정적인 pool 또는 image revision을 `timingEnvironment`로 지정하세요.
 

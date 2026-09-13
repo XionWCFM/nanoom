@@ -67,6 +67,7 @@ grep -q 'GITHUB_STEP_SUMMARY' .github/actions/status/run.sh
 ! grep -qE 'affectedJob|matrixJob|GROUP|AFFECTED|MATRIX|FORMAT' .github/actions/status/action.yml .github/actions/status/run.sh
 grep -q 'needs must contain at least one job result' .github/actions/status/run.sh
 grep -q 'all needed jobs succeeded or were skipped' .github/actions/status/run.sh
+grep -q 'Optional newline-delimited job=result pairs' .github/actions/status/action.yml
 bash scripts/status-action-test.sh
 bash scripts/coordinator-contract-test.sh
 bash scripts/assignment-action-test.sh

@@ -9,7 +9,7 @@ The public consumer workflow has one `affected` job, one conditional matrix `run
 
 ## Decision
 
-The status Action accepts only `needs`. It evaluates every dependency result as a set:
+The status Action accepts either the original `needs` JSON or newline-delimited `results` entries. It evaluates every dependency result as a set:
 
 - `success` and `skipped` are accepted;
 - `failure`, `cancelled`, missing, unknown, malformed, and empty input fail.
@@ -20,6 +20,17 @@ The Action does not accept or infer `affectedJob`, `matrixJob`, `group`, or `has
 - uses: XionWCFM/nanoom/.github/actions/status@v0.2.8
   with:
     needs: ${{ toJSON(needs) }}
+```
+
+Large matrix workflows should avoid carrying every job output into the aggregate process environment:
+
+```yaml
+- uses: XionWCFM/nanoom/.github/actions/status@latest
+  with:
+    results: |
+      affected=${{ needs.affected.result }}
+      run=${{ needs.run.result }}
+      history=${{ needs.history.result }}
 ```
 
 The real fixture remains responsible for proving that a positive affected change generated and executed every expected matrix entry. Status aggregation intentionally does not reimplement that product-specific assertion.
@@ -33,7 +44,7 @@ The real fixture remains responsible for proving that a positive affected change
 ## Acceptance criteria
 
 - Focused Action tests cover all accepted and rejected result classes.
-- The recommended consumer workflow contains only `needs` for status and no status checkout.
+- The recommended consumer workflow uses `needs` for small graphs or compact `results` for large graphs, with no status checkout.
 - Producer CI passes the Action contract and internal fixture aggregate.
 - A released `nanoom-fixtures` workflow proves both a positive matrix run and an intentional no-change skipped run.
 - The released Action tag selects its matching binary by default when a semver tag is used.
