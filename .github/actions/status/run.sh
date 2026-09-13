@@ -4,7 +4,13 @@ ACTION_NAME=status ACTION_CWD=. ACTION_PHASE=input-validation ACTION_COMMAND='bu
 source "$GITHUB_ACTION_PATH/../_setup/log.sh"; trap 'nanoom_fail "$?"' ERR
 bold=$'\033[1m'; cyan=$'\033[36m'; reset=$'\033[0m'
 if [[ -n "${RESULTS:-}" ]]; then
-  NEEDS=$(jq -Rn 'reduce inputs as $line ({}; ($line | capture("^(?<name>[^=]+)=(?<result>[^=]+)$")) as $pair | .[$pair.name] = {result: $pair.result})' <<<"$RESULTS")
+  NEEDS=$(jq -Rsc '
+    split("\n") | map(select(length > 0) | split("=")) |
+    if any(.[]; length != 2 or .[0] == "" or .[1] == "")
+    then error("results must contain non-empty job=result lines")
+    else map({key: .[0], value: {result: .[1]}}) | from_entries
+    end
+  ' <<<"$RESULTS")
 fi
 printf '%s◆ nanoom status%s\n  Inputs\n    needs: %s\n' "$bold$cyan" "$reset" "${NEEDS:-}"
 [[ -n "${NEEDS:-}" ]] || { echo 'needs must contain at least one job result' >&2; false; }

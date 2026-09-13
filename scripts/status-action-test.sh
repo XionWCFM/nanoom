@@ -34,6 +34,10 @@ else
   echo 'large results case failed' >&2; exit 1
 fi
 
+if RESULTS=$'valid=success\nmalformed\n' NEEDS= GITHUB_OUTPUT="$tmp/malformed-results.output" GITHUB_STEP_SUMMARY="$tmp/malformed-results.summary" GITHUB_ACTION_PATH="$root/.github/actions/status" bash "$action" >/dev/null 2>&1; then
+  echo 'malformed results case unexpectedly passed' >&2; exit 1
+fi
+
 if RESULTS='missing-result=' NEEDS= GITHUB_OUTPUT="$tmp/results-malformed.output" GITHUB_STEP_SUMMARY="$tmp/results-malformed.summary" GITHUB_ACTION_PATH="$root/.github/actions/status" bash "$action" >/dev/null 2>&1; then
   echo 'malformed results unexpectedly succeeded' >&2; exit 1
 fi
