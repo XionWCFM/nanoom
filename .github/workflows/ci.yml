@@ -234,7 +234,10 @@ jobs:
         id: aggregate
         uses: ./.github/actions/status
         with:
-          needs: ${{ toJSON(needs) }}
+          results: |
+            fixture-affected=${{ needs.fixture-affected.result }}
+            fixture-run=${{ needs.fixture-run.result }}
+            fixture-history=${{ needs.fixture-history.result }}
       - name: Verify status result
         env:
           RESULT: ${{ steps.aggregate.outputs.result }}

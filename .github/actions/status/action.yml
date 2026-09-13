@@ -1,7 +1,8 @@
 name: nanoom status
 description: Evaluate all needs results without artifacts
 inputs:
-  needs: {description: "JSON from toJSON(needs) in the aggregate job", required: true}
+  needs: {description: "JSON from toJSON(needs) in the aggregate job", required: false}
+  results: {description: "Optional newline-delimited job=result pairs; avoids passing large needs JSON", required: false}
 outputs:
   result:
     description: Canonical aggregate status result JSON
@@ -14,4 +15,5 @@ runs:
       shell: bash
       env:
         NEEDS: ${{ inputs.needs }}
+        RESULTS: ${{ inputs.results }}
       run: bash "$GITHUB_ACTION_PATH/run.sh"

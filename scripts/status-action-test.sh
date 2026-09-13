@@ -27,4 +27,19 @@ run_case unknown '{"test":{"result":"queued"}}' failure
 run_case empty '{}' failure
 run_case malformed '{not-json}' failure
 
+large_results=$(printf 'job%03d=success\n' $(seq 1 2000))
+if RESULTS="$large_results" NEEDS= GITHUB_OUTPUT="$tmp/large.output" GITHUB_STEP_SUMMARY="$tmp/large.summary" GITHUB_ACTION_PATH="$root/.github/actions/status" bash "$action" >/dev/null 2>&1; then
+  jq -e '.status == "success" and (.jobs | length) == 2000' < <(sed -n 's/^result=//p' "$tmp/large.output") >/dev/null
+else
+  echo 'large results case failed' >&2; exit 1
+fi
+
+if RESULTS=$'valid=success\nmalformed\n' NEEDS= GITHUB_OUTPUT="$tmp/malformed-results.output" GITHUB_STEP_SUMMARY="$tmp/malformed-results.summary" GITHUB_ACTION_PATH="$root/.github/actions/status" bash "$action" >/dev/null 2>&1; then
+  echo 'malformed results case unexpectedly passed' >&2; exit 1
+fi
+
+if RESULTS='missing-result=' NEEDS= GITHUB_OUTPUT="$tmp/results-malformed.output" GITHUB_STEP_SUMMARY="$tmp/results-malformed.summary" GITHUB_ACTION_PATH="$root/.github/actions/status" bash "$action" >/dev/null 2>&1; then
+  echo 'malformed results unexpectedly succeeded' >&2; exit 1
+fi
+
 echo 'status action tests passed'

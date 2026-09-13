@@ -1,5 +1,11 @@
 # @nanoom/cli
 
+## 0.5.2
+
+### Patch Changes
+
+- Add a compact aggregate-status input for large matrix workflows whose full `needs` JSON exceeds runner process limits.
+
 ## 0.5.1
 
 ### Patch Changes
