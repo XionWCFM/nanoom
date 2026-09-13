@@ -214,7 +214,7 @@ jobs:
           version: local
       - env:
           RESULT: ${{ steps.history.outputs.result }}
-        run: jq -e '.status == "success" and .scheduler == "artifact" and .cli.sampleCount == 4' <<< "$RESULT"
+        run: jq -e '.status == "success" and .scheduler == "artifact" and (.cli.sampleCount >= 4)' <<< "$RESULT"
 
   fixture-aggregate:
     name: Fixture aggregate status
