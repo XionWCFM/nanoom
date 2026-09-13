@@ -56,6 +56,10 @@ pub struct GroupOutput {
     pub affected_percent: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub distribution: Option<crate::scheduler::SelectedTier>,
+    #[serde(rename = "runnerLabels", skip_serializing_if = "Option::is_none")]
+    pub runner_labels: Option<Vec<String>>,
+    #[serde(rename = "timingEnvironment", skip_serializing_if = "Option::is_none")]
+    pub timing_environment: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -191,6 +195,8 @@ pub async fn calculate_with_override(
                         .distribution
                         .as_ref()
                         .map(|config| crate::scheduler::select_tier(config, 0.0)),
+                    runner_labels: group_config.runner_labels.clone(),
+                    timing_environment: group_config.timing_environment.clone(),
                 },
             );
             continue;
@@ -252,6 +258,17 @@ pub async fn calculate_with_override(
             affected_workspace_count as f64 * 100.0 / workspace.project_count() as f64
         };
 
+        let mut distribution = group_config
+            .distribution
+            .as_ref()
+            .map(|config| crate::scheduler::select_tier(config, affected_percent));
+        if let Some(tier) = &mut distribution {
+            if tier.timing_environment.is_none() {
+                tier.timing_environment = group_config.timing_environment.clone().or_else(|| {
+                    group_config.runner_labels.as_ref().map(|labels| { let mut l = labels.clone(); l.sort(); l.join("/") })
+                });
+            }
+        }
         group_outputs.insert(
             group_name.clone(),
             GroupOutput {
@@ -260,10 +277,9 @@ pub async fn calculate_with_override(
                 total_workspaces: workspace.project_count(),
                 affected_workspaces: affected_workspace_count,
                 affected_percent,
-                distribution: group_config
-                    .distribution
-                    .as_ref()
-                    .map(|config| crate::scheduler::select_tier(config, affected_percent)),
+                distribution,
+                runner_labels: group_config.runner_labels.clone(),
+                timing_environment: group_config.timing_environment.clone(),
             },
         );
     }
@@ -432,13 +448,15 @@ pub fn generate_matrix_with_history(
 
     for (group_name, group_output) in &output.group {
         if let Some(distribution) = &group_output.distribution {
-            let assignments = crate::scheduler::assign(
+            let assignments = crate::scheduler::assign_with_config(
                 group_name,
                 &group_output.workspaces,
                 distribution.concurrency,
                 history,
                 runner,
                 environment,
+                distribution.runner_labels.clone().or_else(|| group_output.runner_labels.clone()),
+                distribution.timing_environment.clone().or_else(|| group_output.timing_environment.clone()),
             );
             matrix.insert(
                 group_name.clone(),
@@ -469,6 +487,8 @@ pub fn generate_matrix_with_history(
                 entry["checkoutPathCount"] = serde_json::Value::Number(
                     w.checkout_paths.iter().collect::<HashSet<_>>().len().into(),
                 );
+                if let Some(labels) = &group_output.runner_labels { entry["runnerLabels"] = serde_json::json!(labels); }
+                if let Some(env) = group_output.timing_environment.clone().or_else(|| group_output.runner_labels.as_ref().map(|labels| { let mut l = labels.clone(); l.sort(); l.join("/") })).or_else(|| Some(environment.to_string())) { entry["timingEnvironment"] = serde_json::json!(env); }
                 entry
             })
             .collect();

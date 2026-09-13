@@ -46,6 +46,10 @@ pub struct Assignment {
     pub prediction_sources: PredictionSources,
     pub reason: String,
     pub checkout: crate::affected::CheckoutPlan,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runner_labels: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timing_environment: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -77,6 +81,10 @@ pub struct SelectedTier {
     pub name: String,
     pub max_affected_percent: f64,
     pub concurrency: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runner_labels: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timing_environment: Option<String>,
 }
 
 impl TimingHistory {
@@ -165,20 +173,34 @@ pub fn select_tier(config: &DistributionConfig, affected_percent: f64) -> Select
     } else {
         ("full", &config.full)
     };
+    let labels = tier.runner_labels.clone();
+    let derived = labels.as_ref().map(|values| {
+        let mut sorted = values.clone();
+        sorted.sort();
+        sorted.join("/")
+    });
     SelectedTier {
         name: name.into(),
         max_affected_percent: tier.max_affected_percent,
         concurrency: tier.concurrency,
+        runner_labels: tier.runner_labels.clone(),
+        timing_environment: tier.timing_environment.clone().or(derived),
     }
 }
 
 pub fn assign(
+    group: &str, items: &[WorkspaceEntry], concurrency: usize, history: &TimingHistory, runner: &str, environment: &str,
+) -> Vec<Assignment> { assign_with_config(group, items, concurrency, history, runner, environment, None, None) }
+
+pub fn assign_with_config(
     group: &str,
     items: &[WorkspaceEntry],
     concurrency: usize,
     history: &TimingHistory,
     runner: &str,
     environment: &str,
+    runner_labels: Option<Vec<String>>,
+    timing_environment: Option<String>,
 ) -> Vec<Assignment> {
     if items.is_empty() {
         return vec![];
@@ -209,6 +231,8 @@ pub fn assign(
             prediction_sources: PredictionSources::default(),
             reason: "minimized predicted runtime makespan, then total sparse checkout paths".into(),
             checkout: crate::affected::checkout_plan(Vec::new()),
+            runner_labels: runner_labels.clone(),
+            timing_environment: timing_environment.clone(),
         })
         .collect();
     for (item, prediction, _) in weighted {
@@ -359,14 +383,17 @@ mod tests {
     fn tier_boundaries_are_inclusive() {
         let config = DistributionConfig {
             small: DistributionTier {
+                runner_labels: None, timing_environment: None,
                 max_affected_percent: 25.0,
                 concurrency: 2,
             },
             medium: DistributionTier {
+                runner_labels: None, timing_environment: None,
                 max_affected_percent: 60.0,
                 concurrency: 4,
             },
             full: DistributionTier {
+                runner_labels: None, timing_environment: None,
                 max_affected_percent: 100.0,
                 concurrency: 8,
             },

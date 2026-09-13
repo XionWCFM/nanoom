@@ -182,6 +182,7 @@ fn test_generate_matrix() {
             (
                 "ci".to_string(),
                 GroupOutput {
+                    runner_labels: None, timing_environment: None,
                     label: "ci".to_string(),
                     workspaces: vec![
                         WorkspaceEntry {
@@ -212,6 +213,7 @@ fn test_generate_matrix() {
             (
                 "e2e".to_string(),
                 GroupOutput {
+                    runner_labels: None, timing_environment: None,
                     label: "e2e".to_string(),
                     workspaces: vec![
                         WorkspaceEntry {
@@ -270,6 +272,7 @@ fn test_generate_matrix_for_group() {
         group: std::collections::HashMap::from([(
             "ci".to_string(),
             GroupOutput {
+                runner_labels: None, timing_environment: None,
                 label: "ci".to_string(),
                 workspaces: vec![WorkspaceEntry {
                     group: "ci".into(),

@@ -238,6 +238,8 @@ mod tests {
         group.insert(
             "ci".into(),
             GroupOutput {
+                runner_labels: None,
+                timing_environment: None,
                 label: "ci".into(),
                 workspaces,
                 total_workspaces: 1,

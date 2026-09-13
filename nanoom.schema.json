@@ -58,6 +58,21 @@
         "maxAffectedPercent": {
           "format": "double",
           "type": "number"
+        },
+        "runnerLabels": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "timingEnvironment": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -87,11 +102,26 @@
           },
           "type": "array"
         },
+        "runner_labels": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
         "tasks": {
           "items": {
             "type": "string"
           },
           "type": "array"
+        },
+        "timing_environment": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
