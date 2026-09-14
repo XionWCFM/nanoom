@@ -432,6 +432,8 @@ mod tests {
         group.insert(
             "ci".to_string(),
             GroupConfig {
+                runner_labels: None,
+                timing_environment: None,
                 tasks: vec!["echo".to_string(), "true".to_string(), "false".to_string()],
                 rules: vec![],
                 distribution: None,
@@ -711,6 +713,8 @@ mod tests {
     #[test]
     fn select_affected_projects_applies_task_filter_and_shard() {
         let output = crate::affected::GroupOutput {
+            runner_labels: None,
+            timing_environment: None,
             label: "ci".into(),
             workspaces: vec![
                 crate::affected::WorkspaceEntry {

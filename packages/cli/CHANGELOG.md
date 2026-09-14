@@ -1,5 +1,11 @@
 # @nanoom/cli
 
+## 0.6.0
+
+### Minor Changes
+
+- Route assignment matrix jobs with group- or tier-specific `runnerLabels` from `nanoom.config.json` and keep historical timing separated by the resolved runner pool.
+
 ## 0.5.2
 
 ### Patch Changes

@@ -285,6 +285,51 @@ fn test_validate_distribution() {
 }
 
 #[test]
+fn runner_config_uses_camel_case_and_rejects_unsafe_values() {
+    let config: Config = serde_json::from_value(serde_json::json!({
+        "group": {"ci": {
+            "tasks": ["test"],
+            "runnerLabels": ["self-hosted", "linux", "large"],
+            "timingEnvironment": "linux-large",
+            "distribution": {
+                "small": {"maxAffectedPercent": 25, "concurrency": 1},
+                "medium": {"maxAffectedPercent": 60, "concurrency": 2},
+                "full": {
+                    "maxAffectedPercent": 100,
+                    "concurrency": 4,
+                    "runnerLabels": ["self-hosted", "linux", "xlarge"]
+                }
+            }
+        }}
+    }))
+    .unwrap();
+    assert!(config.validate().is_ok());
+    assert_eq!(
+        config.group["ci"].runner_labels.as_deref(),
+        Some(&["self-hosted".into(), "linux".into(), "large".into()][..])
+    );
+
+    for runner in [
+        serde_json::json!({"runnerLabels": []}),
+        serde_json::json!({"runnerLabels": ["linux", "linux"]}),
+        serde_json::json!({"runnerLabels": [" "]}),
+        serde_json::json!({"runnerLabels": ["linux\n"]}),
+        serde_json::json!({"timingEnvironment": ""}),
+    ] {
+        let mut group = serde_json::json!({"tasks": ["test"]});
+        group
+            .as_object_mut()
+            .unwrap()
+            .extend(runner.as_object().unwrap().clone());
+        let config: Config = serde_json::from_value(serde_json::json!({
+            "group": {"ci": group}
+        }))
+        .unwrap();
+        assert!(config.validate().is_err());
+    }
+}
+
+#[test]
 fn test_schema_generation() {
     let schema = nanoom::schema::generate().unwrap();
     let schema_str = serde_json::to_string(&schema).unwrap();

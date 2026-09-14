@@ -3,6 +3,7 @@
   "group": {
     "ci": {
       "tasks": ["test", "build", "typecheck"],
+      "runnerLabels": ["ubuntu-latest"],
       "distribution": {
         "small": { "maxAffectedPercent": 25, "concurrency": 3 },
         "medium": { "maxAffectedPercent": 60, "concurrency": 6 },

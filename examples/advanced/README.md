@@ -68,7 +68,7 @@ jobs:
     needs: matrix
     strategy:
       matrix: ${{ fromJSON(needs.matrix.outputs.groups).ci.matrix }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runnerLabels || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
       - run: npm install -g @nanoom/cli && pnpm install
