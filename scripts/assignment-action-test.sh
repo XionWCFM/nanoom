@@ -19,7 +19,7 @@ if bash "$GITHUB_ACTION_PATH/run.sh" >/dev/null 2>&1; then echo 'failure assignm
 result=$(sed -n 's/^result=//p' "$GITHUB_OUTPUT")
 jq -e '.status == "failure" and [.failed[].name] == ["pkg-a"] and [.pending[].name] == ["pkg-b"] and (.completed | length) == 0' <<<"$result" >/dev/null
 
-export FAKE_SUCCESS=1 SCHEDULER=artifact MATRIX='{"assignmentId":"ci-1","items":[{"group":"ci","name":"pkg-a","task":"test"}]}'
+export FAKE_SUCCESS=1 SCHEDULER=artifact MATRIX='{"assignmentId":"ci-1","timingEnvironment":"runner-labels:[\"linux\",\"self-hosted\"]","items":[{"group":"ci","name":"pkg-a","task":"test"}]}'
 : > "$GITHUB_OUTPUT"
 if ARTIFACT_VERSION=v5 bash "$GITHUB_ACTION_PATH/run.sh" >"$tmp/version.log" 2>&1; then echo 'invalid artifact version unexpectedly succeeded' >&2; exit 1; fi
 grep -q 'artifactVersion must be v4 or v3' "$tmp/version.log"
@@ -40,4 +40,5 @@ pnpm_name=$(sed -n 's/^sample-name=//p' "$GITHUB_OUTPUT")
 test "$yarn_sample" != "$pnpm_sample" && test "$yarn_name" != "$pnpm_name"
 test -s "$yarn_sample" && test -s "$pnpm_sample"
 jq -e '.samples | length == 1' "$yarn_sample" "$pnpm_sample" >/dev/null
+jq -e '.samples[0].environment == "runner-labels:[\"linux\",\"self-hosted\"]"' "$yarn_sample" "$pnpm_sample" >/dev/null
 echo 'assignment failure contract passed'

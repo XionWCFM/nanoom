@@ -117,6 +117,38 @@ historical scheduler는 기본으로 켜져 있습니다. 같은 workflow와 bra
 
 배치는 예상 runtime makespan을 먼저 최소화합니다. runtime이 같은 후보에서는 모든 assignment의 sparse checkout path 수 합계가 가장 작은 bucket을 선택해 중복 checkout을 줄입니다. `result.scheduling`의 `historyStatus`, `historySourceRunId`, `predictionSources`, `totalCheckoutPathCount`, `uniqueCheckoutPathCount`, `duplicatedCheckoutPathCount`로 근거를 확인할 수 있습니다.
 
+group 또는 distribution tier의 `runnerLabels`로 matrix job의 runner를 정할 수 있습니다. 배열은 fallback 순서가 아니라 모든 라벨을 만족해야 하는 AND 조건입니다. tier 설정이 group 설정을 덮어쓰며, 생략하면 workflow의 `ubuntu-latest` fallback을 사용합니다.
+
+```json
+{
+  "group": {
+    "ci": {
+      "tasks": ["test"],
+      "runnerLabels": ["self-hosted", "linux", "large"],
+      "timingEnvironment": "linux-large-image-v3",
+      "distribution": {
+        "small": { "maxAffectedPercent": 25, "concurrency": 3 },
+        "medium": { "maxAffectedPercent": 60, "concurrency": 12 },
+        "full": {
+          "maxAffectedPercent": 100,
+          "concurrency": 24,
+          "runnerLabels": ["self-hosted", "linux", "xlarge"],
+          "timingEnvironment": "linux-xlarge-image-v3"
+        }
+      }
+    }
+  }
+}
+```
+
+```yaml
+strategy:
+  matrix: ${{ fromJSON(needs.affected.outputs.groups).ci.matrix }}
+runs-on: ${{ matrix.runnerLabels || 'ubuntu-latest' }}
+```
+
+`timingEnvironment`을 생략하면 정렬된 runner label 배열로 안정적인 history identity를 만듭니다. 성능이 다른 runner가 같은 라벨 집합을 공유하는 autoscaled pool에서는 image/pool revision을 명시하세요. PR이 수정할 수 있는 config로 privileged self-hosted runner를 선택하면 신뢰되지 않은 코드를 그 runner에서 실행할 수 있으므로, fork PR은 고정 hosted runner 또는 격리된 pool만 사용하고 동적 label routing은 trusted push/`workflow_dispatch`에 제한하세요.
+
 첫 실행은 `bootstrap-fallback` cold scheduling으로 정상 실행됩니다. 성공한 `run`만 sample artifact를 올리고 표준 `history` job이 다음 실행용 artifact로 병합합니다. 이전 성공 run에 sample만 있고 merged history가 없으면 history job 누락으로 실패합니다. historical scheduling이 필요 없는 경우에만 affected/run/history 모두 `scheduler: off`를 명시합니다.
 
 ```yaml

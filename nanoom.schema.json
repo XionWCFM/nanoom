@@ -102,7 +102,7 @@
           },
           "type": "array"
         },
-        "runner_labels": {
+        "runnerLabels": {
           "items": {
             "type": "string"
           },
@@ -117,7 +117,7 @@
           },
           "type": "array"
         },
-        "timing_environment": {
+        "timingEnvironment": {
           "type": [
             "string",
             "null"

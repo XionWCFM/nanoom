@@ -1,9 +1,10 @@
 use nanoom::{
     affected::{
-        calculate, generate_matrix, generate_matrix_for_group, AffectedOutput, GroupOutput,
-        WorkspaceEntry,
+        calculate, generate_matrix, generate_matrix_for_group, generate_matrix_with_history,
+        AffectedOutput, GroupOutput, WorkspaceEntry,
     },
     config::Config,
+    scheduler::{TimingHistory, TimingSample},
 };
 use std::fs;
 use std::process::Command;
@@ -87,7 +88,28 @@ async fn test_calculate_with_override_tip_reports_shards() {
         r#"{"name":"app"}"#,
     )
     .unwrap();
-    fs::write(dir.path().join("nanoom.config.json"), r#"{"group":{"ci":{"tasks":["test","build"],"rules":[{"name":"app","shard":[{"task":"build","shard":2}]}]}},"workspace":{"include":["packages/*"]}}"#).unwrap();
+    fs::write(
+        dir.path().join("nanoom.config.json"),
+        r#"{
+          "group": {"ci": {
+            "tasks": ["test", "build"],
+            "runnerLabels": ["self-hosted", "linux", "small"],
+            "timingEnvironment": "small-pool",
+            "distribution": {
+              "small": {"maxAffectedPercent": 25, "concurrency": 1},
+              "medium": {"maxAffectedPercent": 60, "concurrency": 1},
+              "full": {
+                "maxAffectedPercent": 100,
+                "concurrency": 1,
+                "runnerLabels": ["self-hosted", "linux", "large"]
+              }
+            },
+            "rules": [{"name": "app", "shard": [{"task": "build", "shard": 2}]}]
+          }},
+          "workspace": {"include": ["packages/*"]}
+        }"#,
+    )
+    .unwrap();
     git(&["add", "."]);
     git(&["commit", "-qm", "base"]);
     fs::write(dir.path().join("packages/app/changed.txt"), "changed").unwrap();
@@ -108,6 +130,37 @@ async fn test_calculate_with_override_tip_reports_shards() {
     assert_eq!(
         entries.iter().filter(|entry| entry.shard.is_some()).count(),
         2
+    );
+    let tier = output.group["ci"].distribution.as_ref().unwrap();
+    assert_eq!(
+        tier.runner_labels.as_deref(),
+        Some(&["self-hosted".into(), "linux".into(), "large".into()][..])
+    );
+    let environment = tier.timing_environment.as_deref().unwrap();
+    assert!(environment.starts_with("runner-labels:"));
+    let matrix = generate_matrix_with_history(
+        &output,
+        &TimingHistory {
+            samples: vec![TimingSample {
+                group: "ci".into(),
+                workspace: "app".into(),
+                task: "test".into(),
+                shard: None,
+                runner: "yarn".into(),
+                environment: environment.into(),
+                duration_ms: 77,
+            }],
+            batch: None,
+        },
+        "yarn",
+        "affected-runner",
+    );
+    assert_eq!(matrix["ci"]["include"][0]["predictedDurationMs"], 231);
+    assert_eq!(matrix["ci"]["include"][0]["predictionSources"]["exact"], 1);
+    assert_eq!(matrix["ci"]["include"][0]["predictionSources"]["group"], 2);
+    assert_eq!(
+        matrix["ci"]["include"][0]["runnerLabels"],
+        serde_json::json!(["self-hosted", "linux", "large"])
     );
 }
 
@@ -182,7 +235,8 @@ fn test_generate_matrix() {
             (
                 "ci".to_string(),
                 GroupOutput {
-                    runner_labels: None, timing_environment: None,
+                    runner_labels: None,
+                    timing_environment: None,
                     label: "ci".to_string(),
                     workspaces: vec![
                         WorkspaceEntry {
@@ -213,7 +267,8 @@ fn test_generate_matrix() {
             (
                 "e2e".to_string(),
                 GroupOutput {
-                    runner_labels: None, timing_environment: None,
+                    runner_labels: None,
+                    timing_environment: None,
                     label: "e2e".to_string(),
                     workspaces: vec![
                         WorkspaceEntry {
@@ -272,7 +327,8 @@ fn test_generate_matrix_for_group() {
         group: std::collections::HashMap::from([(
             "ci".to_string(),
             GroupOutput {
-                runner_labels: None, timing_environment: None,
+                runner_labels: None,
+                timing_environment: None,
                 label: "ci".to_string(),
                 workspaces: vec![WorkspaceEntry {
                     group: "ci".into(),

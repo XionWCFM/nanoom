@@ -5,6 +5,8 @@ source "$GITHUB_ACTION_PATH/../_setup/log.sh"; trap 'nanoom_fail "$?"' ERR
 source "$GITHUB_ACTION_PATH/../_setup/artifacts.sh"
 started=$(date +%s)
 entry=$(jq -ce '(.include[0] // .)' <<<"$MATRIX"); mode=$(jq -r '.mode // "static"' <<<"$entry")
+matrix_timing_environment=$(jq -r '.timingEnvironment // empty' <<<"$entry")
+[[ -z "$matrix_timing_environment" ]] || TIMING_ENVIRONMENT=$matrix_timing_environment
 [[ "$SCHEDULER" =~ ^(off|artifact|http)$ ]] || { echo "invalid scheduler: $SCHEDULER" >&2; false; }
 artifact_version=$(nanoom_artifact_version "$SCHEDULER" "${ARTIFACT_VERSION:-}")
 
@@ -70,7 +72,7 @@ else
   done < <(jq -c '.[]' <<<"$items")
 fi
 
-elapsed=$(( $(date +%s) - started )); matrix_json=$(jq -c '{assignmentId,agentId,runId,mode,predictedDurationMs,items} | with_entries(select(.value != null))' <<<"$entry")
+elapsed=$(( $(date +%s) - started )); matrix_json=$(jq -c '{assignmentId,agentId,runId,mode,predictedDurationMs,runnerLabels,timingEnvironment,items} | with_entries(select(.value != null))' <<<"$entry")
 result=$(jq -cn --argjson matrix "$matrix_json" --argjson results "$results" --argjson elapsed "$elapsed" --arg artifactVersion "$artifact_version" --arg scheduler "$SCHEDULER" '{status:"success",reason:"executed assignment items in order",matrix:$matrix,results:$results,elapsedSeconds:$elapsed} + (if $scheduler == "artifact" then {artifactVersion:$artifactVersion} else {} end)'); echo "result=$result" >> "$GITHUB_OUTPUT"
 if [[ "$SCHEDULER" == artifact ]]; then
   sample_dir="$RUNNER_TEMP/nanoom-timing"; mkdir -p "$sample_dir"; assignment_id=$(jq -r '.assignmentId // "legacy"' <<<"$entry"); sample_name=$(printf '%s-%s' "${GITHUB_JOB:-local}" "$assignment_id" | tr -c 'A-Za-z0-9._-' '-' | cut -c1-80); sample_path="$sample_dir/$sample_name.json"

@@ -131,7 +131,7 @@ CHANGE=false
 for arg in "$@"; do
   case "$arg" in
     --shards) SHARD_BLOCK=', "rules": [{ "name": "@fixture/shared", "shard": [{ "task": "test", "shard": 2 }] }]' ;;
-    --distribution) DISTRIBUTION_BLOCK=', "distribution": { "small": { "maxAffectedPercent": 25, "concurrency": 1 }, "medium": { "maxAffectedPercent": 60, "concurrency": 2 }, "full": { "maxAffectedPercent": 100, "concurrency": 2 } }' ;;
+    --distribution) DISTRIBUTION_BLOCK=', "runnerLabels": ["ubuntu-latest"], "distribution": { "small": { "maxAffectedPercent": 25, "concurrency": 1 }, "medium": { "maxAffectedPercent": 60, "concurrency": 2 }, "full": { "maxAffectedPercent": 100, "concurrency": 2 } }' ;;
     --change) CHANGE=true ;;
     *) echo "unknown option: $arg" >&2; exit 2 ;;
   esac

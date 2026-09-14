@@ -60,9 +60,17 @@ pub struct GroupConfig {
     pub rules: Vec<Rule>,
     #[serde(default)]
     pub distribution: Option<DistributionConfig>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "runnerLabels",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub runner_labels: Option<Vec<String>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "timingEnvironment",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub timing_environment: Option<String>,
 }
 
@@ -164,7 +172,12 @@ impl Config {
         }
 
         for (name, group) in &self.group {
-            validate_runner_config(name, "group", &group.runner_labels, &group.timing_environment)?;
+            validate_runner_config(
+                name,
+                "group",
+                &group.runner_labels,
+                &group.timing_environment,
+            )?;
             if group.tasks.is_empty() {
                 return Err(Error::ConfigValidation(format!(
                     "Group '{}' must have at least one task",
@@ -188,7 +201,12 @@ impl Config {
                 ];
                 let mut previous = 0.0;
                 for (tier_name, tier) in tiers {
-                    validate_runner_config(name, tier_name, &tier.runner_labels, &tier.timing_environment)?;
+                    validate_runner_config(
+                        name,
+                        tier_name,
+                        &tier.runner_labels,
+                        &tier.timing_environment,
+                    )?;
                     if !tier.max_affected_percent.is_finite()
                         || tier.max_affected_percent <= previous
                         || tier.max_affected_percent > 100.0
@@ -259,19 +277,34 @@ impl Config {
     }
 }
 
-fn validate_runner_config(group: &str, scope: &str, labels: &Option<Vec<String>>, env: &Option<String>) -> Result<()> {
+fn validate_runner_config(
+    group: &str,
+    scope: &str,
+    labels: &Option<Vec<String>>,
+    env: &Option<String>,
+) -> Result<()> {
     if let Some(value) = env {
         if value.trim().is_empty() || value.chars().any(|c| c.is_control()) {
-            return Err(Error::ConfigValidation(format!("Group '{group}' {scope} timingEnvironment must not be empty or contain control characters")));
+            return Err(Error::ConfigValidation(format!(
+                "Group '{group}' {scope} timingEnvironment must not be empty or contain control characters"
+            )));
         }
     }
     if let Some(values) = labels {
-        if values.is_empty() || values.iter().any(|v| v.trim().is_empty() || v.chars().any(|c| c.is_control())) {
-            return Err(Error::ConfigValidation(format!("Group '{group}' {scope} runnerLabels must contain non-empty labels")));
+        if values.is_empty()
+            || values
+                .iter()
+                .any(|v| v.trim().is_empty() || v.chars().any(|c| c.is_control()))
+        {
+            return Err(Error::ConfigValidation(format!(
+                "Group '{group}' {scope} runnerLabels must contain non-empty labels"
+            )));
         }
         let mut seen = HashSet::new();
         if values.iter().any(|v| !seen.insert(v)) {
-            return Err(Error::ConfigValidation(format!("Group '{group}' {scope} runnerLabels must not contain duplicates")));
+            return Err(Error::ConfigValidation(format!(
+                "Group '{group}' {scope} runnerLabels must not contain duplicates"
+            )));
         }
     }
     Ok(())

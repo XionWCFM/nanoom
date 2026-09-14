@@ -173,24 +173,36 @@ pub fn select_tier(config: &DistributionConfig, affected_percent: f64) -> Select
     } else {
         ("full", &config.full)
     };
-    let labels = tier.runner_labels.clone();
-    let derived = labels.as_ref().map(|values| {
-        let mut sorted = values.clone();
-        sorted.sort();
-        sorted.join("/")
-    });
     SelectedTier {
         name: name.into(),
         max_affected_percent: tier.max_affected_percent,
         concurrency: tier.concurrency,
         runner_labels: tier.runner_labels.clone(),
-        timing_environment: tier.timing_environment.clone().or(derived),
+        timing_environment: tier
+            .timing_environment
+            .clone()
+            .or_else(|| tier.runner_labels.as_deref().map(runner_labels_environment)),
     }
 }
 
 pub fn assign(
-    group: &str, items: &[WorkspaceEntry], concurrency: usize, history: &TimingHistory, runner: &str, environment: &str,
-) -> Vec<Assignment> { assign_with_config(group, items, concurrency, history, runner, environment, None, None) }
+    group: &str,
+    items: &[WorkspaceEntry],
+    concurrency: usize,
+    history: &TimingHistory,
+    runner: &str,
+    environment: &str,
+) -> Vec<Assignment> {
+    assign_with_config(
+        group,
+        items,
+        concurrency,
+        history,
+        runner,
+        environment,
+        (None, None),
+    )
+}
 
 pub fn assign_with_config(
     group: &str,
@@ -199,12 +211,13 @@ pub fn assign_with_config(
     history: &TimingHistory,
     runner: &str,
     environment: &str,
-    runner_labels: Option<Vec<String>>,
-    timing_environment: Option<String>,
+    runner_config: (Option<Vec<String>>, Option<String>),
 ) -> Vec<Assignment> {
     if items.is_empty() {
         return vec![];
     }
+    let (runner_labels, timing_environment) = runner_config;
+    let environment = timing_environment.as_deref().unwrap_or(environment);
     let fallback = history.group_fallback(group, runner, environment);
     let mut weighted: Vec<(WorkspaceEntry, Prediction, String)> = items
         .iter()
@@ -295,6 +308,15 @@ pub fn assign_with_config(
     buckets
 }
 
+pub(crate) fn runner_labels_environment(labels: &[String]) -> String {
+    let mut labels = labels.to_vec();
+    labels.sort();
+    format!(
+        "runner-labels:{}",
+        serde_json::to_string(&labels).expect("runner labels serialize")
+    )
+}
+
 pub fn merge_histories(histories: impl IntoIterator<Item = TimingHistory>) -> TimingHistory {
     let mut by_key: HashMap<TimingKey, Vec<TimingSample>> = HashMap::new();
     for sample in histories.into_iter().flat_map(|history| history.samples) {
@@ -383,17 +405,20 @@ mod tests {
     fn tier_boundaries_are_inclusive() {
         let config = DistributionConfig {
             small: DistributionTier {
-                runner_labels: None, timing_environment: None,
+                runner_labels: None,
+                timing_environment: None,
                 max_affected_percent: 25.0,
                 concurrency: 2,
             },
             medium: DistributionTier {
-                runner_labels: None, timing_environment: None,
+                runner_labels: None,
+                timing_environment: None,
                 max_affected_percent: 60.0,
                 concurrency: 4,
             },
             full: DistributionTier {
-                runner_labels: None, timing_environment: None,
+                runner_labels: None,
+                timing_environment: None,
                 max_affected_percent: 100.0,
                 concurrency: 8,
             },
@@ -444,6 +469,41 @@ mod tests {
                 "yarn",
                 "linux-x64"
             )
+        );
+    }
+
+    #[test]
+    fn configured_runner_environment_selects_matching_history() {
+        let labels = vec!["large".into(), "self-hosted".into(), "linux".into()];
+        let environment = runner_labels_environment(&labels);
+        let history = TimingHistory {
+            samples: vec![TimingSample {
+                environment: environment.clone(),
+                ..sample("a", 41)
+            }],
+            batch: None,
+        };
+
+        let result = assign_with_config(
+            "ci",
+            &[item("a")],
+            1,
+            &history,
+            "yarn",
+            "affected-runner",
+            (Some(labels.clone()), Some(environment.clone())),
+        );
+
+        assert_eq!(result[0].predicted_duration_ms, 41);
+        assert_eq!(result[0].prediction_sources.exact, 1);
+        assert_eq!(result[0].runner_labels.as_ref(), Some(&labels));
+        assert_eq!(
+            result[0].timing_environment.as_deref(),
+            Some(environment.as_str())
+        );
+        assert_eq!(
+            environment,
+            runner_labels_environment(&["linux".into(), "large".into(), "self-hosted".into()])
         );
     }
 

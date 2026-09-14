@@ -43,6 +43,7 @@ grep -q '^  groups:' .github/actions/affected/action.yml
 grep -q 'output_bytes=.*has_change=.*groups=.*result' .github/actions/affected/run.sh
 grep -q 'UTF-16LE' .github/actions/affected/run.sh
 grep -q 'distribution' .github/actions/affected/run.sh
+grep -q 'runnerLabels,timingEnvironment' .github/actions/affected/run.sh
 grep -q 'historyStatus' .github/actions/affected/run.sh
 grep -q 'revisionResolution' .github/actions/affected/run.sh
 grep -q 'matrix:' .github/actions/install/action.yml
@@ -52,6 +53,7 @@ grep -q '^  cleanupCheckout:' .github/actions/run/action.yml
 grep -q 'always() && inputs.cleanupCheckout' .github/actions/run/action.yml
 grep -q 'items' .github/actions/run/run.sh
 grep -q 'durationMs' .github/actions/run/run.sh
+grep -q 'matrix_timing_environment' .github/actions/run/run.sh
 grep -q 'retention-days: 30' .github/actions/{run,history}/action.yml
 test "$(grep -R -l 'actions/upload-artifact@v3.2.2' .github/actions/{run-ghes,history-ghes} | wc -l | tr -d ' ')" -eq 2
 test "$(grep -R -l 'actions/upload-artifact@v4.6.2' .github | wc -l | tr -d ' ')" -eq 4
@@ -75,6 +77,7 @@ bash scripts/history-artifact-test.sh
 bash scripts/revision-action-test.sh
 bash scripts/cleanup-checkout-test.sh
 bash scripts/fixture-completion-test.sh
+grep -Fq "runs-on: \${{ matrix.runnerLabels || 'ubuntu-latest' }}" .github/workflows/ci.yml README.md examples/advanced/README.md
 schema=$(mktemp); trap 'rm -f "$schema"' EXIT
 target/debug/nanoom schema --output "$schema" >/dev/null
 cmp nanoom.schema.json "$schema"

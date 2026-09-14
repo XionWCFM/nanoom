@@ -99,13 +99,14 @@ if [[ "$SCHEDULER" == http ]]; then
     body=$(jq -cn --arg repository "$REPOSITORY" --arg run "$RUN_ID.$RUN_ATTEMPT" --arg group "$group" --arg environment "$TIMING_ENVIRONMENT" --argjson workItems "$items" --argjson tier "$distribution" --argjson concurrency "$concurrency" '{repository:$repository,run:$run,group:$group,workItems:$workItems,tier:$tier,concurrency:$concurrency,environment:$environment}')
     group_key=$(jq -rn --arg value "$group" '$value | @uri')
     response=$(curl --fail-with-body --silent --show-error -X POST -H "Authorization: Bearer $COORDINATOR_TOKEN" -H 'Content-Type: application/json' -H "Idempotency-Key: $REPOSITORY:$RUN_ID:$RUN_ATTEMPT:$group_key" "$coordinator/v1/runs" --data "$body")
-    run_id=$(jq -er .runId <<<"$response"); agents=$(jq -cn --arg runId "$run_id" --argjson count "$concurrency" --argjson checkout "$checkout" '[range(1; $count + 1) | {agentId:("agent-" + tostring),runId:$runId,mode:"continuous",checkout:$checkout}]')
+    runner_config=$(jq -c --arg group "$group" '.[$group].include[0] | {runnerLabels,timingEnvironment} | with_entries(select(.value != null))' <<<"$matrix")
+    run_id=$(jq -er .runId <<<"$response"); agents=$(jq -cn --arg runId "$run_id" --argjson count "$concurrency" --argjson checkout "$checkout" --argjson runnerConfig "$runner_config" '[range(1; $count + 1) | ({agentId:("agent-" + tostring),runId:$runId,mode:"continuous",checkout:$checkout} + $runnerConfig)]')
     matrix=$(jq -c --arg group "$group" --argjson agents "$agents" '.[$group].include=$agents' <<<"$matrix")
   done < <(jq -r '.affected.group | keys[]' <<<"$report")
   report=$(jq -c --argjson matrix "$matrix" '.matrix=$matrix' <<<"$report")
 fi
 
-compact_matrix=$(jq -c 'with_entries(.value.include |= map(if .items then {assignmentId,predictedDurationMs,checkoutPathCount,predictionSources,reason,checkout,items:[.items[] | {group,name,task,shard,totalShards} | with_entries(select(.value != null))]} elif .mode == "continuous" then {agentId,runId,mode,checkout} else {name,task,shard,totalShards,checkoutPathCount} | with_entries(select(.value != null)) end))' <<<"$matrix")
+compact_matrix=$(jq -c 'with_entries(.value.include |= map(if .items then {assignmentId,predictedDurationMs,checkoutPathCount,predictionSources,reason,checkout,runnerLabels,timingEnvironment,items:[.items[] | {group,name,task,shard,totalShards} | with_entries(select(.value != null))]} elif .mode == "continuous" then {agentId,runId,mode,checkout,runnerLabels,timingEnvironment} else {name,task,shard,totalShards,checkoutPathCount,runnerLabels,timingEnvironment} | with_entries(select(.value != null)) end))' <<<"$matrix")
 groups=$(jq -c 'with_entries(.value = {hasChange:((.value.include|length)>0),matrix:.value})' <<<"$compact_matrix"); has=$(jq -r 'any(to_entries[]; .value.include | length > 0)' <<<"$compact_matrix")
 result=$(jq -c --argjson groups "$groups" '. + {groups:($groups | with_entries(.value |= {hasChange,assignmentCount:(.matrix.include|length)}))}' <<<"$report")
 output_bytes=$(printf 'has_change=%s\ngroups=%s\nresult=%s\n' "$has" "$groups" "$result" | iconv -f UTF-8 -t UTF-16LE | wc -c | tr -d ' ')

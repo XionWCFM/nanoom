@@ -265,7 +265,10 @@ pub async fn calculate_with_override(
         if let Some(tier) = &mut distribution {
             if tier.timing_environment.is_none() {
                 tier.timing_environment = group_config.timing_environment.clone().or_else(|| {
-                    group_config.runner_labels.as_ref().map(|labels| { let mut l = labels.clone(); l.sort(); l.join("/") })
+                    group_config
+                        .runner_labels
+                        .as_deref()
+                        .map(crate::scheduler::runner_labels_environment)
                 });
             }
         }
@@ -455,8 +458,16 @@ pub fn generate_matrix_with_history(
                 history,
                 runner,
                 environment,
-                distribution.runner_labels.clone().or_else(|| group_output.runner_labels.clone()),
-                distribution.timing_environment.clone().or_else(|| group_output.timing_environment.clone()),
+                (
+                    distribution
+                        .runner_labels
+                        .clone()
+                        .or_else(|| group_output.runner_labels.clone()),
+                    distribution
+                        .timing_environment
+                        .clone()
+                        .or_else(|| group_output.timing_environment.clone()),
+                ),
             );
             matrix.insert(
                 group_name.clone(),
@@ -487,8 +498,17 @@ pub fn generate_matrix_with_history(
                 entry["checkoutPathCount"] = serde_json::Value::Number(
                     w.checkout_paths.iter().collect::<HashSet<_>>().len().into(),
                 );
-                if let Some(labels) = &group_output.runner_labels { entry["runnerLabels"] = serde_json::json!(labels); }
-                if let Some(env) = group_output.timing_environment.clone().or_else(|| group_output.runner_labels.as_ref().map(|labels| { let mut l = labels.clone(); l.sort(); l.join("/") })).or_else(|| Some(environment.to_string())) { entry["timingEnvironment"] = serde_json::json!(env); }
+                if let Some(labels) = &group_output.runner_labels {
+                    entry["runnerLabels"] = serde_json::json!(labels);
+                }
+                if let Some(env) = group_output.timing_environment.clone().or_else(|| {
+                    group_output
+                        .runner_labels
+                        .as_deref()
+                        .map(crate::scheduler::runner_labels_environment)
+                }) {
+                    entry["timingEnvironment"] = serde_json::json!(env);
+                }
                 entry
             })
             .collect();
