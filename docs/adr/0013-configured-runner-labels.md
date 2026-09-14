@@ -28,6 +28,7 @@ Nanoom은 assignment 수와 내용을 만들지만 consumer workflow의 `runs-on
 - group labels가 legacy와 distribution matrix entry에 배열로 나오고 실제 hosted matrix `runs-on`에서 소비된다.
 - tier labels/environment가 group 값을 덮어쓰고 해당 environment의 history sample만 예측에 사용한다.
 - label 순서 변경은 같은 파생 history identity를 만들고 pool label 변경은 다른 identity를 만든다.
+- 이전 history artifact가 로드되어도 새 pool identity의 sample이 없으면 첫 run은 cold이고, 그 run의 sample부터 같은 pool의 warm history로 사용한다.
 - 설정 생략은 기존 matrix shape와 hosted fallback을 유지한다.
 - invalid label/environment config는 실행 전에 실패한다.
 - Action outputs와 canonical result가 같은 runner fields를 보존하고 run sample도 같은 environment를 기록한다.
