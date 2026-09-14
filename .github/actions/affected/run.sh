@@ -96,7 +96,8 @@ if [[ "$SCHEDULER" == http ]]; then
     items=$(jq -c --arg group "$group" '.affected.group[$group].workspaces' <<<"$report"); item_count=$(jq length <<<"$items"); (( item_count > 0 )) || continue
     checkout=$(jq -c --arg group "$group" '[.[$group].include[].checkout.sparseCheckout | split("\n")[]] | unique | {coneMode:true,sparseCheckout:join("\n")}' <<<"$matrix")
     concurrency=$(jq -r .concurrency <<<"$distribution"); (( concurrency > item_count )) && concurrency=$item_count
-    body=$(jq -cn --arg repository "$REPOSITORY" --arg run "$RUN_ID.$RUN_ATTEMPT" --arg group "$group" --arg environment "$TIMING_ENVIRONMENT" --argjson workItems "$items" --argjson tier "$distribution" --argjson concurrency "$concurrency" '{repository:$repository,run:$run,group:$group,workItems:$workItems,tier:$tier,concurrency:$concurrency,environment:$environment}')
+    resolved_environment=$(jq -r --arg fallback "$TIMING_ENVIRONMENT" '.timingEnvironment // $fallback' <<<"$distribution")
+    body=$(jq -cn --arg repository "$REPOSITORY" --arg run "$RUN_ID.$RUN_ATTEMPT" --arg group "$group" --arg environment "$resolved_environment" --argjson workItems "$items" --argjson tier "$distribution" --argjson concurrency "$concurrency" '{repository:$repository,run:$run,group:$group,workItems:$workItems,tier:$tier,concurrency:$concurrency,environment:$environment}')
     group_key=$(jq -rn --arg value "$group" '$value | @uri')
     response=$(curl --fail-with-body --silent --show-error -X POST -H "Authorization: Bearer $COORDINATOR_TOKEN" -H 'Content-Type: application/json' -H "Idempotency-Key: $REPOSITORY:$RUN_ID:$RUN_ATTEMPT:$group_key" "$coordinator/v1/runs" --data "$body")
     runner_config=$(jq -c --arg group "$group" '.[$group].include[0] | {runnerLabels,timingEnvironment} | with_entries(select(.value != null))' <<<"$matrix")
