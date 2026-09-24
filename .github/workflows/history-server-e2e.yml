@@ -85,6 +85,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Build local Nanoom
         run: cargo build --locked --bin nanoom
+      - name: Add Nanoom binary to PATH
+        run: echo "$GITHUB_WORKSPACE/target/debug" >> "$GITHUB_PATH"
       - run: corepack enable
       - uses: actions/download-artifact@v4.3.0
         with:
@@ -194,6 +196,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Build local Nanoom
         run: cargo build --locked --bin nanoom
+      - name: Add Nanoom binary to PATH
+        run: echo "$GITHUB_WORKSPACE/target/debug" >> "$GITHUB_PATH"
       - run: corepack enable
       - uses: actions/download-artifact@v4.3.0
         with:
