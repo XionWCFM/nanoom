@@ -55,7 +55,7 @@ basic/advanced 예제에 positive, no-change, required status job wiring을 보�
 
 - [x] S0 공유 PredictionState core 추출, 기존 caller 재노출, RFC8785/hash/batch regression.
 - [x] S1 Cloudflare Worker routes / exact auth / bounded JSON: D1 feature compile, native tests, Clippy, `worker-build --release`.
-- [ ] S2 D1 digest CAS / lost response / corruption / capacity: local D1 merge, duplicate retry, body conflict, concurrent CAS 및 hosted 1-batch merge 통과; lost response, corrupt row, 1.9 MB cap boundary는 미실시.
+- [ ] S2 D1 digest CAS / lost response / corruption / capacity: local D1 merge, duplicate retry, body conflict, concurrent CAS 및 hosted merge/replay no-op 통과; lost response, corrupt row, 1.9 MB cap boundary는 미실시.
 - [x] S3 `/health`·`/ready` 및 local HTTP contract; hosted `/health`·`/ready`도 200.
 - [x] S4 artifact 기본값 유지 / server opt-in / cold fallback / token 비노출 client — 로컬 및 GitHub-hosted History Server E2E 통과.
 - [x] S5 Workers Free + D1 + `workers.dev` 배포, health/readiness, hosted protected merge와 warm consumer 통과. Worker CPU/usage 계측은 미실시.
@@ -70,11 +70,12 @@ basic/advanced 예제에 positive, no-change, required status job wiring을 보�
 - 로컬 테스트용 `.dev.vars` 삭제; crate `.gitignore`에서 build/cache와 개발 secret을 제외한다.
 - `wrangler whoami`: Cloudflare 계정 로그인 확인. Dashboard에서 Workers Free 및 결제 수단 없음 확인.
 - 전용 D1 `nanoom-history-state` 생성 및 remote migration 적용. 기존 D1은 재사용하지 않았다. R2 자동 청구 약관은 수락하지 않았고 R2 구독/Workers Paid 전환은 안 했다. 2026-09-25에 exact repository/scope ACL로 Worker secret과 GitHub `NANOOM_HISTORY_TOKEN` secret을 설정하고, 익명 snapshot 요청이 HTTP 401로 거부됨을 확인했다.
-- Worker `https://nanoom-history.giljongyudev.workers.dev` version `f4ea5fe3-06fa-4013-9e16-baee49006e76` 배포. Hosted `/health`·`/ready`는 200, 보호 snapshot은 `configuration_error` 503으로 fail closed.
+- Worker `https://nanoom-history.giljongyudev.workers.dev` version `f4ea5fe3-06fa-4013-9e16-baee49006e76` 배포. Hosted `/health`·`/ready`는 200, secret 설정 전 보호 snapshot은 `configuration_error` 503으로 fail closed였고, 설정 뒤 익명 요청은 401로 거부됐다.
 - [Cloudflare Worker/D1 server spec](docs/history-server-spec.md)에 D1 free quotas, CPU 제한, `workers.dev` 경로를 기록했다.
 - `scripts/history-server-e2e-test.sh`는 실제 Action/fixture와 로컬 Worker+D1을 연결해 cold fallback → 2개 run assignment → merge → duplicate no-op → warm sample 재사용 → warm run까지 통과했다.
 - [GitHub-hosted History Server E2E run 36037405023](https://github.com/XionWCFM/nanoom/actions/runs/36037405023), SHA `1f85325d60bc717569e2c3cb9f5c39de4720630b`: `affected`, 2개 matrix run, History Server merge, warm `affected`, warm run 모두 success. History Action은 measurement file 2개에서 observation 4개를 받아 D1 batch 1개를 적용했다. Warm matrix의 각 assignment가 `sampleCount: 2`를 사용했고 실제 warm run measurement를 생성했다.
-- Hosted E2E 전에 기본 sandbox의 `gh auth status`는 GitHub API 연결 실패로 token invalid를 보고했다. 네트워크 접근이 허용된 실행 경로의 `gh auth status`와 `gh api user`는 exit 0, account `XionWCFM`, `repo`/`workflow` scope다. 재인증은 필요하지 않았다.
+- [GitHub-hosted duplicate replay E2E run 36039351473](https://github.com/XionWCFM/nanoom/actions/runs/36039351473), SHA `9a813513e84df5b21bad797a5df50dd9b019aaf8`: `affected`, 2개 Yarn matrix run, 첫 History merge, 동일 artifact replay, warm `affected`, warm run 모두 success. 첫 merge는 measurement file 2개/observation 4개에서 batch 1개를 적용했고, 같은 run 내 replay는 `appliedBatchCount: 0`, `duplicateBatchCount: 1`을 확인했다. 후속 warm `affected`가 `historyStatus: loaded` 및 assignment별 `sampleCount: 4`를 사용하고 실제 warm run measurement를 생성했다.
+- 기본 sandbox의 `gh auth status`는 GitHub API 연결 실패를 token invalid로 표시하지만, 네트워크 접근이 허용된 실행 경로에서는 `gh auth status`와 `gh api user`가 exit 0이며 account `XionWCFM`, `repo`/`workflow` scope로 확인된다. 재인증은 필요하지 않고 GitHub 네트워크 실행 권한이 필요하다.
 
 ## 별도 외부 증거와 범위
 
