@@ -31,6 +31,16 @@ pub struct AffectedArgs {
         help = "Hardware/environment identity used for timing lookup"
     )]
     pub timing_environment: String,
+
+    #[arg(
+        long,
+        requires = "plan_context",
+        help = "Write the complete Plan v1 JSON to this file"
+    )]
+    pub plan_output: Option<PathBuf>,
+
+    #[arg(long, requires = "plan_output", help = "Plan provenance JSON file")]
+    pub plan_context: Option<PathBuf>,
 }
 
 pub async fn execute(
@@ -38,6 +48,16 @@ pub async fn execute(
     config: &crate::Config,
     cwd: &std::path::Path,
 ) -> Result<()> {
+    if args.plan_output.is_some() != args.plan_context.is_some() {
+        return Err(crate::error::Error::ConfigValidation(
+            "--plan-output and --plan-context must be supplied together".into(),
+        ));
+    }
+    if args.json && args.plan_output.is_some() {
+        return Err(crate::error::Error::ConfigValidation(
+            "--json full reports cannot be combined with bounded Plan outputs".into(),
+        ));
+    }
     let timing_runner = resolve_timing_runner(cwd, &args.timing_runner)?;
     let result =
         calculate_with_override(config, cwd, args.base.as_deref(), args.head.as_deref()).await?;
@@ -59,6 +79,17 @@ pub async fn execute(
     };
     let matrix =
         generate_matrix_with_history(&result, &history, &timing_runner, &args.timing_environment);
+    let compact_plan = match (&args.plan_output, &args.plan_context) {
+        (Some(plan_output), Some(plan_context)) => Some(crate::plan::write_affected_plan(
+            &result,
+            &matrix,
+            &timing_runner,
+            cwd,
+            &crate::plan::resolve_path(cwd, plan_context),
+            &crate::plan::resolve_path(cwd, plan_output),
+        )?),
+        _ => None,
+    };
     let total_checkout_path_count: usize = matrix
         .as_object()
         .into_iter()
@@ -129,6 +160,11 @@ pub async fn execute(
                 }
             }))?
         );
+        return Ok(());
+    }
+
+    if let Some(compact_plan) = compact_plan {
+        println!("{compact_plan}");
         return Ok(());
     }
 

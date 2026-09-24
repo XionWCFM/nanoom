@@ -37,6 +37,9 @@ npm install --save-dev @nanoom/cli
 
 ```text
 nanoom affected --base <revision> [--head <revision>] [--history <json>] [--json]
+               [--plan-output <file> --plan-context <file>]
+nanoom plan select --input <file> --reference <file> --group <name>
+                   --assignment <id> --output-dir <directory>
 nanoom run <group> <task> [--filter <workspace>] [--all]
            [--shard N --total-shards N] [--continue-on-error] [--json]
 nanoom install [--package-manager auto|pnpm|yarn|npm] [--filter <workspace>]...
@@ -150,6 +153,20 @@ runs-on: ${{ matrix.runnerLabels || 'ubuntu-latest' }}
 `timingEnvironment`을 생략하면 정렬된 runner label 배열로 안정적인 history identity를 만듭니다. 성능이 다른 runner가 같은 라벨 집합을 공유하는 autoscaled pool에서는 image/pool revision을 명시하세요. PR이 수정할 수 있는 config로 privileged self-hosted runner를 선택하면 신뢰되지 않은 코드를 그 runner에서 실행할 수 있으므로, fork PR은 고정 hosted runner 또는 격리된 pool만 사용하고 동적 label routing은 trusted push/`workflow_dispatch`에 제한하세요.
 
 첫 실행은 `bootstrap-fallback` cold scheduling으로 정상 실행됩니다. 성공한 `run`만 sample artifact를 올리고 표준 `history` job이 다음 실행용 artifact로 병합합니다. 이전 성공 run에 sample만 있고 merged history가 없으면 history job 누락으로 실패합니다. historical scheduling이 필요 없는 경우에만 affected/run/history 모두 `scheduler: off`를 명시합니다.
+
+## Plan v1 파일 CLI
+
+Plan v1 producer는 상세 계획을 파일에 저장하고 작은 reference/matrix JSON만 stdout에 출력합니다. context 파일에는 repository, workflow, run ID, producer attempt, planning job, 비교한 전체 base/head SHA, 실행 tool을 넣습니다.
+
+```bash
+nanoom affected --base "$BASE_SHA" --head "$HEAD_SHA" \
+  --plan-context plan-context.json --plan-output plan-v1.json > affected-result.json
+jq -c '.plan' affected-result.json > plan-reference.json
+nanoom plan select --input plan-v1.json --reference plan-reference.json \
+  --group ci --assignment ci-0001 --output-dir selected
+```
+
+`selected/assignment.json`에는 검증된 assignment context가, `selected/paths.txt`에는 sparse checkout 경로가 기록됩니다. selector는 계획 파일의 raw bytes SHA-256, schema, repository/workflow/run/head를 검증합니다. 재실행은 같은 run의 이전 producer attempt(`producerAttempt <= current.attempt`)만 재사용할 수 있으며 reference의 `current` identity는 실행 중인 caller가 제공해야 합니다. 각 group의 compact matrix는 최대 256 assignment, 전체 결과는 UTF-16 인코딩 1 MiB 이하입니다. 이를 넘으면 group과 이유를 출력하고 실패합니다. no-change는 assignment 0개인 정상 Plan입니다. 기존 `affected --json` 상세 report와 bounded Plan output은 함께 요청할 수 없습니다. Artifact 업로드와 checkout/install/run 연결은 별도 후속 단계입니다.
 
 ```yaml
 - id: affected

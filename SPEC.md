@@ -2,7 +2,7 @@
 
 ## 기준 구현: v0.6.0
 
-아래 기존 계약은 source `539b2c08cc7e2543f3a0cdd10fbdba451b2502d5` 기준이다. 이 branch의 A1 변경은 아직 release되지 않았다. A2 이후 제안은 아직 구현되지 않았다. 공개 계약의 기준은 [README](README.md), 생성된 [JSON schema](nanoom.schema.json), [ADR-0012](docs/adr/0012-ghes-history-checkout-cost.md)입니다.
+아래 기존 계약은 source `539b2c08cc7e2543f3a0cdd10fbdba451b2502d5` 기준이다. 이 branch의 A1/A2 runtime 변경은 로컬 검증됐지만 release되지 않았다. A3 이후 제안은 아직 구현되지 않았다. 공개 계약의 기준은 [README](README.md), 생성된 [JSON schema](nanoom.schema.json), [ADR-0011](docs/adr/0011-sparse-checkout-plan.md), [ADR-0012](docs/adr/0012-ghes-history-checkout-cost.md)입니다.
 
 ## Work item과 assignment
 
@@ -79,6 +79,8 @@ Artifact/history/coordinator는 aggregate status의 입력이 아니다. `status
 | 배분 | 관측 preparation+task 비용, tier cap 안에서 기본 자동 k, cold-cap |
 | 상태 | requiredJobs로 예상하지 않은 skipped run 거부 |
 | 서버 | Rust 별도 binary, opt-in historyBackend:server, 기본 artifact 유지, /health와 /ready |
+
+현재 branch의 A2 구현은 `affected --plan-output FILE --plan-context FILE`과 `plan select --input FILE --reference FILE --group GROUP --assignment ID --output-dir DIR`의 Plan v1 file boundary다. 상세 plan은 파일에 저장하고 compact output은 group/assignmentId/runnerLabels/timingEnvironment만 matrix row로 전달한다. validator는 raw-file SHA-256, schema, repository/workflow/run/head provenance, 그리고 `producerAttempt <= current.attempt`를 확인한다. Affected가 만든 reference는 producer identity를 current로 초기화한다. rerun consumer는 actual current run identity를 채운 reference를 제공해야 한다. group별 256행 또는 UTF-16 출력 1 MiB 초과는 실패하고 zero-work Plan은 assignment 없이 유효하다. Action artifact transport와 checkout/install/run wiring은 A3다.
 
 서버 HTTP source of truth는 [OpenAPI 3.1.1](docs/api/history.openapi.yaml), 분산·S3·인증·운영 규칙은 [서버 명세](docs/history-server-spec.md)다. API /v1, Plan v1, PredictionTable/ModelState v3 버전은 각각 독립적이다. 기존 scheduler:http live coordinator와 새 History Server API를 혼합하지 않는다.
 

@@ -8,7 +8,7 @@
 - 인계 브랜치: `codex/prediction-state-v3`.
 - 구현 조사 기준: `539b2c08cc7e2543f3a0cdd10fbdba451b2502d5`(v0.6.0). 문서 커밋 이후 현재 HEAD와 차이는 시작할 때 다시 확인한다.
 - 준비된 것: 전체 실행 계획, 데이터/서버 명세, OpenAPI, 체크리스트, 문서 검증 스크립트.
-- 미구현: A1~A7과 S0~S6의 runtime 변경. OpenAPI·합성 payload 검증을 구현 검증으로 승계하지 않는다.
+- 완료: A1/A2 runtime 로컬 구현과 검증. 미완료: A3~A7과 S0~S6. 정확한 증거와 제한은 [CHECKLIST.md](CHECKLIST.md)를 확인한다. OpenAPI·합성 payload 검증을 구현 검증으로 승계하지 않는다.
 - 인계 시 기존 사용자 파일 `.opencode/`가 untracked다. 읽을 필요 없이 보존하며 작업 커밋에 포함하지 않는다. 이후 발견하는 사용자 변경도 같은 원칙으로 보존한다.
 
 목표는 **이력 조회와 갱신 비용까지 포함한 전체 CI 완료 시간 감소**다. 서버 없는 GitHub artifact 경로를 먼저 완성하고, 같은 집계·예측 로직을 재사용하는 선택적 Rust/S3 서버를 이어서 구현한다. 실제 검증으로 확인한 범위만 완료로 표시한다.
@@ -35,7 +35,7 @@ git status --short
 git log -3 --oneline
 ```
 
-현재 branch/HEAD와 기존 변경 목록을 CHECKLIST의 실행 기록에 남긴다. `.opencode/`를 이유로 초기화하지 않는다. 계획을 다시 작성하는 데서 끝내지 말고 **A1의 실패 재현과 수정부터 시작**한다.
+현재 branch/HEAD와 기존 변경 목록을 확인하고 `.opencode/`를 보존한다. A1/A2는 완료된 단계다. 계획을 다시 작성하는 데서 끝내지 말고 **CHECKLIST의 첫 미완료 runtime 단계인 A3부터 계속**한다.
 
 문서 검증은 다음 명령으로 재현할 수 있다. 최초 한 번 실행하고 이후에는 관련 계약을 바꿨을 때 다시 실행한다. 설치가 막히면 네트워크/도구 오류를 기록하며 독립적인 Rust 작업은 계속한다.
 
@@ -45,7 +45,9 @@ uv run --no-project --with openapi-spec-validator --with pyyaml --with rfc8785 p
 
 한 번에 한 단계의 diff를 만든다. 각 단계에서 재현 → 최소 수정 → 관련 검증 → 자기 검토 → CHECKLIST 기록을 끝낸 뒤 다음 단계로 진행한다. 컨텍스트가 부족하면 현재 위치를 기록하고 이어갈 수 있도록 남긴다. 기능과 무관한 전면 리팩터링이나 새로운 framework를 함께 넣지 않는다.
 
-## 4. 첫 구현 작업: A1
+## 4. A1 acceptance와 회귀 기준 — 완료
+
+A1은 현재 branch에서 재현·수정·검증했다. 아래 시나리오는 완료 기록이자 이후 단계에서 유지할 회귀 기준이다. 이미 완료한 수정은 [CHECKLIST.md](CHECKLIST.md)를 참조한다.
 
 현재 코드의 출발점은 아래와 같다. 파일 이름만 보고 수정하지 말고 `rg`로 호출자와 serializer/consumer를 확인한다.
 
@@ -149,8 +151,8 @@ local unit/Action contract, 생성 fixture, 실제 GitHub consumer, GHES, S3-com
 Luna 모델, reasoning max로 Nanoom 작업을 시작해줘.
 브랜치는 codex/prediction-state-v3이고 이 브랜치의 문서 커밋을 포함한 checkout을 사용해.
 루트 LUNA_HANDOFF.md를 먼저 읽고 연결된 명세와 CHECKLIST를 확인해.
-계획만 다시 제안하지 말고 A1의 실제 실패 재현과 수정부터 수행해.
-각 단계 검증과 실행 기록을 남기며 A1~A6을 순서대로 진행하고,
+계획만 다시 제안하지 말고 CHECKLIST의 첫 미완료 단계인 A3부터 수행해.
+각 단계 검증과 실행 기록을 남기며 A3~A6을 순서대로 진행하고,
 A7의 실제 artifact 사용자 경로를 확인한 후 S0~S6 서버 단계로 진행해.
 기존 사용자 변경은 보존하고, 외부 환경이 없으면 해당 검증을 미실시로 정확히 기록해.
 merge/release/운영 배포는 하지 말고 검토 가능한 변경과 증거를 인계해.

@@ -13,7 +13,7 @@
 ## artifact/CLI/Action 구현
 
 - [x] A1 identity/fallback/empty/no-execution 회귀와 수정 — 아래 A1 실행 기록 참조.
-- [ ] A2 Plan v1 CLI·compact matrix·provenance/rerun 검증.
+- [x] A2 Plan v1 CLI·compact matrix·provenance/rerun 검증 — 아래 A2 실행 기록 참조.
 - [ ] A3 prepare·sparse checkout·install/run·GHES contracts.
 - [ ] A4 PredictionState v3·compile/apply/project·작은 prediction artifact·bounded lookup.
 - [ ] A5 preparation telemetry·automatic k·determinism·대규모 benchmark.
@@ -134,3 +134,41 @@ Nanoom 작업 폴더에 계획/명세/OpenAPI/검증 스크립트 7개를 반영
 - `git diff --check` — exit 0.
 
 미실시 및 경계: 지시서의 OpenAPI/spec validator는 기본 uv cache 권한 오류(exit 2) 뒤 `/private/tmp` cache로 재시도했으나 PyPI DNS 차단(exit 2)으로 실행되지 않음. A1의 external producer/consumer hosted fixture 증거는 A7까지 미실시다. A2~A7, server, GHES, release/실사용 consumer 증거는 미완료이며 기존 체크를 변경하지 않음.
+
+## A2 실행 기록 — 2026-09-24
+
+```text
+단계: A2
+시작 HEAD: d3f147a18372d94d42e9e15f0cefde51cd44d5ab
+브랜치: codex/prediction-state-v3
+시작 상태: 추적 파일 clean, 사용자 .opencode/ 미추적 1개. 보존함.
+변경: Plan v1 writer/reference, compact output, config-free assignment selector, integration/unit regressions, README/SPEC/ADR contract.
+결과: 이 단계 commit에 코드와 이 evidence를 함께 기록함. PR, artifact transport, checkout/install/run consumer, hosted run은 없음.
+```
+
+Plan producer는 `--plan-output`과 `--plan-context`를 함께 요구하고 raw Plan bytes의 SHA-256과 current/source provenance를 작은 reference로 출력한다. group별 최대 256 matrix rows와 compact JSON의 UTF-16 크기를 검사한다. Plan selector는 config/checkout 없이 Plan/reference/schema/digest/current run/head와 assignment를 검증하고 `assignment.json`, `paths.txt`를 만든다. no-change는 유효한 빈 Plan이며 선택할 assignment는 없다. Affected가 만든 reference는 producer attempt를 current로 초기화한다. rerun consumer는 실제 current run/attempt를 reference에 채워야 하며 Action transport는 A3다.
+
+첫 CLI 재현에서 legacy matrix의 workspace `path`가 절대경로이고 checkout path가 repo-relative여서 Plan 검증이 실패했다. 기존 matrix 호환성은 유지하고 Plan v1 item 경로만 repo-relative로 정규화한 뒤 통과했다.
+
+검증한 사용자 경로와 결과:
+
+- 10,000 item synthetic Plan에서 상세 파일이 1 MiB보다 큰 동안 compact output은 bounded JSON이며 24-row matrix와 item count를 유지했다.
+- 257-row group은 compact output 전에 명시적으로 거부됐다.
+- digest reference 변조, raw Plan tampering, repository/run/head 불일치, 존재하지 않는 assignment는 assignment 파일 생성 전에 실패했다.
+- 같은 run의 이전 producer attempt는 reference current attempt가 이후 attempt로 제공되면 선택 가능했다.
+- no-change Plan은 0 assignment로 유효했고 선택 시 존재하지 않는 assignment 오류로 실패했다.
+- `--json` full report와 Plan bounded output을 함께 요청하면 Plan 파일을 쓰지 않고 거부했다.
+- Plan context의 taskRunner가 affected의 resolved runner와 다르면 Plan 파일을 쓰지 않고 거부했다.
+
+검증 명령 / 결과:
+
+- `cargo fmt --all --check` — exit 0.
+- `cargo clippy --locked --all-targets --all-features -- -D warnings` — exit 0.
+- `cargo test --locked --all-targets --all-features` — exit 0, 198 passed.
+- `bash scripts/action-contract.sh` — exit 0.
+- `git diff --check` — exit 0.
+- `cargo test --locked --lib plan::tests` — exit 0, 6 passed.
+- `cargo test --locked --test plan_cli_tests -- --nocapture` — exit 0, 6 passed.
+- `cargo test --locked --test cli_integration_tests test_affected_pull_request_event_with_changes` — exit 0, 1 passed.
+
+미실시와 다음 단계: artifact upload/download, Action current-attempt construction, sparse checkout, install/run consumer, same-SHA hosted fixture, GHES, release는 미실시이며 A3/A7 경로다. `affected --json`은 기존 상세 보고서로 유지되고 bounded Plan mode는 별도 CLI 응답이다. 다음 단계는 A3 prepare/checkout/install/run 파일 입력과 GHES wrapper다.

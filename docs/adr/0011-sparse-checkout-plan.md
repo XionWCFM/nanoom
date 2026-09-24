@@ -32,6 +32,7 @@ workspace를 현재 graph에서 놓치면 빠른 대신 잘못된 affected 결�
 8. `nanoom-fixtures`는 branch ref나 local binary를 소비하지 않는다. release 완료 때
    이동하는 `latest` tag의 Action을 사용하고, setup은 GitHub 최신 Release의 실제 versioned
    asset을 내려받는다.
+9. Plan v1 상세는 file artifact로 두고 stdout에는 digest/provenance reference와 bounded assignment matrix만 전달한다. `affected` producer는 Plan file CLI로 생성하고 `plan select`는 raw-byte SHA-256, schema, repository/workflow/run/head를 검증한다. 재실행은 같은 run에서 `producerAttempt <= current.attempt`인 이전 계획만 허용하며 current identity는 consumer가 채운다. group당 256행 또는 UTF-16 output 1 MiB 초과는 실패하고 no-change의 0-assignment Plan은 유효하다. `affected --json` full report는 Plan output과 함께 요청하지 않는다. Artifact transport와 checkout/install/run 연결은 후속 단계다.
 
 ## 검토한 대안
 
@@ -47,6 +48,7 @@ workspace를 현재 graph에서 놓치면 빠른 대신 잘못된 affected 결�
 - manifest-only shallow clone에서 affected와 dependency propagation이 계산된다.
 - 필수 workspace manifest 하나를 빼면 명시적으로 실패한다.
 - affected 출력만으로 새 cone checkout을 만들고 focused install과 실제 task를 실행한다.
+- Plan v1 file reference의 digest/provenance가 맞지 않거나 assignment가 없으면 선택 전에 실패하고, 같은 run의 유효한 이전 producer attempt는 재사용된다.
 - unrelated workspace와 서비스는 run worktree에 나타나지 않는다.
 - workspace manifest 삭제와 rename은 남은 workspace 전체를 선택하고 이유를 설명한다.
 - `cleanupCheckout: true`인 실패하거나 취소된 self-hosted job도 격리 checkout을 정리한다.
