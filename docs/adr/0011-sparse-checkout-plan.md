@@ -13,7 +13,7 @@ workspace를 현재 graph에서 놓치면 빠른 대신 잘못된 affected 결�
 
 ## 결정
 
-1. 사용자가 `actions/checkout`을 소유한다. Nanoom 전용 checkout Action은 만들지 않는다.
+1. affected graph checkout은 workflow가 소유한다. assignment checkout은 `prepare` composite Action이 공식 `actions/checkout`을 호출하고 Git을 직접 구현하지 않는다.
 2. affected job은 non-cone pattern으로 root `package.json`, `nanoom.config.json`,
    `workspace.include` 범위의 모든 workspace `package.json`만 checkout한다.
 3. workspace discovery는 Nx, Turbo, package-manager 설정을 읽지 않고 Nanoom config와
@@ -32,8 +32,10 @@ workspace를 현재 graph에서 놓치면 빠른 대신 잘못된 affected 결�
 8. `nanoom-fixtures`는 branch ref나 local binary를 소비하지 않는다. release 완료 때
    이동하는 `latest` tag의 Action을 사용하고, setup은 GitHub 최신 Release의 실제 versioned
    asset을 내려받는다.
-9. Plan v1 상세는 file artifact로 두고 stdout에는 digest/provenance reference와 bounded assignment matrix만 전달한다. `affected` producer는 Plan file CLI로 생성하고 `plan select`는 raw-byte SHA-256, schema, repository/workflow/run/head를 검증한다. 재실행은 같은 run에서 `producerAttempt <= current.attempt`인 이전 계획만 허용하며 current identity는 consumer가 채운다. group당 256행 또는 UTF-16 output 1 MiB 초과는 실패하고 no-change의 0-assignment Plan은 유효하다. `affected --json` full report는 Plan output과 함께 요청하지 않는다. Artifact transport와 checkout/install/run 연결은 후속 단계다.
+9. Plan v1 상세는 30일 file artifact로 두고 stdout에는 digest/provenance reference와 bounded assignment matrix만 전달한다. `affected` producer는 Plan file CLI로 생성한다. 재실행은 같은 run에서 `producerAttempt <= current.attempt`인 이전 계획만 허용하며 consumer가 current identity를 채운다. group당 256행 또는 UTF-16 output 1 MiB 초과는 실패하고 no-change의 0-assignment Plan은 유효하다. `affected --json` full report는 Plan output과 함께 요청하지 않는다.
 10. Planned install은 assignment workspace union을 non-empty JSON string array로 `nanoom install --filter-file FILE`에 전달한다. malformed 또는 빈 범위가 전체 root install로 조용히 확대되는 일은 없으며, 기존 standalone no-filter install은 root install을 유지한다.
+11. `prepare`는 original Plan reference와 artifact reference를 비교하고, digest/schema/provenance/assignment/head를 검증한 뒤 exact head를 run/attempt/job/matrix index별 경로에 checkout한다. root-only non-cone shallow checkout 뒤 assignment `paths.txt`를 cone mode로 적용한다. install/run은 trusted Plan reference와 assignment-file을 모두 받아 Plan digest와 실제 Git HEAD를 다시 검증한다. static inline-matrix 소비는 제거하고 `scheduler=http`의 기존 continuous-agent matrix 입력만 남긴다.
+12. GitHub.com은 upload-artifact v4.6.2/download-artifact v4.3.0, GHES wrappers는 upload-artifact v3.2.2/download-artifact v3.1.0을 사용한다. `affected-ghes`와 `prepare-ghes`는 shared shell validator/checkout 로직을 재사용한다. same-run Plan download는 official download Action을 사용한다.
 
 ## 검토한 대안
 

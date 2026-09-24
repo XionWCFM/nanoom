@@ -2,7 +2,7 @@
 
 ## 기준 구현: v0.6.0
 
-아래 기존 계약은 source `539b2c08cc7e2543f3a0cdd10fbdba451b2502d5` 기준이다. 이 branch의 A1/A2 runtime 변경은 로컬 검증됐지만 release되지 않았다. A3 이후 제안은 아직 구현되지 않았다. 공개 계약의 기준은 [README](README.md), 생성된 [JSON schema](nanoom.schema.json), [ADR-0011](docs/adr/0011-sparse-checkout-plan.md), [ADR-0012](docs/adr/0012-ghes-history-checkout-cost.md)입니다.
+아래 기존 계약은 source `539b2c08cc7e2543f3a0cdd10fbdba451b2502d5` 기준이다. 이 branch의 A1/A2 runtime은 로컬 검증됐고, A3 Action 경로는 구현되어 local gates를 통과했으며 아직 semantic review·PR·release되지 않았다. A4 이후 제안은 아직 구현되지 않았다. 공개 계약의 기준은 [README](README.md), 생성된 [JSON schema](nanoom.schema.json), [ADR-0011](docs/adr/0011-sparse-checkout-plan.md), [ADR-0012](docs/adr/0012-ghes-history-checkout-cost.md)입니다.
 
 ## Work item과 assignment
 
@@ -65,6 +65,13 @@ Artifact/history/coordinator는 aggregate status의 입력이 아니다. `status
 - static assignment의 빈 install은 오류다. continuous assignment는 미래 item을 알 수 없어 기존 전체 install 경로를 유지하며, standalone `nanoom install`도 필터 없이 root install을 유지한다.
 - 100/1/1/1 시간 입력은 기존 scheduler에서 이미 빈 assignment 없이 결정적으로 처리되므로 배분 알고리즘을 변경하지 않았다.
 
+## 이 branch의 A3 Action 계약 — 미출시
+
+- 정적 `affected`는 Plan v1 file을 만들고 30일 artifact로 올린다. Action output은 `plan` reference와 group/assignmentId/runner matrix만 전달한다. 상세 Plan이나 checkout path 전체를 Actions output으로 되돌리지 않는다.
+- `prepare`는 official artifact download와 checkout Action을 쓰며, original reference/digest/schema/provenance/assignment/current attempt/head를 확인한다. checkout은 `$GITHUB_WORKSPACE/.nanoom/<run>/<attempt>/<job>/<matrix-index>`에 root-only non-cone shallow checkout 후 assignment paths 파일을 cone mode로 적용한다.
+- `install`과 `run`의 정적 경로는 `assignmentFile`과 original `plan` reference를 함께 요구하고 Plan digest 및 checkout `HEAD`를 다시 검증한다. static inline-matrix 호환은 없다. 기존 `scheduler:http` continuous-agent matrix와 전체 install 경로는 분리해 유지한다.
+- GitHub.com artifact transport는 upload v4.6.2/download v4.3.0, GHES wrappers는 upload v3.2.2/download v3.1.0을 고정한다.
+
 
 ## 제안 계약: artifact plan / PredictionState v3 / 선택적 서버
 
@@ -80,7 +87,7 @@ Artifact/history/coordinator는 aggregate status의 입력이 아니다. `status
 | 상태 | requiredJobs로 예상하지 않은 skipped run 거부 |
 | 서버 | Rust 별도 binary, opt-in historyBackend:server, 기본 artifact 유지, /health와 /ready |
 
-현재 branch의 A2 구현은 `affected --plan-output FILE --plan-context FILE`, `plan select --input FILE --reference FILE --group GROUP --assignment ID --output-dir DIR`, 그리고 planned item용 `install --filter-file FILE`의 Plan v1 file boundary다. 상세 plan은 파일에 저장하고 compact output은 group/assignmentId/runnerLabels/timingEnvironment만 matrix row로 전달한다. validator는 raw-file SHA-256, schema, repository/workflow/run/head provenance, 그리고 `producerAttempt <= current.attempt`를 확인한다. Affected가 만든 reference는 producer identity를 current로 초기화한다. rerun consumer는 actual current run identity를 채운 reference를 제공해야 한다. group별 256행 또는 UTF-16 출력 1 MiB 초과는 실패하고 zero-work Plan은 assignment 없이 유효하다. `--filter-file`은 non-empty JSON string array를 요구하고 malformed/non-array/non-string/empty/control-character entry 및 기존 `--filter`과의 동시 사용을 install 실행 전에 거부한다. 필터 옵션 없는 standalone install은 root 설치를 유지한다. Action artifact transport와 checkout/install/run wiring은 A3다.
+현재 branch의 A2/A3 구현은 `affected --plan-output FILE --plan-context FILE`, `plan select --input FILE --reference FILE --group GROUP --assignment ID --output-dir DIR`, planned install의 `--filter-file`, 그리고 artifact-backed `affected→prepare→install→run` Action 경로다. 상세 plan은 파일에 저장하고 compact output은 group/assignmentId/runnerLabels/timingEnvironment만 matrix row로 전달한다. validator는 raw-file SHA-256, schema, repository/workflow/run/head provenance, 그리고 `producerAttempt <= current.attempt`를 확인한다. rerun consumer는 actual current run identity를 채운 reference를 제공한다. `install`과 `run`은 original reference를 받아 digest와 checkout HEAD를 매번 검증한다. GHES용 `affected-ghes`/`prepare-ghes`는 v3 artifact Actions를 쓴다. group별 256행 또는 UTF-16 출력 1 MiB 초과는 실패하고 zero-work Plan은 assignment 없이 유효하다. `--filter-file`은 non-empty JSON string array를 요구하고 malformed/non-array/non-string/empty/control-character entry 및 기존 `--filter`과의 동시 사용을 install 전에 거부한다. 필터 옵션 없는 standalone install은 root 설치를 유지한다.
 
 서버 HTTP source of truth는 [OpenAPI 3.1.1](docs/api/history.openapi.yaml), 분산·S3·인증·운영 규칙은 [서버 명세](docs/history-server-spec.md)다. API /v1, Plan v1, PredictionTable/ModelState v3 버전은 각각 독립적이다. 기존 scheduler:http live coordinator와 새 History Server API를 혼합하지 않는다.
 

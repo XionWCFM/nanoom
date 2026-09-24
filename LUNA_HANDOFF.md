@@ -8,7 +8,7 @@
 - 인계 브랜치: `codex/prediction-state-v3`.
 - 구현 조사 기준: `539b2c08cc7e2543f3a0cdd10fbdba451b2502d5`(v0.6.0). 문서 커밋 이후 현재 HEAD와 차이는 시작할 때 다시 확인한다.
 - 준비된 것: 전체 실행 계획, 데이터/서버 명세, OpenAPI, 체크리스트, 문서 검증 스크립트.
-- 완료: A1 runtime. A2의 Plan v1 producer/select 및 planned install `--filter-file` 구현은 완료하고 focused tests/fmt/clippy를 통과했다. 이 follow-up의 공통 phase gates와 parent review가 끝나기 전까지 A2는 CHECKLIST에서 pending이다. 미완료: A3~A7과 S0~S6. 정확한 증거와 제한은 [CHECKLIST.md](CHECKLIST.md)를 확인한다. OpenAPI·합성 payload 검증을 구현 검증으로 승계하지 않는다.
+- 완료: A1/A2 runtime. A3 Action 경로는 구현되고 Rust 전체 gate 및 Action contract를 통과했으며, 현재 parent review와 phase commit을 마무리 중이다. 미완료: A4~A7과 S0~S6. 정확한 증거와 제한은 [CHECKLIST.md](CHECKLIST.md)를 확인한다. OpenAPI·합성 payload 검증을 구현 검증으로 승계하지 않는다.
 - 인계 시 기존 사용자 파일 `.opencode/`가 untracked다. 읽을 필요 없이 보존하며 작업 커밋에 포함하지 않는다. 이후 발견하는 사용자 변경도 같은 원칙으로 보존한다.
 
 목표는 **이력 조회와 갱신 비용까지 포함한 전체 CI 완료 시간 감소**다. 서버 없는 GitHub artifact 경로를 먼저 완성하고, 같은 집계·예측 로직을 재사용하는 선택적 Rust/S3 서버를 이어서 구현한다. 실제 검증으로 확인한 범위만 완료로 표시한다.
@@ -35,7 +35,7 @@ git status --short
 git log -3 --oneline
 ```
 
-현재 branch/HEAD와 기존 변경 목록을 확인하고 `.opencode/`를 보존한다. A2의 Plan v1 producer/select와 `install --filter-file FILE` 구현은 focused 검증됐지만, CHECKLIST의 parent common-gate/review 대기 상태가 해소된 뒤 **첫 미완료 runtime 단계인 A3부터 계속**한다. filter file은 비어 있지 않은 JSON string array만 허용한다. 상세 증거는 A2 실행 기록을 따른다.
+현재 branch/HEAD와 기존 변경 목록을 확인하고 `.opencode/`를 보존한다. A3 prepare→sparse checkout→install/run 및 GHES wrappers는 구현되고 common local gates를 통과했다. 이를 semantic review하고 CHECKLIST에 증거를 기록한 뒤 **A4부터 순서대로 계속**한다. 상세 증거는 A3 실행 기록을 따른다.
 
 문서 검증은 다음 명령으로 재현할 수 있다. 최초 한 번 실행하고 이후에는 관련 계약을 바꿨을 때 다시 실행한다. 설치가 막히면 네트워크/도구 오류를 기록하며 독립적인 Rust 작업은 계속한다.
 
@@ -151,8 +151,8 @@ local unit/Action contract, 생성 fixture, 실제 GitHub consumer, GHES, S3-com
 Luna 모델, reasoning max로 Nanoom 작업을 시작해줘.
 브랜치는 codex/prediction-state-v3이고 이 브랜치의 문서 커밋을 포함한 checkout을 사용해.
 루트 LUNA_HANDOFF.md를 먼저 읽고 연결된 명세와 CHECKLIST를 확인해.
-계획만 다시 제안하지 말고 CHECKLIST의 첫 미완료 단계인 A3부터 수행해.
-각 단계 검증과 실행 기록을 남기며 A3~A6을 순서대로 진행하고,
+계획만 다시 제안하지 말고 CHECKLIST의 첫 미완료 단계인 A4부터 수행해.
+각 단계 검증과 실행 기록을 남기며 A4~A6을 순서대로 진행하고,
 A7의 실제 artifact 사용자 경로를 확인한 후 S0~S6 서버 단계로 진행해.
 기존 사용자 변경은 보존하고, 외부 환경이 없으면 해당 검증을 미실시로 정확히 기록해.
 merge/release/운영 배포는 하지 말고 검토 가능한 변경과 증거를 인계해.

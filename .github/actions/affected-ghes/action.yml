@@ -1,4 +1,4 @@
-name: nanoom affected
+name: nanoom affected (GHES)
 description: Calculate affected work and assignment matrices
 inputs:
   version: {description: "Action ref (version tag or latest), explicit release tag, or local for repository tests", default: action}
@@ -56,10 +56,10 @@ runs:
         RUN_ATTEMPT: ${{ github.run_attempt }}
         TOKEN: ${{ github.token }}
         HISTORY_ARTIFACT: ${{ inputs.historyArtifactName }}
-      run: bash "$GITHUB_ACTION_PATH/run.sh"
+      run: bash "$GITHUB_ACTION_PATH/../affected/run.sh"
     - name: Upload Plan v1
       if: steps.out.outputs.plan != ''
-      uses: actions/upload-artifact@v4.6.2
+      uses: actions/upload-artifact@v3.2.2
       with:
         name: ${{ fromJSON(steps.out.outputs.plan).artifactName }}
         path: |

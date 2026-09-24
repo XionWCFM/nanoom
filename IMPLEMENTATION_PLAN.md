@@ -1,6 +1,6 @@
 # Nanoom 개선 실행 계획 — LUNA 작업 명세
 
-상태: **A1/A2 runtime을 이 branch에서 구현·로컬 검증함. A3~A7과 S0~S6 runtime은 미구현**. 기준 source `539b2c08cc7e2543f3a0cdd10fbdba451b2502d5`(v0.6.0). 조사일 2026-09-24. 이 문서의 나머지 proposed 동작을 현재 제품 기능으로 설명하지 않는다.
+상태: **A1/A2 완료. A3 Action 경로는 구현되고 local gates를 통과했으며 parent review/phase commit 대기. A4~A7과 S0~S6 runtime 미구현**. 기준 source `539b2c08cc7e2543f3a0cdd10fbdba451b2502d5`(v0.6.0). 조사일 2026-09-24. 이 문서의 나머지 proposed 동작을 현재 제품 기능으로 설명하지 않는다.
 
 ## 다른 세션에서 시작하기
 

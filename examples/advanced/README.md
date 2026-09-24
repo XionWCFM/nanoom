@@ -57,6 +57,7 @@ jobs:
   matrix:
     runs-on: ubuntu-latest
     outputs:
+      plan: ${{ steps.affected.outputs.plan }}
       groups: ${{ steps.affected.outputs.groups }}
     steps:
       - uses: actions/checkout@v4
@@ -67,10 +68,25 @@ jobs:
   test:
     needs: matrix
     strategy:
-      matrix: ${{ fromJSON(needs.matrix.outputs.groups).ci.matrix }}
+      matrix: ${{ fromJSON(needs.matrix.outputs.groups).ci.include }}
     runs-on: ${{ matrix.runnerLabels || 'ubuntu-latest' }}
     steps:
-      - uses: actions/checkout@v4
-      - run: npm install -g @nanoom/cli && pnpm install
-      - run: nanoom run ci ${{ matrix.task }} ${{ matrix.shard && format('--shard {0} --total-shards {1}', matrix.shard, 3) || '' }}
+      - id: prepare
+        uses: XionWCFM/nanoom/.github/actions/prepare@latest
+        with:
+          plan: ${{ needs.matrix.outputs.plan }}
+          group: ci
+          assignmentId: ${{ matrix.assignmentId }}
+      - uses: XionWCFM/nanoom/.github/actions/install@latest
+        with:
+          plan: ${{ needs.matrix.outputs.plan }}
+          assignmentFile: ${{ steps.prepare.outputs.assignment-file }}
+          cwd: ${{ steps.prepare.outputs.cwd }}
+          packageManager: pnpm
+      - uses: XionWCFM/nanoom/.github/actions/run@latest
+        with:
+          plan: ${{ needs.matrix.outputs.plan }}
+          assignmentFile: ${{ steps.prepare.outputs.assignment-file }}
+          cwd: ${{ steps.prepare.outputs.cwd }}
+          cleanupCheckout: true
 ```

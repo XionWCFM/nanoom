@@ -74,44 +74,48 @@ Nanoom은 Nx/Turbo 설정을 읽지 않고 이 manifest들로 graph를 만들며
 configured workspace의 `package.json`이 삭제되거나 rename되면 현재 graph만으로 이전
 dependency를 복원하지 않고, 남아 있는 workspace 전체를 보수적으로 affected 처리합니다.
 
-각 matrix entry의 `checkout`은 affected workspace, 내부 dependency closure,
-`checkout.always`의 합집합입니다. run job은 이를 cone mode에 그대로 전달합니다.
-cone mode는 선택한 디렉터리와 root 파일을 함께 checkout하므로 lockfile과 root 설정은
-별도 pattern이 필요 없습니다.
+각 assignment의 checkout 경로는 affected workspace, 내부 dependency closure,
+`checkout.always`의 합집합입니다. `prepare` Action은 Plan artifact와 reference를 검증한 뒤
+정확한 Plan head를 `$GITHUB_WORKSPACE/.nanoom/<run>/<attempt>/<job>/<matrix-index>`에
+root-only non-cone checkout하고, 그 assignment의 paths 파일로 cone checkout을 적용합니다.
+선택한 디렉터리와 root 파일이 포함되므로 lockfile과 root 설정도 유지됩니다.
+
+정적 Action workflow는 상세 Plan 대신 짧은 reference와 group/assignmentId matrix를 전달합니다.
+소비 job에서 `prepare`가 내보낸 assignment file과 원래 Plan reference를 install/run에
+함께 전달하세요.
 
 ```yaml
-# affected job
-- uses: actions/checkout@v7
-  with:
-    fetch-depth: 1
-    sparse-checkout-cone-mode: false
-    sparse-checkout: |
-      /package.json
-      /nanoom.config.json
-      /packages/*/package.json
-      /tools/*/package.json
-
-# run matrix job env: self-hosted runner의 이전 worktree와 격리
-env:
-  NANOOM_WORKDIR: .nanoom/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}-${{ strategy.job-index }}
-
-- uses: actions/checkout@v7
-  with:
-    path: ${{ env.NANOOM_WORKDIR }}
-    fetch-depth: 1
-    sparse-checkout-cone-mode: ${{ matrix.checkout.coneMode }}
-    sparse-checkout: ${{ matrix.checkout.sparseCheckout }}
-
-- uses: XionWCFM/nanoom/.github/actions/run@latest
-  with:
-    cwd: ${{ env.NANOOM_WORKDIR }}
-    matrix: ${{ toJSON(matrix) }}
-    group: ci
-    cleanupCheckout: true
+jobs:
+  run:
+    needs: affected
+    strategy:
+      matrix: ${{ fromJSON(needs.affected.outputs.groups).ci.include }}
+    runs-on: ${{ matrix.runnerLabels || 'ubuntu-latest' }}
+    steps:
+      - id: prepare
+        uses: XionWCFM/nanoom/.github/actions/prepare@latest
+        with:
+          plan: ${{ needs.affected.outputs.plan }}
+          group: ${{ matrix.group }}
+          assignmentId: ${{ matrix.assignmentId }}
+      - uses: XionWCFM/nanoom/.github/actions/install@latest
+        with:
+          plan: ${{ needs.affected.outputs.plan }}
+          assignmentFile: ${{ steps.prepare.outputs.assignment-file }}
+          cwd: ${{ steps.prepare.outputs.cwd }}
+          packageManager: pnpm
+      - uses: XionWCFM/nanoom/.github/actions/run@latest
+        with:
+          plan: ${{ needs.affected.outputs.plan }}
+          assignmentFile: ${{ steps.prepare.outputs.assignment-file }}
+          cwd: ${{ steps.prepare.outputs.cwd }}
+          cleanupCheckout: true
 ```
 
 `cleanupCheckout`은 명시적으로 켠 경우에만 동작하며, `cwd`가 `.nanoom/` 아래의
-격리 경로가 아니면 삭제를 거부합니다.
+격리 경로가 아니면 삭제를 거부합니다. 정적 install/run Action은 legacy inline matrix를
+받지 않습니다. 기존 `scheduler: http` 연속 coordinator는 별도 continuous-agent matrix 입력을
+유지합니다.
 
 `run --json`은 성공 실행마다 `workspace`, 실제 `runner`, `durationMs`를 냅니다. 명시한 `--all --filter`가 workspace를 찾지 못하면 실패하며, run Action도 계획된 workspace 실행이 없으면 assignment를 실패시키고 후속 item을 시작하지 않습니다. 첫 작업 실패 뒤에는 `completed`, `failed`, `pending`을 남깁니다. static assignment의 빈 install은 거부합니다. `install`은 assignment의 workspace union을 한 번에 focused install하며, standalone no-filter install과 continuous scheduler의 전체 install은 유지됩니다.
 
@@ -147,7 +151,7 @@ group 또는 distribution tier의 `runnerLabels`로 matrix job의 runner를 정�
 
 ```yaml
 strategy:
-  matrix: ${{ fromJSON(needs.affected.outputs.groups).ci.matrix }}
+  matrix: ${{ fromJSON(needs.affected.outputs.groups).ci.include }}
 runs-on: ${{ matrix.runnerLabels || 'ubuntu-latest' }}
 ```
 
@@ -167,7 +171,7 @@ nanoom plan select --input plan-v1.json --reference plan-reference.json \
   --group ci --assignment ci-0001 --output-dir selected
 ```
 
-`selected/assignment.json`에는 검증된 assignment context가, `selected/paths.txt`에는 sparse checkout 경로가 기록됩니다. selector는 계획 파일의 raw bytes SHA-256, schema, repository/workflow/run/head를 검증합니다. 재실행은 같은 run의 이전 producer attempt(`producerAttempt <= current.attempt`)만 재사용할 수 있으며 reference의 `current` identity는 실행 중인 caller가 제공해야 합니다. 각 group의 compact matrix는 최대 256 assignment, 전체 결과는 UTF-16 인코딩 1 MiB 이하입니다. 이를 넘으면 group과 이유를 출력하고 실패합니다. no-change는 assignment 0개인 정상 Plan입니다. 기존 `affected --json` 상세 report와 bounded Plan output은 함께 요청할 수 없습니다. Artifact 업로드와 checkout/install/run 연결은 별도 후속 단계입니다.
+`selected/assignment.json`에는 검증된 assignment context가, `selected/paths.txt`에는 sparse checkout 경로가 기록됩니다. selector는 계획 파일의 raw bytes SHA-256, schema, repository/workflow/run/head를 검증합니다. 재실행은 같은 run의 이전 producer attempt(`producerAttempt <= current.attempt`)만 재사용할 수 있으며 reference의 `current` identity는 실행 중인 caller가 제공해야 합니다. 각 group의 compact matrix는 최대 256 assignment, 전체 결과는 UTF-16 인코딩 1 MiB 이하입니다. 이를 넘으면 group과 이유를 출력하고 실패합니다. no-change는 assignment 0개인 정상 Plan입니다. 기존 `affected --json` 상세 report와 bounded Plan output은 함께 요청할 수 없습니다. GitHub.com affected는 Plan을 30일 artifact로 올리고 `prepare`는 official artifact download/checkout Action을 사용합니다. `affected-ghes`와 `prepare-ghes`는 GHES용 upload v3.2.2/download v3.1.0을 사용합니다.
 
 Planned install은 `nanoom install --filter-file FILE`로 non-empty JSON string array를 전달할 수 있습니다. 상대 경로는 working directory 기준입니다. JSON이 아니거나 배열이 아닌 값, 문자열이 아닌 값, 빈 문자열, 제어문자는 package manager를 실행하기 전에 오류가 됩니다. 기존 `--filter`와 동시 사용도 거부합니다. 두 옵션을 생략한 standalone `nanoom install`은 계속 root 전체 설치를 수행합니다.
 
@@ -175,29 +179,50 @@ Planned install은 `nanoom install --filter-file FILE`로 non-empty JSON string 
 - id: affected
   uses: XionWCFM/nanoom/.github/actions/affected@latest
 
+- id: prepare
+  uses: XionWCFM/nanoom/.github/actions/prepare@latest
+  with:
+    plan: ${{ needs.affected.outputs.plan }}
+    group: ${{ matrix.group }}
+    assignmentId: ${{ matrix.assignmentId }}
+
 - uses: XionWCFM/nanoom/.github/actions/install@latest
   with:
-    matrix: ${{ toJSON(matrix) }}
+    plan: ${{ needs.affected.outputs.plan }}
+    assignmentFile: ${{ steps.prepare.outputs.assignment-file }}
+    cwd: ${{ steps.prepare.outputs.cwd }}
     packageManager: pnpm
 
 - uses: XionWCFM/nanoom/.github/actions/run@latest
   with:
-    matrix: ${{ toJSON(matrix) }}
-    group: ci
+    plan: ${{ needs.affected.outputs.plan }}
+    assignmentFile: ${{ steps.prepare.outputs.assignment-file }}
+    cwd: ${{ steps.prepare.outputs.cwd }}
+    cleanupCheckout: true
 
 - uses: XionWCFM/nanoom/.github/actions/history@latest
 ```
 
 history job은 run 성공 뒤 실행하고 aggregate `status`의 dependency에 포함합니다. 작은 workflow는 `${{ toJSON(needs) }}`를 그대로 전달할 수 있습니다. 대규모 matrix에서는 outputs까지 포함한 JSON이 runner process 한도를 넘을 수 있으므로 `results`에 필요한 job 결과만 `job=${{ needs.job.result }}` 형식으로 전달합니다.
 
-기본 `run`과 `history`는 GitHub.com용 `actions/upload-artifact@v4.6.2`를 사용합니다. GHES에서는 같은 입력과 결과 계약을 공유하는 `run-ghes`와 `history-ghes`가 Node 24 보안 백포트 `actions/upload-artifact@v3.2.2`를 사용합니다. composite Action의 `uses:`는 파라미터화할 수 없고 조건부 step도 사전 다운로드되므로 진입점을 분리했으며 서버를 자동 감지하지 않습니다. v3는 Actions Runner `2.327.1` 이상이 필요합니다. GitHub-hosted timing environment는 OS/architecture, self-hosted는 OS/architecture/runner name으로 분리됩니다. autoscaled pool은 안정적인 pool 또는 image revision을 `timingEnvironment`로 지정하세요.
+기본 `affected`, `run`, `history`, `prepare`는 GitHub.com용 artifact v4 Action을 사용합니다. GHES에서는 `affected-ghes`, `prepare-ghes`, `run-ghes`, `history-ghes`가 upload v3.2.2/download v3.1.0을 사용합니다. composite Action의 `uses:`는 파라미터화할 수 없고 조건부 step도 사전 다운로드되므로 진입점을 분리했으며 서버를 자동 감지하지 않습니다. v3는 Actions Runner `2.327.1` 이상이 필요합니다. GitHub-hosted timing environment는 OS/architecture, self-hosted는 OS/architecture/runner name으로 분리됩니다. autoscaled pool은 안정적인 pool 또는 image revision을 `timingEnvironment`로 지정하세요.
 
 ```yaml
 # GHES only; GitHub.com은 기본 run/history를 그대로 사용합니다.
+- uses: XionWCFM/nanoom/.github/actions/affected-ghes@latest
+- id: prepare
+  uses: XionWCFM/nanoom/.github/actions/prepare-ghes@latest
+  with:
+    plan: ${{ needs.affected.outputs.plan }}
+    group: ${{ matrix.group }}
+    assignmentId: ${{ matrix.assignmentId }}
+
 - uses: XionWCFM/nanoom/.github/actions/run-ghes@latest
   with:
-    matrix: ${{ toJSON(matrix) }}
-    group: ci
+    plan: ${{ needs.affected.outputs.plan }}
+    assignmentFile: ${{ steps.prepare.outputs.assignment-file }}
+    cwd: ${{ steps.prepare.outputs.cwd }}
+    cleanupCheckout: true
 
 - uses: XionWCFM/nanoom/.github/actions/history-ghes@latest
 ```

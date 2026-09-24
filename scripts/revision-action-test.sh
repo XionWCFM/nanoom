@@ -17,7 +17,24 @@ printf 'head\n' >> "$tmp/repo/file"
 git -C "$tmp/repo" commit -q -am head
 head=$(git -C "$tmp/repo" rev-parse HEAD)
 
-printf '%s\n' '#!/usr/bin/env bash' 'printf "%s\\n" "$*" >> "$FAKE_NANOOM_ARGS"' 'printf "%s\\n" '\''{"affected":{"has_change":false,"group":{"ci":{"label":"ci","workspaces":[],"totalWorkspaces":1,"affectedWorkspaces":0,"affectedPercent":0.0}},"diagnostics":{"changedFiles":[],"comparison":{"baseCommit":"BASE_PLACEHOLDER","headCommit":"HEAD_PLACEHOLDER","mode":"merge-base","requestedBase":"BASE_PLACEHOLDER","requestedHead":"HEAD_PLACEHOLDER"},"reasons":{}}},"matrix":{"ci":{"include":[]}},"scheduling":{"historyStatus":"disabled","timingRunner":"yarn"}}'\''' > "$tmp/bin/nanoom"
+cat > "$tmp/bin/nanoom" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$FAKE_NANOOM_ARGS"
+plan_path=''; context_path=''; timing_environment=default
+while (($#)); do
+  case "$1" in
+    --plan-output) plan_path=$2; shift 2 ;;
+    --plan-context) context_path=$2; shift 2 ;;
+    --timing-environment) timing_environment=$2; shift 2 ;;
+    *) shift ;;
+  esac
+done
+context=$(cat "$context_path")
+jq -n --argjson context "$context" '{version:1,provenance:{repository:$context.repository,workflow:$context.workflow,runId:$context.runId,producerAttempt:$context.producerAttempt,planningJob:$context.planningJob,base:$context.base,head:$context.head},taskRunner:$context.taskRunner,predictionReason:$context.predictionReason,hasChange:false,groups:{ci:{assignments:[]}},assignmentCount:0,itemCount:0}' > "$plan_path"
+sha=$(shasum -a 256 "$plan_path" | awk '{print $1}')
+reference=$(jq -cn --argjson plan "$(cat "$plan_path")" --arg sha "$sha" '{version:1,artifactName:("nanoom-plan-v1-" + $plan.provenance.runId + "-" + ($plan.provenance.producerAttempt|tostring) + "-" + $plan.provenance.planningJob),sha256:$sha,provenance:$plan.provenance,current:{repository:$plan.provenance.repository,workflow:$plan.provenance.workflow,runId:$plan.provenance.runId,attempt:$plan.provenance.producerAttempt,base:$plan.provenance.base,head:$plan.provenance.head}}')
+jq -cn --argjson plan "$reference" --arg runner "$(jq -r .taskRunner <<<"$context")" --arg environment "$timing_environment" '{has_change:false,plan:$plan,groups:{ci:{include:[]}},result:{status:"success",hasChange:false,groupCount:1,assignmentCount:0,itemCount:0,reason:"cold start",historyStatus:"disabled",timingRunner:$runner,timingEnvironment:$environment}}'
+SH
 printf '%s\n' '#!/usr/bin/env bash' 'printf "%s\\n" "$*" >> "$FAKE_CURL_LOG"' 'if [[ "${FAKE_CURL_FAIL:-}" == 1 ]]; then exit 22; fi' 'printf "%s\\n" "${FAKE_CURL_RESPONSE:?FAKE_CURL_RESPONSE must be set}"' > "$tmp/bin/curl"
 chmod +x "$tmp/bin/nanoom" "$tmp/bin/curl"
 
@@ -84,6 +101,6 @@ if run_action "$tmp/nonancestor-output" "$tmp/nonancestor-summary" >/dev/null 2>
   echo 'non-ancestor successful push unexpectedly succeeded' >&2
   exit 1
 fi
-grep -q -- "--base $unrelated --head $head" "$tmp/nanoom.log"
+test ! -s "$tmp/nanoom.log"
 
 echo 'revision action contract passed'

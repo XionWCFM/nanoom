@@ -115,6 +115,8 @@ fn changed_fixture() -> Fixture {
     let compact: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(compact["has_change"], true);
     assert_eq!(compact["result"]["itemCount"], 1);
+    assert_eq!(compact["result"]["historyStatus"], "disabled");
+    assert_eq!(compact["result"]["timingRunner"], "pnpm");
     assert_eq!(
         compact["groups"]["ci"]["include"][0],
         json!({"group":"ci","assignmentId":"ci-0001"})

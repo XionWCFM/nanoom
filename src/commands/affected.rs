@@ -164,7 +164,16 @@ pub async fn execute(
     }
 
     if let Some(compact_plan) = compact_plan {
-        println!("{compact_plan}");
+        let mut compact: serde_json::Value = serde_json::from_str(&compact_plan)?;
+        compact["result"]["historyStatus"] =
+            serde_json::Value::String(if history_status == "fallback" {
+                "corrupt".into()
+            } else {
+                history_status
+            });
+        compact["result"]["timingRunner"] = serde_json::Value::String(timing_runner);
+        compact["result"]["timingEnvironment"] = serde_json::Value::String(args.timing_environment);
+        println!("{}", serde_json::to_string(&compact)?);
         return Ok(());
     }
 
