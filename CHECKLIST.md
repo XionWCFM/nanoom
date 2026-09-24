@@ -13,7 +13,7 @@
 ## artifact/CLI/Action 구현
 
 - [x] A1 identity/fallback/empty/no-execution 회귀와 수정 — 아래 A1 실행 기록 참조.
-- [x] A2 Plan v1 CLI·compact matrix·provenance/rerun 검증 — 아래 A2 실행 기록 참조.
+- [x] A2 Plan v1 CLI·compact matrix·provenance/rerun·planned install filter-file 검증 — 아래 A2 실행 및 follow-up 기록 참조.
 - [ ] A3 prepare·sparse checkout·install/run·GHES contracts.
 - [ ] A4 PredictionState v3·compile/apply/project·작은 prediction artifact·bounded lookup.
 - [ ] A5 preparation telemetry·automatic k·determinism·대규모 benchmark.
@@ -89,7 +89,7 @@ Nanoom 작업 폴더에 계획/명세/OpenAPI/검증 스크립트 7개를 반영
 - [x] 현재 checkout에서 `codex/prediction-state-v3` 브랜치 생성, 사용자 `.opencode/` 보존.
 - [x] [실행 지시서](LUNA_HANDOFF.md)에 A1 재현·소스 위치·단계 순서·검증·재개 형식 작성.
 - [x] 다른 checkout에서도 읽을 수 있도록 계획·명세·검증 스크립트·지시서만 인계 commit에 포함.
-- [x] A1 runtime을 이 세션에서 실행·검증함. A2~A7과 서버 단계는 위 체크처럼 미완료.
+- [x] A1 runtime을 이 세션에서 실행·검증함. A3~A7과 서버 단계는 위 체크처럼 미완료.
 
 ## A1 실행 기록 — 2026-09-24
 
@@ -133,7 +133,7 @@ Nanoom 작업 폴더에 계획/명세/OpenAPI/검증 스크립트 7개를 반영
 - `bash scripts/review-change.sh 0aa7e968db4cfb2418c38e11fdebff7440932384` — exit 0, committed diff 12 files, PASS.
 - `git diff --check` — exit 0.
 
-미실시 및 경계: 지시서의 OpenAPI/spec validator는 기본 uv cache 권한 오류(exit 2) 뒤 `/private/tmp` cache로 재시도했으나 PyPI DNS 차단(exit 2)으로 실행되지 않음. A1의 external producer/consumer hosted fixture 증거는 A7까지 미실시다. A2~A7, server, GHES, release/실사용 consumer 증거는 미완료이며 기존 체크를 변경하지 않음.
+미실시 및 경계: 지시서의 OpenAPI/spec validator는 기본 uv cache 권한 오류(exit 2) 뒤 `/private/tmp` cache로 재시도했으나 PyPI DNS 차단(exit 2)으로 실행되지 않음. A1의 external producer/consumer hosted fixture 증거는 A7까지 미실시다. A3~A7, server, GHES, release/실사용 consumer 증거는 미완료이며 기존 체크를 변경하지 않음.
 
 ## A2 실행 기록 — 2026-09-24
 
@@ -142,8 +142,8 @@ Nanoom 작업 폴더에 계획/명세/OpenAPI/검증 스크립트 7개를 반영
 시작 HEAD: d3f147a18372d94d42e9e15f0cefde51cd44d5ab
 브랜치: codex/prediction-state-v3
 시작 상태: 추적 파일 clean, 사용자 .opencode/ 미추적 1개. 보존함.
-변경: Plan v1 writer/reference, compact output, config-free assignment selector, integration/unit regressions, README/SPEC/ADR contract.
-결과: 구현 commit `eb43d00`에 코드와 계약을 기록함. PR, artifact transport, checkout/install/run consumer, hosted run은 없음.
+변경: Plan v1 writer/reference, compact output, config-free assignment selector, `install --filter-file`, integration/unit regressions, README/SPEC/ADR contract.
+결과: Plan CLI commit `eb43d00`, filter-file commit `9d3a63f`, ADR contract commit `36250d2`. PR, artifact transport, checkout/install/run Action consumer, hosted run은 없음.
 ```
 
 Plan producer는 `--plan-output`과 `--plan-context`를 함께 요구하고 raw Plan bytes의 SHA-256과 current/source provenance를 작은 reference로 출력한다. group별 최대 256 matrix rows와 compact JSON의 UTF-16 크기를 검사한다. Plan selector는 config/checkout 없이 Plan/reference/schema/digest/current run/head와 assignment를 검증하고 `assignment.json`, `paths.txt`를 만든다. no-change는 유효한 빈 Plan이며 선택할 assignment는 없다. Affected가 만든 reference는 producer attempt를 current로 초기화한다. rerun consumer는 실제 current run/attempt를 reference에 채워야 하며 Action transport는 A3다.
@@ -172,4 +172,30 @@ Plan producer는 `--plan-output`과 `--plan-context`를 함께 요구하고 raw 
 - `cargo test --locked --test plan_cli_tests -- --nocapture` — exit 0, 6 passed.
 - `cargo test --locked --test cli_integration_tests test_affected_pull_request_event_with_changes` — exit 0, 1 passed.
 
-미실시와 다음 단계: artifact upload/download, Action current-attempt construction, sparse checkout, install/run consumer, same-SHA hosted fixture, GHES, release는 미실시이며 A3/A7 경로다. `affected --json`은 기존 상세 보고서로 유지되고 bounded Plan mode는 별도 CLI 응답이다. 다음 단계는 A3 prepare/checkout/install/run 파일 입력과 GHES wrapper다.
+미실시와 다음 단계: artifact upload/download, Action current-attempt construction, sparse checkout, install/run Action consumer, same-SHA hosted fixture, GHES, release는 미실시이며 A3/A7 경로다. `affected --json`은 기존 상세 보고서로 유지되고 bounded Plan mode는 별도 CLI 응답이다. 다음 runtime 단계는 A3 prepare/checkout/install/run 파일 입력과 GHES wrapper다.
+
+### A2 planned install filter-file follow-up — 2026-09-24
+
+기준 HEAD: 1f4796977af1de7326949c7f7f48df2a5f066f51. branch: codex/prediction-state-v3.
+시작 상태: tracked tree clean. 기존 사용자 파일 .opencode/만 untracked이며 보존.
+재현: parent contract audit에서 README/IMPLEMENTATION_PLAN이 가리키는 planned install input인 --filter-file이 현재 InstallArgs/CLI에 노출되지 않은 점을 확인함.
+수정: 기존 focused install 필터 경로를 재사용하는 --filter-file JSON string-array CLI 추가. 빈 배열 및 잘못된 item은 package manager 탐지/실행 전에 거부하고 standalone 무필터 install은 root install로 유지.
+상태: A2 follow-up와 공통 gates, parent review를 마쳐 A2를 완료함.
+
+회귀 사용자 경로:
+
+- ["pkg-a","pkg-b","pkg-a"] 입력은 기존 pnpm focused args로 전달하고 중복을 제거한다.
+- malformed JSON, object/non-array, number/non-string, 빈 배열, 빈/공백 문자열, newline/NUL 제어문자는 package manager를 실행하기 전에 거부한다.
+- --filter와 --filter-file 동시 사용을 거부한다.
+- 두 옵션 모두 없는 standalone install은 계속 root npm install을 실행한다.
+
+검증:
+
+- cargo test --locked --test install_filter_file_tests -- --nocapture — exit 0, 4 passed.
+- cargo test --locked --lib commands::install::tests — exit 0, 14 passed.
+- cargo fmt --all --check — exit 0.
+- cargo clippy --locked --all-targets --all-features -- -D warnings — exit 0.
+- cargo test --locked --all-targets --all-features — exit 0, 202 passed.
+- bash scripts/action-contract.sh — exit 0.
+- git diff --check — exit 0.
+- bash scripts/review-change.sh 1f4796977af1de7326949c7f7f48df2a5f066f51 — exit 0, 6 changed files, parent semantic review PASS.
