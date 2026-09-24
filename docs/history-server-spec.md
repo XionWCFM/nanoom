@@ -1,6 +1,6 @@
 # 선택적 Nanoom History Worker — Cloudflare Workers + D1
 
-상태: Rust Worker는 D1에 scope별 ModelState 한 행을 저장한다. Cloudflare Workers Free 계정을 확인하고 전용 D1 `nanoom-history-state` 및 schema를 만들었다. Worker는 [nanoom-history.giljongyudev.workers.dev](https://nanoom-history.giljongyudev.workers.dev)에 배포했다. Hosted `/health`와 `/ready`는 200이다. Actions에는 opt-in client가 구현됐고, Worker secret과 GitHub Actions secret을 exact repository/scope로 제한해 설정했다. 익명 protected snapshot은 401로 거부된다. 실제 hosted merge/warm reuse, CPU/사용량 검증은 아직 남았다. 기본 history 경로는 계속 GitHub artifact다. 데이터/알고리즘 기준은 [PredictionState v3](prediction-model-spec.md), HTTP 계약은 [OpenAPI](api/history.openapi.yaml)다.
+상태: Rust Worker는 D1에 scope별 ModelState 한 행을 저장한다. Cloudflare Workers Free 계정을 확인하고 전용 D1 `nanoom-history-state` 및 schema를 만들었다. Worker는 [nanoom-history.giljongyudev.workers.dev](https://nanoom-history.giljongyudev.workers.dev)에 배포했다. Hosted `/health`와 `/ready`는 200이고 익명 protected snapshot은 401로 거부된다. Actions opt-in client, exact repository/scope secrets, 실제 hosted cold-to-warm artifact flow가 구현돼 GitHub Actions E2E를 통과했다. Worker CPU/사용량 계측은 남았다. 기본 history 경로는 계속 GitHub artifact다. 데이터/알고리즘 기준은 [PredictionState v3](prediction-model-spec.md), HTTP 계약은 [OpenAPI](api/history.openapi.yaml)다.
 
 ## 1. 호스팅과 무료 한도
 
@@ -64,14 +64,14 @@ Raw observation 배열은 저장하지 않는다. 최신 7 observed day와 최�
 | 공유 PredictionState core / Rust Worker API | D1 build/native tests/clippy 통과; 로컬 D1 HTTP contract 통과 |
 | D1 schema / CAS / duplicate / concurrency / stale cleanup | local migration 및 merge/duplicate/conflict/concurrent CAS/scheduled cleanup 통과 |
 | `/health`, `/ready`, exact auth, errors, ETag | local contract 통과; hosted `/health`·`/ready` 200, 익명 protected snapshot 401 |
-| Cloudflare Workers Free + D1 + `workers.dev` | 배포 및 remote migration 완료; hosted authorized merge, CPU, usage는 미실시 |
-| Actions opt-in client / cold fallback | 구현 및 local D1 E2E 통과; GitHub-hosted artifact transport는 미실시 |
+| Cloudflare Workers Free + D1 + `workers.dev` | 배포 및 remote migration 완료; hosted authorized merge 통과; CPU/usage 미실시 |
+| Actions opt-in client / cold fallback | local D1 E2E와 GitHub-hosted artifact transport, warm reuse 통과 |
 
-계정 화면에서 Workers Free가 활성화되고 결제 수단은 등록되지 않은 상태를 확인했다. 전용 D1 DB `nanoom-history-state`를 만들고 `0001_initial.sql`을 적용했다. 기존 계정의 다른 D1 DB는 재사용하지 않는다. R2 구독/Worker Paid 전환은 하지 않았다. 2026-09-25에 `NANOOM_AUTH_JSON`을 한 repository/workflow scope ACL로 설정했다. 익명 snapshot 요청의 401 응답으로 auth config가 유효하고 unauthenticated access가 거부됨을 확인했으며 authorized merge는 hosted E2E에서 확인해야 한다.
+계정 화면에서 Workers Free가 활성화되고 결제 수단은 등록되지 않은 상태를 확인했다. 전용 D1 DB `nanoom-history-state`를 만들고 `0001_initial.sql`을 적용했다. 기존 계정의 다른 D1 DB는 재사용하지 않는다. R2 구독/Worker Paid 전환은 하지 않았다. 2026-09-25에 `NANOOM_AUTH_JSON`을 한 repository/workflow scope ACL로 설정했다. 익명 snapshot 요청의 401은 auth config가 유효하고 unauthenticated access가 거부됨을 보였다. [Hosted E2E run 36037405023](https://github.com/XionWCFM/nanoom/actions/runs/36037405023)은 measurement file 2개/observation 4개로 D1 batch 1개를 적용하고, 후속 `affected`가 `historyStatus=loaded`와 assignment별 `sampleCount=2`를 확인한 뒤 warm run measurement를 생성했다. run head SHA는 `1f85325d60bc717569e2c3cb9f5c39de4720630b`이다.
 
-배포 명령은 `worker-build --release`, `wrangler d1 migrations apply nanoom-history-state --remote`, `wrangler deploy` 순이다. 2026-09-24 배포의 Worker version ID는 `f4ea5fe3-06fa-4013-9e16-baee49006e76`이다. Hosted `/health`·`/ready`를 각각 HTTP 200으로 확인했다. 인증 secret 부재 상태에서 protected snapshot은 `configuration_error` 503을 반환해 닫혀 있는 것도 확인했다. `workers.dev` hostname을 사용하므로 DNS는 필요 없다.
+배포 명령은 `worker-build --release`, `wrangler d1 migrations apply nanoom-history-state --remote`, `wrangler deploy` 순이다. 2026-09-24 배포의 Worker version ID는 `f4ea5fe3-06fa-4013-9e16-baee49006e76`이다. Hosted `/health`·`/ready`는 HTTP 200이다. secret 설정 전 protected snapshot은 `configuration_error` 503으로 fail closed였고, 2026-09-25 secret 설정 뒤 익명 snapshot은 401로 거부됨을 확인했다. `workers.dev` hostname을 사용하므로 DNS는 필요 없다.
 
-Hosted 서버는 code/build/local test와 다른 증거다. 실제 Actions가 prediction을 읽고 쓰는지, warm run reuse, 전체 CI makespan, Worker CPU 10ms, free quota usage는 아직 측정하지 않았다. 이를 artifact/로컬 테스트 결과로 대신하지 않는다.
+Hosted E2E는 실제 Actions artifact transport와 hosted D1 read/write, warm reuse를 검증했다. 이 fixture 결과를 실제 consumer repository의 전체 CI makespan이나 실제 workload 성능으로 일반화하지 않는다. Worker CPU 10ms 및 Cloudflare free quota 사용량도 아직 계측하지 않았다.
 
 ## 6. 참고
 

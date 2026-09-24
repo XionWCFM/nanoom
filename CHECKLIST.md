@@ -47,7 +47,7 @@ basic/advanced 예제에 positive, no-change, required status job wiring을 보�
 - 기본 sandbox의 `gh auth status`는 GitHub API 연결 실패로 token invalid를 보고했다. 네트워크 접근이 허용된 실행 경로에서 `gh auth status`와 `gh api user`는 exit 0, `XionWCFM`, `repo`/`workflow` scope로 확인했다. 인증 자체는 유효하다.
 - `.opencode/`는 계속 미추적이며 stage하지 않았다.
 
-미실시: A7 producer/fixture PR 및 hosted cold→warm/positive/no-change/failure/rerun 증거, GitHub/GHES artifact transport, released binary, A5 real trace/정확도/실제 artifact bytes, hosted protected API/CPU/usage evidence. Cloudflare server는 S2의 응답 유실/손상 row/용량 경계, S4 opt-in client, protected route secret/merge, hosted CPU/usage 측정이 남아 있다. GitHub 인증 복구 후 A7은 별도 이어서 진행한다.
+미실시: A7 producer/fixture PR 및 no-change/failure/rerun 전체 시나리오, 실제 GHES transport, released binary, A5 real trace/정확도/실제 artifact bytes, Cloudflare CPU/usage 계측이다. GitHub.com Actions artifact transport와 hosted protected merge/warm consumer 경로는 아래 History Server E2E에서 검증했다. Cloudflare의 S2 lost-response/corrupt-row/capacity 경계 검증도 남았다.
 
 ## 선택적 Cloudflare 서버 구현
 
@@ -55,10 +55,10 @@ basic/advanced 예제에 positive, no-change, required status job wiring을 보�
 
 - [x] S0 공유 PredictionState core 추출, 기존 caller 재노출, RFC8785/hash/batch regression.
 - [x] S1 Cloudflare Worker routes / exact auth / bounded JSON: D1 feature compile, native tests, Clippy, `worker-build --release`.
-- [ ] S2 D1 digest CAS / lost response / corruption / capacity: local D1 merge, duplicate retry, body conflict, concurrent CAS 통과; lost response, corrupt row, 1.9 MB cap boundary는 미실시.
+- [ ] S2 D1 digest CAS / lost response / corruption / capacity: local D1 merge, duplicate retry, body conflict, concurrent CAS 및 hosted 1-batch merge 통과; lost response, corrupt row, 1.9 MB cap boundary는 미실시.
 - [x] S3 `/health`·`/ready` 및 local HTTP contract; hosted `/health`·`/ready`도 200.
-- [x] S4 artifact 기본값 유지 / server opt-in / cold fallback / token 비노출 client — 로컬 History Server E2E 통과.
-- [x] S5 Workers Free + D1 + `workers.dev` 배포 및 health/readiness 통과. Protected API merge, CPU/usage, 실제 CI consumer는 미실시.
+- [x] S4 artifact 기본값 유지 / server opt-in / cold fallback / token 비노출 client — 로컬 및 GitHub-hosted History Server E2E 통과.
+- [x] S5 Workers Free + D1 + `workers.dev` 배포, health/readiness, hosted protected merge와 warm consumer 통과. Worker CPU/usage 계측은 미실시.
 - [x] S6 무료 한도/overage, 배포 runbook, 현재 미검증 증거 기록. Hosted usage evidence는 아직 수집하지 않음.
 
 ## 서버 준비 evidence — 2026-09-24
@@ -72,14 +72,15 @@ basic/advanced 예제에 positive, no-change, required status job wiring을 보�
 - 전용 D1 `nanoom-history-state` 생성 및 remote migration 적용. 기존 D1은 재사용하지 않았다. R2 자동 청구 약관은 수락하지 않았고 R2 구독/Workers Paid 전환은 안 했다. 2026-09-25에 exact repository/scope ACL로 Worker secret과 GitHub `NANOOM_HISTORY_TOKEN` secret을 설정하고, 익명 snapshot 요청이 HTTP 401로 거부됨을 확인했다.
 - Worker `https://nanoom-history.giljongyudev.workers.dev` version `f4ea5fe3-06fa-4013-9e16-baee49006e76` 배포. Hosted `/health`·`/ready`는 200, 보호 snapshot은 `configuration_error` 503으로 fail closed.
 - [Cloudflare Worker/D1 server spec](docs/history-server-spec.md)에 D1 free quotas, CPU 제한, `workers.dev` 경로를 기록했다.
-- `scripts/history-server-e2e-test.sh`는 실제 Action/fixture와 로컬 Worker+D1을 연결해 cold fallback → 2개 run assignment → merge → duplicate no-op → 8개 warm sample 재사용 → warm run까지 통과했다. GitHub-hosted Actions artifact transport는 아직 실행하지 않았다.
-- `gh` 인증은 복구되어 있으며 GitHub-hosted E2E workflow는 현재 브랜치 push 후 실행할 예정이다.
+- `scripts/history-server-e2e-test.sh`는 실제 Action/fixture와 로컬 Worker+D1을 연결해 cold fallback → 2개 run assignment → merge → duplicate no-op → warm sample 재사용 → warm run까지 통과했다.
+- [GitHub-hosted History Server E2E run 36037405023](https://github.com/XionWCFM/nanoom/actions/runs/36037405023), SHA `1f85325d60bc717569e2c3cb9f5c39de4720630b`: `affected`, 2개 matrix run, History Server merge, warm `affected`, warm run 모두 success. History Action은 measurement file 2개에서 observation 4개를 받아 D1 batch 1개를 적용했다. Warm matrix의 각 assignment가 `sampleCount: 2`를 사용했고 실제 warm run measurement를 생성했다.
+- Hosted E2E 전에 기본 sandbox의 `gh auth status`는 GitHub API 연결 실패로 token invalid를 보고했다. 네트워크 접근이 허용된 실행 경로의 `gh auth status`와 `gh api user`는 exit 0, account `XionWCFM`, `repo`/`workflow` scope다. 재인증은 필요하지 않았다.
 
 ## 별도 외부 증거와 범위
 
 - [ ] 실제 GHES: 환경 미확보 시 미실시. 로컬 wrapper 검증과 분리.
 - [x] Workers Free 확인: 기존 account Workers Paid 구독 없음, 결제 수단 등록 없음. 전용 D1 무료 DB 생성.
-- [x] Cloudflare hosted Worker/D1: migration 및 배포 완료, health/readiness 확인. Protected API data path, CPU/usage/CI consumer는 미실시.
+- [x] Cloudflare hosted Worker/D1: migration, health/readiness, protected merge, warm CI consumer 확인. CPU/usage 계측은 미실시.
 - [ ] Released Action/CLI/server consumer: release하지 않은 후보 증거와 분리.
 
 현재 OpenAPI 검증 재실행 결과:
