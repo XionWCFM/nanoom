@@ -184,6 +184,20 @@ jobs:
         env:
           RESULT: ${{ steps.history.outputs.result }}
         run: jq -e '.status == "success" and .serverMerge.status == "merged" and .serverMerge.appliedBatchCount > 0' <<< "$RESULT"
+      - name: Clear measurement directory before replay
+        run: rm -rf "$RUNNER_TEMP/nanoom-current-measurements"
+      - id: history-replay
+        uses: ./.github/actions/history
+        with:
+          version: local
+          scheduler: artifact
+          historyBackend: server
+          historyServerUrl: https://nanoom-history.giljongyudev.workers.dev
+          historyServerToken: ${{ secrets.NANOOM_HISTORY_TOKEN }}
+      - name: Verify hosted duplicate replay was a no-op
+        env:
+          RESULT: ${{ steps.history-replay.outputs.result }}
+        run: jq -e '.status == "success" and .serverMerge.status == "merged" and .serverMerge.appliedBatchCount == 0 and .serverMerge.duplicateBatchCount > 0' <<< "$RESULT"
 
   warm:
     needs: [affected, history]
