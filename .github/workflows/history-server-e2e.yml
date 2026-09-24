@@ -107,16 +107,16 @@ jobs:
           WORKFLOW_REF: ${{ github.workflow_ref }}
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
-          GITHUB_SHA: ${{ needs.affected.outputs.fixture_head }}
+          FIXTURE_SHA: ${{ needs.affected.outputs.fixture_head }}
           GITHUB_JOB: run
           MATRIX_INDEX: ${{ strategy.job-index }}
         run: |
           tar -xf "$RUNNER_TEMP/history-e2e-fixture.tar" -C "$RUNNER_TEMP"
-          bash "$GITHUB_ACTION_PATH/select.sh"
+          GITHUB_SHA="$FIXTURE_SHA" bash "$GITHUB_ACTION_PATH/select.sh"
           cwd=$(sed -n 's/^cwd=//p' "$GITHUB_OUTPUT")
           mkdir -p "$(dirname "$cwd")"
           git clone -q --no-checkout "$RUNNER_TEMP/.fixture" "$cwd"
-          git -C "$cwd" checkout -q "$GITHUB_SHA"
+          git -C "$cwd" checkout -q "$FIXTURE_SHA"
           (cd "$cwd" && yarn install --immutable)
       - name: Run the validated assignment and emit real timing data
         id: task
@@ -127,7 +127,7 @@ jobs:
           CWD: ${{ steps.select.outputs.cwd }}
           ASSIGNMENT_FILE: ${{ runner.temp }}/nanoom-plan/selected/assignment.json
           PLAN: ${{ needs.affected.outputs.plan }}
-          GITHUB_SHA: ${{ needs.affected.outputs.fixture_head }}
+          FIXTURE_SHA: ${{ needs.affected.outputs.fixture_head }}
           REPOSITORY: ${{ github.repository }}
           WORKFLOW_REF: ${{ github.workflow_ref }}
           RUN_ID: ${{ github.run_id }}
@@ -146,7 +146,7 @@ jobs:
           TIMING_ENVIRONMENT: ${{ matrix.timingEnvironment }}
           COORDINATOR_URL: ''
           COORDINATOR_TOKEN: ''
-        run: bash "$GITHUB_ACTION_PATH/run.sh"
+        run: GITHUB_SHA="$FIXTURE_SHA" bash "$GITHUB_ACTION_PATH/run.sh"
       - name: Upload the measurement artifact for History Action
         uses: actions/upload-artifact@v4.6.2
         with:
@@ -242,15 +242,15 @@ jobs:
           WORKFLOW_REF: ${{ github.workflow_ref }}
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
-          GITHUB_SHA: ${{ needs.affected.outputs.fixture_head }}
+          FIXTURE_SHA: ${{ needs.affected.outputs.fixture_head }}
           GITHUB_JOB: warm
           MATRIX_INDEX: 0
         run: |
-          bash "$GITHUB_ACTION_PATH/select.sh"
+          GITHUB_SHA="$FIXTURE_SHA" bash "$GITHUB_ACTION_PATH/select.sh"
           cwd=$(sed -n 's/^cwd=//p' "$GITHUB_OUTPUT")
           mkdir -p "$(dirname "$cwd")"
           git clone -q --no-checkout "$RUNNER_TEMP/.fixture" "$cwd"
-          git -C "$cwd" checkout -q "$GITHUB_SHA"
+          git -C "$cwd" checkout -q "$FIXTURE_SHA"
           (cd "$cwd" && yarn install --immutable)
       - name: Execute a warm assignment
         id: task
@@ -261,7 +261,7 @@ jobs:
           CWD: ${{ steps.select.outputs.cwd }}
           ASSIGNMENT_FILE: ${{ runner.temp }}/nanoom-warm-plan/selected/assignment.json
           PLAN: ${{ steps.affected.outputs.plan }}
-          GITHUB_SHA: ${{ needs.affected.outputs.fixture_head }}
+          FIXTURE_SHA: ${{ needs.affected.outputs.fixture_head }}
           REPOSITORY: ${{ github.repository }}
           WORKFLOW_REF: ${{ github.workflow_ref }}
           RUN_ID: ${{ github.run_id }}
@@ -280,7 +280,7 @@ jobs:
           TIMING_ENVIRONMENT: ${{ fromJSON(steps.choose.outputs.assignment).timingEnvironment }}
           COORDINATOR_URL: ''
           COORDINATOR_TOKEN: ''
-        run: bash "$GITHUB_ACTION_PATH/run.sh"
+        run: GITHUB_SHA="$FIXTURE_SHA" bash "$GITHUB_ACTION_PATH/run.sh"
       - name: Verify the warm run emitted measurements
         env:
           SAMPLE: ${{ steps.task.outputs.sample-path }}
