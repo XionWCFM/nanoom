@@ -143,7 +143,7 @@ Nanoom 작업 폴더에 계획/명세/OpenAPI/검증 스크립트 7개를 반영
 브랜치: codex/prediction-state-v3
 시작 상태: 추적 파일 clean, 사용자 .opencode/ 미추적 1개. 보존함.
 변경: Plan v1 writer/reference, compact output, config-free assignment selector, integration/unit regressions, README/SPEC/ADR contract.
-결과: 이 단계 commit에 코드와 이 evidence를 함께 기록함. PR, artifact transport, checkout/install/run consumer, hosted run은 없음.
+결과: 구현 commit `eb43d00`에 코드와 계약을 기록함. PR, artifact transport, checkout/install/run consumer, hosted run은 없음.
 ```
 
 Plan producer는 `--plan-output`과 `--plan-context`를 함께 요구하고 raw Plan bytes의 SHA-256과 current/source provenance를 작은 reference로 출력한다. group별 최대 256 matrix rows와 compact JSON의 UTF-16 크기를 검사한다. Plan selector는 config/checkout 없이 Plan/reference/schema/digest/current run/head와 assignment를 검증하고 `assignment.json`, `paths.txt`를 만든다. no-change는 유효한 빈 Plan이며 선택할 assignment는 없다. Affected가 만든 reference는 producer attempt를 current로 초기화한다. rerun consumer는 실제 current run/attempt를 reference에 채워야 하며 Action transport는 A3다.
@@ -167,6 +167,7 @@ Plan producer는 `--plan-output`과 `--plan-context`를 함께 요구하고 raw 
 - `cargo test --locked --all-targets --all-features` — exit 0, 198 passed.
 - `bash scripts/action-contract.sh` — exit 0.
 - `git diff --check` — exit 0.
+- `bash scripts/review-change.sh d3f147a18372d94d42e9e15f0cefde51cd44d5ab` — exit 0, 13 committed files, heuristic PASS; parent semantic review PASS.
 - `cargo test --locked --lib plan::tests` — exit 0, 6 passed.
 - `cargo test --locked --test plan_cli_tests -- --nocapture` — exit 0, 6 passed.
 - `cargo test --locked --test cli_integration_tests test_affected_pull_request_event_with_changes` — exit 0, 1 passed.
