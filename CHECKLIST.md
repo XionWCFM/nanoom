@@ -17,14 +17,35 @@
 - [x] A3 prepare·sparse checkout·install/run·GHES local contracts — 아래 A3 실행 기록 참조. Hosted GitHub/GHES transport는 별도 미실시.
 - [x] A4 PredictionState v3·compile/apply/project·분리된 artifact·bounded lookup의 local Rust/Action 구현과 회귀.
 - [x] A5 preparation telemetry·automatic k·cold fallback·결정성·384-item synthetic warm scheduler benchmark — 아래 A5 기록.
-- [ ] A5 real CI traces의 전체 wall time·prediction error vs median·실제 artifact 크기 측정 — hosted consumer 경로 필요.
+- [ ] A5 실제 hosted trace의 전체 CI wall time·기존 median 대비 prediction error 측정.
+- [x] A5 PredictionState artifact 크기 측정 — A7 cold consumer run 참조.
 - [x] A6 examples·requiredJobs·계획 기반 completion gate·96% coverage 기준 — 아래 A6 실행 기록.
 - [x] Local fmt/lint/tests/Action/실제 Git 및 focused-install 회귀 — A4/A6 공통 로컬 gates 포함.
 - [x] 현재 OpenAPI 변경의 공식 schema/examples/digest 검증 — 아래 2026-09-24 재실행 결과.
-- [ ] Producer hosted PR CI: exact candidate SHA 기록.
-- [ ] Consumer Yarn+Turbo / pnpm+Nx: cold→warm, positive/non-skipped, selected closure.
-- [ ] Consumer no-change / task failure / unexpected skip / rerun aggregate 검증.
-- [ ] A7 producer PR + fixture PR + run URL / SHA / 결과 표 첨부.
+- [x] Producer hosted PR CI: exact candidate SHA 기록.
+- [x] Consumer Yarn+Turbo / pnpm+Nx: cold→warm, positive/non-skipped, selected closure.
+- [x] Consumer no-change / task failure / unexpected skip / rerun aggregate 검증.
+- [x] A7 producer PR + fixture PR + run URL / SHA / 결과 표 첨부.
+
+## A7 hosted acceptance evidence — 2026-09-25
+
+검증 후보는 producer commit `0d29332882ed303a22a24bb15c8464cc406eb57a`다. [Producer PR #89](https://github.com/XionWCFM/nanoom/pull/89)는 draft/open으로 두었고, [consumer fixture PR #20](https://github.com/XionWCFM/nanoom-fixtures/pull/20)의 최종 head는 `649588ec81a9d8b2596ff8da99c7aaa9975837d4`다. 모든 consumer run은 해당 exact producer SHA의 Actions를 고정 참조하고, 별도 job에서 같은 SHA의 Linux binary를 빌드해 `version: local` 경로로 전달했다. Cold seed run은 fixture의 stage를 `cold`로 설정한 head `cc75a03390dfdc4e2f69835bb663afb4f84fdab4`에서 수행했다.
+
+Producer hosted CI [run 36070615271](https://github.com/XionWCFM/nanoom/actions/runs/36070615271)은 candidate SHA에서 release binary builds, tests, lint/format, 96% coverage, fixture matrix/aggregate checks를 포함한 required checks가 모두 통과했다. [Action contract run 36070615395](https://github.com/XionWCFM/nanoom/actions/runs/36070615395)와 별도 [History Server E2E run 36070612108](https://github.com/XionWCFM/nanoom/actions/runs/36070612108)도 통과했다.
+
+| Consumer scenario | Hosted evidence | Result |
+| --- | --- | --- |
+| Cold | [run 36070762684](https://github.com/XionWCFM/nanoom-fixtures/actions/runs/36070762684), fixture head `cc75a03390dfdc4e2f69835bb663afb4f84fdab4` | 5개 positive Yarn/Turbo·pnpm/Nx shard가 모두 실제 task를 수행했다. History `fallback`에서 measurement 5개, observation 11개를 모아 artifact를 게시했다. |
+| Warm | [run 36071197668](https://github.com/XionWCFM/nanoom-fixtures/actions/runs/36071197668) | 두 affected 그룹 모두 `historyStatus=loaded`, source `36070762684`, `sampleCount > 0`; 4개 run shard와 aggregate가 성공했다. |
+| No change | [run 36071753746](https://github.com/XionWCFM/nanoom-fixtures/actions/runs/36071753746) | 두 그룹 모두 assignment 0, `history_not_needed`; `run`·`history` skip은 허용되고 aggregate 성공. |
+| Task failure | [run 36072089322](https://github.com/XionWCFM/nanoom-fixtures/actions/runs/36072089322) | 의도한 workflow 실패. Nx `nx-2`의 `NANOOM_A7_FAIL=1`이 test task를 실패시켰고, 필수 `run=failure`를 aggregate가 거부했다. |
+| Unexpected skip | [run 36072439075](https://github.com/XionWCFM/nanoom-fixtures/actions/runs/36072439075) | 의도한 workflow 실패. Yarn/Nx positive assignment가 각각 있었지만 `run=skipped`여서 필수 job aggregate가 실패했다. |
+| Rerun | [run 36072702100](https://github.com/XionWCFM/nanoom-fixtures/actions/runs/36072702100), attempt 1 → 2 | Attempt 1은 주입된 Nx 실패, `--failed` attempt 2는 `NANOOM_A7_FAIL=0`으로 Nx 작업 성공. History가 valid source `36071197668`을 재사용하고 observation 3개를 반영해 artifact와 aggregate를 게시했다. |
+| Final positive warm | [run 36073189049](https://github.com/XionWCFM/nanoom-fixtures/actions/runs/36073189049) | Yarn/Turbo와 pnpm/Nx 모두 source `36072702100`에서 `historyStatus=loaded` 및 positive samples를 확인했다. 4개 run shard가 planned items를 모두 실행했고 history publish와 aggregate가 성공했다. |
+
+Cold run의 GitHub artifact ZIP 크기는 PredictionArtifact **1,232 bytes**, ModelState **1,467 bytes**였다. History updater가 보고한 uncompressed payload는 각각 **2,637 bytes**, **3,773 bytes**다. 이 byte 측정은 실제 hosted artifact이며 A5의 전체 workflow wall time과 historical median 대비 prediction error를 측정한 결과는 아니다.
+
+Producer candidate SHA의 로컬 회귀는 `bash scripts/history-artifact-test.sh`, `bash scripts/action-contract.sh`, `bash -n ...`, `git diff --check`가 통과했다. A7 결과는 GitHub.com hosted Action/binary/fixture 경로 증거이며 release 또는 실제 GHES 검증이 아니다. 두 PR은 merge하지 않았다.
 
 ## A6 실행 기록 — 2026-09-24
 

@@ -1,6 +1,6 @@
 # Luna Max 실행 지시서 — Nanoom PredictionState v3
 
-작성일: 2026-09-24. 대상: **Luna, reasoning effort `max`**. 이 문서는 다음 실행 세션의 작업 지시서다. 문서가 존재한다는 사실은 에이전트 실행 또는 runtime 구현 완료를 뜻하지 않는다.
+작성일: 2026-09-24. 상태 갱신: 2026-09-25. 대상: **Luna, reasoning effort `max`**. A7 hosted acceptance는 candidate SHA `0d29332882ed303a22a24bb15c8464cc406eb57a`로 완료했고 근거는 [CHECKLIST.md](CHECKLIST.md)에 기록했다. 문서가 존재한다는 사실만으로 runtime 구현 완료를 뜻하지는 않는다.
 
 ## 1. 시작 상태와 목표
 
@@ -8,7 +8,7 @@
 - 인계 브랜치: `codex/prediction-state-v3`.
 - 구현 조사 기준: `539b2c08cc7e2543f3a0cdd10fbdba451b2502d5`(v0.6.0). 문서 커밋 이후 현재 HEAD와 차이는 시작할 때 다시 확인한다.
 - 준비된 것: 전체 실행 계획, 데이터/서버 명세, OpenAPI, 체크리스트, 문서 검증 스크립트.
-- 완료: A1~A6 local runtime gates는 [CHECKLIST.md](CHECKLIST.md)에 기록했다. 현재 OpenAPI schema/examples/digest validation도 통과했다. A5 real CI wall time·prediction error·actual artifact bytes, hosted GitHub/GHES transport, release, producer/consumer PR은 미실시다. Cloudflare D1 build/local HTTP/CAS/cron contract 통과, Worker deployed 및 hosted health/readiness 통과. Protected route secret, Actions client, hosted merge/CPU/usage는 미완료다. OpenAPI·합성 payload·local Worker 결과를 hosted 데이터 경로 증거로 승계하지 않는다.
+- 완료: A1~A6 local runtime gates와 A7 producer/consumer hosted acceptance는 [CHECKLIST.md](CHECKLIST.md)에 기록했다. A7 producer PR #89와 consumer fixture PR #20은 draft/open으로 유지하고 merge하지 않았다. OpenAPI schema/examples/digest validation도 통과했다. A5 전체 CI wall time과 historical median 대비 prediction error, 실제 GHES, released consumer는 미실시다. Cloudflare hosted health/readiness, protected merge/warm consumer 통과; S2 lost-response/corrupt-row/capacity 경계와 Worker CPU/usage는 남았다. OpenAPI·합성 payload·local Worker 결과를 hosted 데이터 경로 증거로 승계하지 않는다.
 - 인계 시 기존 사용자 파일 `.opencode/`가 untracked다. 읽을 필요 없이 보존하며 작업 커밋에 포함하지 않는다. 이후 발견하는 사용자 변경도 같은 원칙으로 보존한다.
 
 목표는 **이력 조회와 갱신 비용까지 포함한 전체 CI 완료 시간 감소**다. GitHub artifact를 기본으로 유지하며 Cloudflare Workers Free + D1 기반 선택적 서버를 구현한다. 사용자가 $0 운영을 요청해 자동 청구 조건이 있는 R2 구독은 활성화하지 않았다. A7 hosted 검증과 서버는 독립 경로다. 실제 검증으로 확인한 범위만 완료로 표시한다.
@@ -35,7 +35,7 @@ git status --short
 git log -3 --oneline
 ```
 
-현재 branch/HEAD와 기존 변경 목록을 확인하고 `.opencode/`를 보존한다. A1~A6 local work는 CHECKLIST에 기록했다. Cloudflare Workers Free를 확인하고 D1 migration과 Worker를 배포했다. `https://nanoom-history.giljongyudev.workers.dev`의 `/health`·`/ready`는 200이다. protected API는 auth secret을 설정하지 않아 503 fail-closed이며, Actions client와 hosted data path는 별도다. A7, A5 real metrics는 별도다.
+현재 branch/HEAD와 기존 변경 목록을 확인하고 `.opencode/`를 보존한다. A1~A7의 local/hosted evidence, Cloudflare Workers Free + D1 배포 및 hosted 경로는 CHECKLIST를 기준으로 한다. A7을 다시 실행하거나 merge/release하지 않는다. 남은 작업을 이어갈 경우 A5 전체 CI wall time/error 측정, S2 edge cases, Worker CPU/usage, GHES 환경 확보 여부를 CHECKLIST와 서버 명세에 따라 다루고 실제로 측정하지 않은 항목은 미실시로 둔다.
 
 문서 검증은 다음 명령으로 재현할 수 있다. 최초 한 번 실행하고 이후에는 관련 계약을 바꿨을 때 다시 실행한다. 설치가 막히면 네트워크/도구 오류를 기록하며 독립적인 Rust 작업은 계속한다.
 
@@ -153,7 +153,7 @@ Luna 모델, reasoning max로 Nanoom 작업을 시작해줘.
 브랜치는 codex/prediction-state-v3이고 이 브랜치의 문서 커밋을 포함한 checkout을 사용해.
 루트 LUNA_HANDOFF.md를 먼저 읽고 연결된 명세와 CHECKLIST를 확인해.
 CHECKLIST에서 완료 표시되지 않은 실제 작업부터 수행해. A1~A6 local gates, OpenAPI 검증, Workers Free + D1 배포와 health/readiness는 이미 통과했다.
-A7 hosted producer/consumer 검증은 유효한 GitHub 인증이 가능해진 뒤 진행해. 서버 쪽은 S2의 응답 유실/손상 row/용량 경계 검증 후 S4 opt-in client를 진행하고 artifact 기본값과 cold fallback을 유지해. Cloudflare Workers Free와 D1을 쓰고 R2 구독이나 Workers Paid로 전환하지 마. 배포된 `workers.dev`를 재사용하고, 코드 변경 없이 D1 migration/deploy를 반복하지 마. 보호 route smoke와 CPU/D1 usage는 secret/client를 실제로 구성할 수 있을 때 측정해.
+A7 hosted producer/consumer 검증은 candidate SHA `0d29332882ed303a22a24bb15c8464cc406eb57a`에서 완료했다. cold/warm/no-change/task failure/unexpected skip/rerun/aggregate 근거는 CHECKLIST의 run 표를 참고해. A5 전체 CI wall time·prediction error, S2 lost-response/corrupt-row/capacity, Worker CPU/D1 usage와 실제 GHES는 미완료다. 이어서 작업할 때는 사용자가 요청한 범위만 진행하고 artifact 기본값, Workers Free + D1을 유지해. R2 구독이나 Workers Paid로 바꾸거나, 코드 변경 없이 D1 migration/deploy를 반복하지 마.
 기존 사용자 변경은 보존하고, 외부 환경이 없으면 해당 검증을 미실시로 정확히 기록해.
 새 merge/release는 하지 말고 검토 가능한 변경과 증거를 인계해. Workers Free + D1 배포는 이미 완료된 상태다.
 ```

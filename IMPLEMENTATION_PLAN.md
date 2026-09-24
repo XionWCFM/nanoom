@@ -1,10 +1,10 @@
 # Nanoom 개선 실행 계획 — LUNA 작업 명세
 
-상태: **A1~A6 local 구현·gates 완료. 현재 OpenAPI schema/examples/digest validation 통과. A5 real trace wall time·prediction error·실제 artifact bytes 미실시. A7 hosted 검증 미완료(GitHub CLI token invalid). D1 local build/HTTP/CAS와 Workers Free 배포 health/readiness 통과. S4 opt-in client, hosted protected data path/CPU/usage가 남음.** 기준 source `539b2c08cc7e2543f3a0cdd10fbdba451b2502d5`(v0.6.0). 조사일 2026-09-24. 이 문서의 나머지 proposed 동작을 released product 기능으로 설명하지 않는다.
+상태: **A1~A6 local 구현·gates 완료. OpenAPI schema/examples/digest validation 통과. A7은 producer candidate `0d29332882ed303a22a24bb15c8464cc406eb57a`로 producer/consumer hosted 검증을 완료했다([CHECKLIST.md](CHECKLIST.md)). A5 전체 CI wall time과 historical median 대비 prediction error는 미실시이며, 실제 artifact 크기는 측정했다. Cloudflare Workers Free + D1 hosted health/protected merge/warm consumer 통과. S2 lost-response/corrupt-row/capacity 경계, Worker CPU/usage, 실제 GHES와 release consumer는 미실시다.** 기준 release source `539b2c08cc7e2543f3a0cdd10fbdba451b2502d5`(v0.6.0). 현재 작업은 `codex/prediction-state-v3` draft PR #89. 조사일 2026-09-25. 이 문서의 나머지 proposed 동작을 released product 기능으로 설명하지 않는다.
 
 ## 다른 세션에서 시작하기
 
-Luna Max 실행 세션은 [LUNA_HANDOFF.md](LUNA_HANDOFF.md)에서 시작한다. 인계 브랜치는 `codex/prediction-state-v3`이며, 이 저장소 루트의 `IMPLEMENTATION_PLAN.md`가 상세 실행 계획이다. [SPEC](SPEC.md)으로 현재/제안 계약을 구분하고, [예측 모델](docs/prediction-model-spec.md), [선택적 서버](docs/history-server-spec.md), [OpenAPI](docs/api/history.openapi.yaml), [CHECKLIST](CHECKLIST.md)를 함께 읽는다. A7 hosted validation은 GitHub 인증 복구 후 별도로 진행하고, Cloudflare Worker는 Workers Free + D1으로 이어간다. 실제 Worker build/local D1/Cloudflare hosted evidence와 미실시 범위는 CHECKLIST에 갱신한다.
+Luna Max 실행 세션은 [LUNA_HANDOFF.md](LUNA_HANDOFF.md)에서 시작한다. 인계 브랜치는 `codex/prediction-state-v3`이며, 이 저장소 루트의 `IMPLEMENTATION_PLAN.md`가 상세 실행 계획이다. [SPEC](SPEC.md)으로 현재/제안 계약을 구분하고, [예측 모델](docs/prediction-model-spec.md), [선택적 서버](docs/history-server-spec.md), [OpenAPI](docs/api/history.openapi.yaml), [CHECKLIST](CHECKLIST.md)를 함께 읽는다. A7 hosted evidence와 남은 A5/S2/운영 한계는 CHECKLIST에 기록했다. GitHub CLI 인증은 유효하며 API 호출은 network-authorized 실행 경로에서 확인했다.
 
 문서 검증은 저장소 루트에서 실행한다.
 
@@ -159,4 +159,4 @@ producer의 생성된 local Git fixture는 remote head checkout 증거가 아니
 
 cold 실행 후 같은 workflow/branch의 warm 실행에서 loaded/source run/자동 선택 근거/non-skipped jobs/item 일치/aggregate를 확인한다. small/medium/full, no-change, 실패 전파를 구분한다. Cloudflare server는 local D1 contract와 실제 hosted D1/Workers Free 증거를 구분한다. 고정 process 수를 주장하지 않는다.
 
-실제 GHES, Cloudflare hosted Worker/D1 또는 released consumer 증거가 없으면 해당 항목은 미실시다. Cloudflare 로그인을 확인했고 Workers Free 계정에 전용 D1 DB를 만들었다. R2 구독과 Workers Paid 전환 없이 D1 free limits에서 계속한다. merge·release는 이번 문서 납품에 포함하지 않는다.
+실제 GHES와 released consumer 증거는 아직 없으므로 미실시다. Cloudflare hosted Worker/D1 evidence는 [CHECKLIST.md](CHECKLIST.md)에 기록했다. Cloudflare 로그인을 확인했고 Workers Free 계정에 전용 D1 DB를 만들었다. R2 구독과 Workers Paid 전환 없이 D1 free limits에서 계속한다. merge·release는 이번 문서 납품에 포함하지 않는다.
