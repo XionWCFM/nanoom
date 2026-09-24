@@ -8,6 +8,7 @@ inputs:
   head: {description: "Explicit comparison head; empty resolves from the GitHub event", default: ''}
   scheduler: {description: "Timing backend: artifact (default), off, or http", default: artifact}
   timingRunner: {description: "Runner identity used for timing prediction", default: auto}
+  packageManager: {description: "Package manager used by the focused install; keep this aligned with nanoom install", default: auto}
   timingEnvironment: {description: "Stable hardware identity used for timing history", default: ''}
   coordinatorUrl: {description: "HTTPS coordinator base URL for scheduler=http", default: ''}
   historyArtifactName: {description: "PredictionArtifact v3 name used for bounded assignment lookup", default: nanoom-prediction-v3}
@@ -55,6 +56,7 @@ runs:
         WORKFLOW_REF: ${{ github.workflow_ref }}
         SCHEDULER: ${{ inputs.scheduler }}
         TIMING_RUNNER: ${{ inputs.timingRunner }}
+        PACKAGE_MANAGER: ${{ inputs.packageManager }}
         TIMING_ENVIRONMENT: ${{ inputs.timingEnvironment || (runner.environment == 'self-hosted' && format('{0}-{1}-{2}', runner.os, runner.arch, runner.name) || format('{0}-{1}', runner.os, runner.arch)) }}
         COORDINATOR_URL: ${{ inputs.coordinatorUrl }}
         COORDINATOR_TOKEN: ${{ env.NANOOM_COORDINATOR_TOKEN }}

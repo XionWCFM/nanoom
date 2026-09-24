@@ -16,7 +16,8 @@
 - [x] A2 Plan v1 CLI·compact matrix·provenance/rerun·planned install filter-file 검증 — 아래 A2 실행 및 follow-up 기록 참조.
 - [x] A3 prepare·sparse checkout·install/run·GHES local contracts — 아래 A3 실행 기록 참조. Hosted GitHub/GHES transport는 별도 미실시.
 - [x] A4 PredictionState v3·compile/apply/project·분리된 artifact·bounded lookup의 local Rust/Action 구현과 회귀.
-- [ ] A5 preparation telemetry·automatic k·determinism·대규모 benchmark.
+- [x] A5 preparation telemetry·automatic k·cold fallback·결정성·384-item synthetic warm scheduler benchmark — 아래 A5 기록.
+- [ ] A5 real CI traces의 전체 wall time·prediction error vs median·실제 artifact 크기 측정 — hosted consumer 경로 필요.
 - [ ] A6 examples·requiredJobs·계획 기반 completion gate·96% coverage 기준.
 - [x] Local fmt/lint/tests/Action/실제 Git 및 focused-install 회귀 — A4 공통 로컬 gates 포함.
 - [ ] 현재 A4 OpenAPI 변경의 공식 schema/examples/digest 검증 — uv 설치는 PyPI DNS로 미실시.
@@ -260,3 +261,35 @@ run Action 회귀는 no execution 및 task failure가 assignment를 실패시키
 - OpenAPI 공식 validator 실행은 uv 임시 cache에서도 PyPI DNS 차단으로 exit 2. 현재 환경의 Node YAML parser는 파싱했지만 공식 schema/examples/digest validation 통과로 기록하지 않는다.
 
 미실시: 실제 GitHub artifact transport, GHES, producer/consumer hosted PR, released binary, full-workflow cold→warm 성능·정확도, AWS/S3, OpenAPI 공식 validator. A7까지 hosted evidence와 runtime 성능을 완료로 표시하지 않는다. 다음 단계는 A5 preparation telemetry와 automatic assignment count다.
+
+## A5 실행 기록 — 2026-09-24
+
+```text
+단계: A5 local implementation
+시작 HEAD: 01b6a75 (A4 validation evidence)
+결과 commit: 기록 예정
+브랜치: codex/prediction-state-v3
+시작 상태: tracked A4 tree clean; 사용자 .opencode/ 미추적 상태 보존.
+```
+
+`affected --preparation-context`에서 preparation key를 만들고 candidate concurrency의 LPT layout을 비교한다. task 예측이 cold거나 후보 중 preparation 예측이 unknown이면 configured tier cap을 유지한다. known 상태에서는 prep+task makespan, 총 runner time, checkout 경로 수, assignment 수, 안정적인 layout으로 후보를 선택한다. prepare Action 첫 단계가 시각을 기록하고, install Action JSON과 run CLI가 child process 시작 시각을 연결한다. 유효한 경우에만 전체 준비 구간을 v3 `preparationObservations`로 기록한다. 기존 v3 artifact에서 필드가 빠진 경우도 계속 읽는다.
+
+로컬 경로에서 positive telemetry, reversed clock 처리, exact/fallback aggregate, old v3 호환, cold-cap, warm 자동 선택 결정성을 회귀했다. preparation exact/fallback RFC8785 hash vectors를 OpenAPI와 Rust 회귀에 고정했다. `affected`는 실행 중 package-manager 명령에 의존하지 않고 root `packageManager` 선언의 정확 버전과 lockfile을 사용하며, 선언/input mismatch는 cold-cap이 된다. 384개 item·cap 24의 synthetic warm Rust scheduler는 debug test에서 24개 assignment를 선택하고 361,619 µs를 기록했다. 이는 한 번의 로컬 scheduler 계산이며 설치·checkout·실제 task wall time이나 예측 오차를 재지 않았다. 이전 문서 합성 크기 측정은 runtime artifact 크기 검증을 대신하지 않는다. 실제 CI wall time, weighted mean 대 기존 median의 real trace 오차, 실제 v3 artifact 크기는 A7 hosted consumer 증거가 필요해 미실시다.
+
+A5 수정 중 `bash scripts/action-contract.sh`가 empty Bash array를 `set -u`에서 확장하는 오류를 잡아 affected Action에 빈 인자 목록 guard를 추가했다. Continuous install Action 테스트도 run Action이 아닌 실제 install Action 경로를 호출하도록 고쳤다.
+
+검증:
+
+- `cargo fmt --all --check` — exit 0.
+- `cargo clippy --locked --all-targets --all-features -- -D warnings` — exit 0.
+- `cargo test --locked --all-targets --all-features` — exit 0, 223 passed.
+- `cargo test --locked --lib scheduler::tests::large_warm_auto_schedule_reports_local_cost -- --nocapture` — exit 0, 1 passed; 384 items, selected=24, 361,619 µs.
+- `bash scripts/plan-action-test.sh` — exit 0; affected Action은 packageManager version을 manifest에서 구성하고 `--version` subprocess 없이 Plan에 전달했다.
+- `bash scripts/assignment-action-test.sh` — exit 0; preparation telemetry positive/reversed case와 continuous focused/full install 경로 포함.
+- `bash scripts/action-contract.sh` — exit 0; affected, prepare, install, run, history, plan, coordinator, completion Action contracts 포함.
+- `cargo fmt --all --check`, `git diff --check`, Python PyYAML structural check, Ruby OpenAPI YAML parse — exit 0.
+- preparation exact/fallback JCS IDs — stdlib canonical-ASCII digest 계산과 Rust regression vectors 일치.
+- 공식 `uv run --no-project --with openapi-spec-validator --with pyyaml --with rfc8785 ...` — exit 2, PyPI DNS lookup 실패. schema metadata parse/shape 검사는 통과했지만 official OpenAPI validator는 미실시다.
+- `bash scripts/review-change.sh 01b6a75` — 결과 기록 예정; A5 commit 뒤 committed diff에 다시 실행.
+
+미실시: actual GHES/GitHub artifact transport, real preparation/task traces, real prediction error vs median, actual artifact bytes, hosted consumer PR/run, released binary. `.opencode/`는 stage하지 않았다. 다음 단계는 A6 예제·requiredJobs·96% completion gate다.

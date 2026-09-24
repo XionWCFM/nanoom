@@ -73,6 +73,18 @@ nanoom_now_ms() {
   fi
 }
 
+nanoom_utc_now_ms() {
+  local now
+  now=$(date +%s%3N 2>/dev/null || true)
+  if [[ "$now" =~ ^[0-9]+$ ]]; then
+    printf '%s' "$now"
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import time; print(time.time_ns() // 1_000_000)'
+  else
+    printf '%s' "$(( $(date +%s) * 1000 ))"
+  fi
+}
+
 nanoom_history_budget_start() {
   NANOOM_HISTORY_DEADLINE_MS=$(($(nanoom_now_ms) + ${1:-3} * 1000))
   NANOOM_HISTORY_BYTES=0

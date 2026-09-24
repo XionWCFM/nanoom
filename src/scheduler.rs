@@ -1,8 +1,9 @@
 use crate::affected::WorkspaceEntry;
 use crate::config::DistributionConfig;
-use crate::prediction::{PredictionContext, PredictionIndex, PredictionKey};
+use crate::prediction::{PredictionContext, PredictionIndex, PredictionKey, PreparationContext};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use sha2::{Digest, Sha256};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::Path;
 
 type TimingKey = (
@@ -58,6 +59,14 @@ pub struct Assignment {
     pub reason: String,
     pub checkout: crate::affected::CheckoutPlan,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub predicted_preparation_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preparation_prediction_source: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preparation_sample_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scheduling_mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub runner_labels: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub timing_environment: Option<String>,
@@ -92,6 +101,8 @@ pub struct SelectedTier {
     pub name: String,
     pub max_affected_percent: f64,
     pub concurrency: usize,
+    #[serde(skip)]
+    pub(crate) concurrency_candidates: Vec<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub runner_labels: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -192,6 +203,12 @@ pub fn select_tier(config: &DistributionConfig, affected_percent: f64) -> Select
         name: name.into(),
         max_affected_percent: tier.max_affected_percent,
         concurrency: tier.concurrency,
+        concurrency_candidates: [
+            config.small.concurrency,
+            config.medium.concurrency,
+            config.full.concurrency,
+        ]
+        .into(),
         runner_labels: tier.runner_labels.clone(),
         timing_environment: tier
             .timing_environment
@@ -315,6 +332,282 @@ pub fn assign_with_prediction_index(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
+pub fn assign_with_prediction_index_auto(
+    group: &str,
+    items: &[WorkspaceEntry],
+    concurrency: usize,
+    predictions: &PredictionIndex,
+    context: Option<&PredictionContext>,
+    runner: &str,
+    environment: &str,
+    runner_config: (Option<Vec<String>>, Option<String>),
+    concurrency_candidates: &[usize],
+    preparation_context: Option<&PreparationContext>,
+    now_ms: u64,
+) -> Vec<Assignment> {
+    if items.is_empty() {
+        return vec![];
+    }
+    let cap = concurrency.min(items.len());
+    let mut candidates = vec![1];
+    let mut power = 2;
+    while power <= cap {
+        candidates.push(power);
+        let Some(next) = power.checked_mul(2) else {
+            break;
+        };
+        power = next;
+    }
+    candidates.extend(
+        concurrency_candidates
+            .iter()
+            .copied()
+            .filter(|candidate| *candidate > 0 && *candidate <= cap),
+    );
+    candidates.push(cap);
+    candidates.sort_unstable();
+    candidates.dedup();
+
+    let mut task_is_cold = false;
+    let mut all_preparation_known = preparation_context.is_some();
+    let mut scored = Vec::new();
+    for candidate in candidates {
+        let mut assignments = assign_with_prediction_index(
+            group,
+            items,
+            candidate,
+            predictions,
+            context,
+            runner,
+            environment,
+            runner_config.clone(),
+            now_ms,
+        );
+        task_is_cold |= assignments
+            .iter()
+            .any(|assignment| assignment.prediction_sources.cold > 0);
+        let mut candidate_preparation_known = true;
+        for assignment in &mut assignments {
+            if let Some(estimate) = estimate_preparation(
+                assignment,
+                group,
+                predictions,
+                context,
+                preparation_context,
+                runner,
+                runner_config.1.as_deref().unwrap_or(environment),
+                now_ms,
+            ) {
+                set_preparation_estimate(assignment, estimate);
+            } else {
+                candidate_preparation_known = false;
+            }
+        }
+        all_preparation_known &= candidate_preparation_known;
+        scored.push((assignment_score(&assignments), assignments));
+    }
+
+    if task_is_cold || !all_preparation_known {
+        let mut assignments = assign_with_prediction_index(
+            group,
+            items,
+            cap,
+            predictions,
+            context,
+            runner,
+            environment,
+            runner_config.clone(),
+            now_ms,
+        );
+        for assignment in &mut assignments {
+            if let Some(estimate) = estimate_preparation(
+                assignment,
+                group,
+                predictions,
+                context,
+                preparation_context,
+                runner,
+                runner_config.1.as_deref().unwrap_or(environment),
+                now_ms,
+            ) {
+                set_preparation_estimate(assignment, estimate);
+            }
+            assignment.scheduling_mode = Some("cold-cap".into());
+            assignment.reason = format!(
+                "cold-cap: retained selected concurrency {cap}; {}",
+                if task_is_cold {
+                    "task history is cold"
+                } else {
+                    "one or more candidate preparation estimates are unknown"
+                }
+            );
+        }
+        return assignments;
+    }
+
+    scored.sort_by(|left, right| left.0.cmp(&right.0));
+    let mut assignments = scored
+        .into_iter()
+        .next()
+        .map(|(_, assignments)| assignments)
+        .unwrap_or_default();
+    let count = assignments.len();
+    for assignment in &mut assignments {
+        assignment.scheduling_mode = Some("automatic".into());
+        assignment.reason = format!(
+            "automatic concurrency: selected {count} assignments by preparation + task makespan"
+        );
+    }
+    assignments
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PreparationPrediction {
+    duration_ms: u64,
+    sample_count: usize,
+    source: PreparationPredictionSource,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum PreparationPredictionSource {
+    Exact,
+    Group,
+}
+
+impl From<PreparationPredictionSource> for String {
+    fn from(source: PreparationPredictionSource) -> Self {
+        match source {
+            PreparationPredictionSource::Exact => "exact".into(),
+            PreparationPredictionSource::Group => "group".into(),
+        }
+    }
+}
+
+fn set_preparation_estimate(assignment: &mut Assignment, estimate: PreparationPrediction) {
+    assignment.predicted_preparation_ms = Some(estimate.duration_ms);
+    assignment.preparation_prediction_source = Some(estimate.source.into());
+    assignment.preparation_sample_count = Some(estimate.sample_count);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn estimate_preparation(
+    assignment: &Assignment,
+    group: &str,
+    predictions: &PredictionIndex,
+    scope_context: Option<&PredictionContext>,
+    preparation_context: Option<&PreparationContext>,
+    runner: &str,
+    environment: &str,
+    now_ms: u64,
+) -> Option<PreparationPrediction> {
+    let scope_context = scope_context?;
+    let preparation_context = preparation_context?;
+    preparation_context.validate().ok()?;
+    let checkout_paths = assignment
+        .checkout
+        .sparse_checkout
+        .lines()
+        .filter(|path| !path.is_empty())
+        .map(str::to_owned)
+        .collect::<BTreeSet<_>>();
+    let workspaces = assignment
+        .items
+        .iter()
+        .map(|item| item.name.clone())
+        .collect::<BTreeSet<_>>();
+    let exact_id = PredictionKey::PreparationExact {
+        group: group.into(),
+        task_runner: runner.into(),
+        timing_environment: environment.into(),
+        package_manager: preparation_context.package_manager.clone(),
+        package_manager_version: preparation_context.package_manager_version.clone(),
+        install_mode: preparation_context.install_mode.clone(),
+        lockfile_digest: preparation_context.lockfile_digest.clone(),
+        checkout_digest: digest_sorted_strings(checkout_paths),
+        workspace_set_digest: digest_sorted_strings(workspaces),
+    }
+    .id()
+    .ok()?;
+    if let Some((duration_ms, sample_count)) =
+        predictions.estimate(scope_context, group, runner, environment, &exact_id, now_ms)
+    {
+        return Some(PreparationPrediction {
+            duration_ms,
+            sample_count: sample_count as usize,
+            source: PreparationPredictionSource::Exact,
+        });
+    }
+    let fallback_id = PredictionKey::PreparationFallback {
+        group: group.into(),
+        task_runner: runner.into(),
+        timing_environment: environment.into(),
+        package_manager: preparation_context.package_manager.clone(),
+        package_manager_version: preparation_context.package_manager_version.clone(),
+        install_mode: preparation_context.install_mode.clone(),
+        lockfile_digest: preparation_context.lockfile_digest.clone(),
+    }
+    .id()
+    .ok()?;
+    predictions
+        .estimate(
+            scope_context,
+            group,
+            runner,
+            environment,
+            &fallback_id,
+            now_ms,
+        )
+        .map(|(duration_ms, sample_count)| PreparationPrediction {
+            duration_ms,
+            sample_count: sample_count as usize,
+            source: PreparationPredictionSource::Group,
+        })
+}
+
+fn digest_sorted_strings(values: impl IntoIterator<Item = String>) -> String {
+    let values: Vec<_> = values.into_iter().collect();
+    let bytes = serde_json::to_vec(&values).expect("string arrays serialize");
+    format!("{:x}", Sha256::digest(bytes))
+}
+
+fn assignment_score(assignments: &[Assignment]) -> (u64, u64, usize, usize, String) {
+    let makespan = assignments
+        .iter()
+        .map(|assignment| {
+            assignment
+                .predicted_duration_ms
+                .saturating_add(assignment.predicted_preparation_ms.unwrap_or_default())
+        })
+        .max()
+        .unwrap_or_default();
+    let total_runner_ms = assignments.iter().fold(0_u64, |total, assignment| {
+        total
+            .saturating_add(assignment.predicted_duration_ms)
+            .saturating_add(assignment.predicted_preparation_ms.unwrap_or_default())
+    });
+    let checkout_paths = assignments
+        .iter()
+        .map(|assignment| assignment.checkout_path_count)
+        .sum();
+    let stable = assignments
+        .iter()
+        .map(|assignment| {
+            let mut items: Vec<_> = assignment.items.iter().map(work_item_id).collect();
+            items.sort();
+            format!("{}={}", assignment.assignment_id, items.join(","))
+        })
+        .collect::<Vec<_>>()
+        .join("|");
+    (
+        makespan,
+        total_runner_ms,
+        checkout_paths,
+        assignments.len(),
+        stable,
+    )
+}
+
 fn cold_prediction() -> Prediction {
     Prediction {
         duration_ms: 1,
@@ -362,6 +655,10 @@ fn assign_with_predictor(
             prediction_sources: PredictionSources::default(),
             reason: "minimized predicted runtime makespan, then total sparse checkout paths".into(),
             checkout: crate::affected::checkout_plan(Vec::new()),
+            predicted_preparation_ms: None,
+            preparation_prediction_source: None,
+            preparation_sample_count: None,
+            scheduling_mode: None,
             runner_labels: runner_labels.clone(),
             timing_environment: timing_environment.clone(),
         })
@@ -500,7 +797,8 @@ mod tests {
     use crate::config::{DistributionConfig, DistributionTier};
     use crate::prediction::{
         ArtifactReference, PredictionArtifact, PredictionArtifactBundle, PredictionContext,
-        PredictionKey, PredictionRow, PredictionTable, Scope, ScopeRef, VERSION,
+        PredictionKey, PredictionRow, PredictionTable, PreparationContext, Scope, ScopeRef,
+        VERSION,
     };
 
     const NOW_MS: u64 = 10_000;
@@ -613,6 +911,217 @@ mod tests {
             NOW_MS,
         )
         .remove(0)
+    }
+
+    fn prep_context() -> PreparationContext {
+        PreparationContext {
+            package_manager: "pnpm".into(),
+            package_manager_version: "10.0.0".into(),
+            install_mode: "focused".into(),
+            lockfile_digest: "a".repeat(64),
+        }
+    }
+
+    fn prep_key(assignment: &Assignment) -> String {
+        let checkout = assignment
+            .checkout
+            .sparse_checkout
+            .lines()
+            .filter(|path| !path.is_empty())
+            .map(str::to_owned)
+            .collect::<BTreeSet<_>>();
+        let workspaces = assignment
+            .items
+            .iter()
+            .map(|item| item.name.clone())
+            .collect::<BTreeSet<_>>();
+        PredictionKey::PreparationExact {
+            group: "ci".into(),
+            task_runner: "yarn".into(),
+            timing_environment: "linux-x64".into(),
+            package_manager: "pnpm".into(),
+            package_manager_version: "10.0.0".into(),
+            install_mode: "focused".into(),
+            lockfile_digest: "a".repeat(64),
+            checkout_digest: digest_sorted_strings(checkout),
+            workspace_set_digest: digest_sorted_strings(workspaces),
+        }
+        .id()
+        .unwrap()
+    }
+
+    fn warm_task_rows(items: &[WorkspaceEntry]) -> Vec<(String, u64, u64, u64)> {
+        items
+            .iter()
+            .map(|item| (task_keys(item).0, 100, 3, 100_000))
+            .collect()
+    }
+
+    fn preparation_rows_for_layouts(
+        items: &[WorkspaceEntry],
+        task_index: &PredictionIndex,
+        context: &PredictionContext,
+        durations: impl Fn(usize, &Assignment) -> u64,
+    ) -> Vec<(String, u64, u64, u64)> {
+        let mut rows = Vec::new();
+        for concurrency in [1, 2, 4] {
+            for assignment in assign_with_prediction_index(
+                "ci",
+                items,
+                concurrency,
+                task_index,
+                Some(context),
+                "yarn",
+                "linux-x64",
+                (None, None),
+                NOW_MS,
+            ) {
+                rows.push((
+                    prep_key(&assignment),
+                    durations(concurrency, &assignment),
+                    3,
+                    100_000,
+                ));
+            }
+        }
+        rows
+    }
+
+    fn push_context() -> PredictionContext {
+        PredictionContext {
+            repository_key: "github-12345".into(),
+            workflow_path: ".github/workflows/ci.yml".into(),
+            git_ref: ScopeRef::Push {
+                git_ref: "refs/heads/main".into(),
+            },
+        }
+    }
+
+    #[test]
+    fn cold_or_unknown_preparation_keeps_the_tier_cap() {
+        let items = [item("a"), item("b"), item("c"), item("d")];
+        let context = push_context();
+        let index = prediction_index(prediction_scope(context.git_ref.clone()), []);
+        let assignments = assign_with_prediction_index_auto(
+            "ci",
+            &items,
+            4,
+            &index,
+            Some(&context),
+            "yarn",
+            "linux-x64",
+            (None, None),
+            &[2, 4, 8],
+            Some(&prep_context()),
+            NOW_MS,
+        );
+        assert_eq!(assignments.len(), 4);
+        assert!(assignments
+            .iter()
+            .all(|assignment| assignment.scheduling_mode.as_deref() == Some("cold-cap")));
+
+        let warm_index = prediction_index(
+            prediction_scope(context.git_ref.clone()),
+            warm_task_rows(&items),
+        );
+        let assignments = assign_with_prediction_index_auto(
+            "ci",
+            &items,
+            4,
+            &warm_index,
+            Some(&context),
+            "yarn",
+            "linux-x64",
+            (None, None),
+            &[2, 4],
+            Some(&prep_context()),
+            NOW_MS,
+        );
+        assert_eq!(assignments.len(), 4);
+        assert!(assignments
+            .iter()
+            .all(|assignment| assignment.scheduling_mode.as_deref() == Some("cold-cap")));
+    }
+
+    #[test]
+    fn exact_preparation_cost_can_reduce_selected_concurrency_deterministically() {
+        let items = [item("a"), item("b"), item("c"), item("d")];
+        let context = push_context();
+        let scope = prediction_scope(context.git_ref.clone());
+        let task_index = prediction_index(scope.clone(), warm_task_rows(&items));
+        let prep_rows = preparation_rows_for_layouts(&items, &task_index, &context, |count, _| {
+            if count == 4 {
+                1_000
+            } else {
+                10
+            }
+        });
+        let index = prediction_index(scope, warm_task_rows(&items).into_iter().chain(prep_rows));
+        let first = assign_with_prediction_index_auto(
+            "ci",
+            &items,
+            4,
+            &index,
+            Some(&context),
+            "yarn",
+            "linux-x64",
+            (None, None),
+            &[2, 4],
+            Some(&prep_context()),
+            NOW_MS,
+        );
+        assert_eq!(first.len(), 2);
+        assert!(first.iter().all(|assignment| {
+            assignment.scheduling_mode.as_deref() == Some("automatic")
+                && assignment.predicted_preparation_ms == Some(10)
+                && assignment.preparation_prediction_source.as_deref() == Some("exact")
+        }));
+        assert_eq!(
+            first,
+            assign_with_prediction_index_auto(
+                "ci",
+                &items,
+                4,
+                &index,
+                Some(&context),
+                "yarn",
+                "linux-x64",
+                (None, None),
+                &[2, 4],
+                Some(&prep_context()),
+                NOW_MS,
+            )
+        );
+    }
+
+    #[test]
+    fn total_runner_time_breaks_equal_makespan_ties_before_checkout_cost() {
+        let items = [item("a"), item("b"), item("c"), item("d")];
+        let context = push_context();
+        let scope = prediction_scope(context.git_ref.clone());
+        let task_index = prediction_index(scope.clone(), warm_task_rows(&items));
+        let prep_rows =
+            preparation_rows_for_layouts(&items, &task_index, &context, |count, _| match count {
+                1 => 100,
+                2 => 300,
+                _ => 400,
+            });
+        let index = prediction_index(scope, warm_task_rows(&items).into_iter().chain(prep_rows));
+        let assignments = assign_with_prediction_index_auto(
+            "ci",
+            &items,
+            4,
+            &index,
+            Some(&context),
+            "yarn",
+            "linux-x64",
+            (None, None),
+            &[2, 4],
+            Some(&prep_context()),
+            NOW_MS,
+        );
+        assert_eq!(assignments.len(), 1);
+        assert_eq!(assignments[0].predicted_preparation_ms, Some(100));
     }
 
     #[test]
@@ -1109,6 +1618,94 @@ mod tests {
                 .map(|bucket| bucket.checkout_path_count)
                 .sum::<usize>()
                 <= 384
+        );
+    }
+
+    #[test]
+    fn large_warm_auto_schedule_reports_local_cost() {
+        let items: Vec<_> = (0..128)
+            .flat_map(|index| {
+                ["build", "test", "typecheck"].map(move |task| {
+                    let mut entry = item(&format!("next-app-{index:03}"));
+                    entry.task = task.into();
+                    entry
+                })
+            })
+            .collect();
+        let context = push_context();
+        let scope = prediction_scope(context.git_ref.clone());
+        let task_rows = warm_task_rows(&items);
+        let task_index = prediction_index(scope.clone(), task_rows.clone());
+        let mut preparation_rows = std::collections::BTreeMap::new();
+        for concurrency in [1, 2, 4, 8, 16, 24] {
+            for assignment in assign_with_prediction_index(
+                "ci",
+                &items,
+                concurrency,
+                &task_index,
+                Some(&context),
+                "yarn",
+                "linux-x64",
+                (None, None),
+                NOW_MS,
+            ) {
+                preparation_rows.insert(
+                    prep_key(&assignment),
+                    2_000 + assignment.items.len() as u64 * 20,
+                );
+            }
+        }
+        let index = prediction_index(
+            scope,
+            task_rows.into_iter().chain(
+                preparation_rows
+                    .into_iter()
+                    .map(|(key, duration)| (key, duration, 3, 100_000)),
+            ),
+        );
+        let started = std::time::Instant::now();
+        let first = assign_with_prediction_index_auto(
+            "ci",
+            &items,
+            24,
+            &index,
+            Some(&context),
+            "yarn",
+            "linux-x64",
+            (None, None),
+            &[4, 8, 16, 24],
+            Some(&prep_context()),
+            NOW_MS,
+        );
+        let elapsed_us = started.elapsed().as_micros();
+        let second = assign_with_prediction_index_auto(
+            "ci",
+            &items,
+            24,
+            &index,
+            Some(&context),
+            "yarn",
+            "linux-x64",
+            (None, None),
+            &[4, 8, 16, 24],
+            Some(&prep_context()),
+            NOW_MS,
+        );
+        assert_eq!(first, second);
+        assert_eq!(
+            first
+                .iter()
+                .map(|assignment| assignment.items.len())
+                .sum::<usize>(),
+            384
+        );
+        assert!(first
+            .iter()
+            .all(|assignment| assignment.scheduling_mode.as_deref() == Some("automatic")));
+        println!(
+            "A5 synthetic warm schedule: items=384 cap=24 selected={} elapsed={}us",
+            first.len(),
+            elapsed_us
         );
     }
 

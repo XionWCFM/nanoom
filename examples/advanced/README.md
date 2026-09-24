@@ -64,6 +64,8 @@ jobs:
         with: { fetch-depth: 0 }
       - id: affected
         uses: XionWCFM/nanoom/.github/actions/affected@main
+        with:
+          packageManager: pnpm
 
   test:
     needs: matrix
@@ -77,7 +79,8 @@ jobs:
           plan: ${{ needs.matrix.outputs.plan }}
           group: ci
           assignmentId: ${{ matrix.assignmentId }}
-      - uses: XionWCFM/nanoom/.github/actions/install@latest
+      - id: install
+        uses: XionWCFM/nanoom/.github/actions/install@latest
         with:
           plan: ${{ needs.matrix.outputs.plan }}
           assignmentFile: ${{ steps.prepare.outputs.assignment-file }}
@@ -88,5 +91,7 @@ jobs:
           plan: ${{ needs.matrix.outputs.plan }}
           assignmentFile: ${{ steps.prepare.outputs.assignment-file }}
           cwd: ${{ steps.prepare.outputs.cwd }}
+          preparedAtMs: ${{ steps.prepare.outputs.prepared-at-ms }}
+          installResult: ${{ steps.install.outputs.result }}
           cleanupCheckout: true
 ```

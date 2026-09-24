@@ -5,6 +5,7 @@ source "$GITHUB_ACTION_PATH/../_setup/log.sh"; trap 'nanoom_fail "$?"' ERR
 source "$GITHUB_ACTION_PATH/../_setup/artifacts.sh"
 started=$(date +%s)
 static_plan=false
+preparation_observation_status=skipped
 if [[ -n ${ASSIGNMENT_FILE:-} ]]; then
   if [[ -z "$CWD" || "$CWD" == . ]]; then
     CWD="$GITHUB_WORKSPACE/.nanoom/$RUN_ID/$RUN_ATTEMPT/$GITHUB_JOB/${MATRIX_INDEX:-0}"
@@ -71,7 +72,7 @@ run_item() {
       if [[ "$static_plan" == true ]]; then
         observed_at_ms=$(($(date +%s) * 1000))
         execution_id=$(jq -cn --arg run "$RUN_ID" --arg attempt "$RUN_ATTEMPT" --arg job "${GITHUB_JOB:-run}" --arg matrix "${MATRIX_INDEX:-0}" --arg index "${ACTION_ITEM_INDEX:-0}" --arg name "$name" --arg task "$task" '[$run,$attempt,$job,$matrix,$index,$name,$task] | tojson')
-        execution=$(jq -ce --arg name "$name" --arg executionId "$execution_id" --argjson observedAtMs "$observed_at_ms" '[.executions[] | select(.workspace == $name) | {executionId:$executionId,observedAtMs:$observedAtMs,workspace,runner,durationMs}] | first' <<<"$cli_result")
+        execution=$(jq -ce --arg name "$name" --arg executionId "$execution_id" --argjson observedAtMs "$observed_at_ms" '[.executions[] | select(.workspace == $name) | {executionId:$executionId,observedAtMs:$observedAtMs,startedAtMs:(.startedAtMs // null),workspace,runner,durationMs}] | first' <<<"$cli_result")
         detail=$(jq -cn --argjson item "$item" --arg command "$ACTION_COMMAND" --argjson cli "$cli_result" --argjson execution "$execution" '{status:"success",item:$item,command:$command,cli:$cli,execution:$execution}')
         printf '%s\n' "$detail" >> "$DETAIL_FILE"
         jq -cn --argjson item "$item" --argjson execution "$execution" '{status:"success",item:$item,execution:$execution}'
@@ -132,7 +133,51 @@ if [[ "$static_plan" == true ]]; then
       sample_dir="$RUNNER_TEMP/nanoom-timing"; mkdir -p "$sample_dir"
       sample_name=$(printf '%s-%s' "${GITHUB_JOB:-run}" "$ASSIGNMENT_ID" | tr -c 'A-Za-z0-9._-' '-' | cut -c1-80)
       sample_path="$sample_dir/$sample_name.json"
-      jq -sn --argjson identity "$identity" --arg group "$GROUP" --arg runner "$TOOL" --arg environment "$TIMING_ENVIRONMENT" --arg run "$RUN_ID" --argjson attempt "$RUN_ATTEMPT" --slurpfile details "$DETAIL_FILE" '{version:3,scope:($identity + {group:$group,taskRunner:$runner,timingEnvironment:$environment}),runId:$run,runAttempt:$attempt,observations:[$details[] | select(.status == "success") | .item as $item | .execution as $execution | {executionId:$execution.executionId,observedAtMs:$execution.observedAtMs,group:$group,workspace:$execution.workspace,task:$item.task,shard:($item.shard // null),totalShards:($item.totalShards // null),taskRunner:$runner,timingEnvironment:$environment,durationMs:(if $execution.durationMs > 0 then $execution.durationMs else 1 end)}]}' > "$sample_path"
+      preparation_observations='[]'
+      preparation_start=${PREPARED_AT_MS:-}
+      first_task_start=$(jq -sr '[.[] | select(.status == "success") | .execution.startedAtMs | select(type == "number" and . > 0)] | first // empty' "$DETAIL_FILE")
+      install_status=$(jq -r '.status // empty' <<<"${INSTALL_RESULT:-null}" 2>/dev/null || true)
+      install_assignment_id=$(jq -r '.assignment.assignmentId // empty' <<<"${INSTALL_RESULT:-null}" 2>/dev/null || true)
+      install_cwd=$(jq -r '.cwd // empty' <<<"${INSTALL_RESULT:-null}" 2>/dev/null || true)
+      preparation_pm=$(jq -r '.packageManager // empty' <<<"${INSTALL_RESULT:-null}" 2>/dev/null || true)
+      preparation_pm_version=$(jq -r '.packageManagerVersion // empty' <<<"${INSTALL_RESULT:-null}" 2>/dev/null || true)
+      install_mode=$(jq -r '.installMode // empty' <<<"${INSTALL_RESULT:-null}" 2>/dev/null || true)
+      if [[ "$preparation_start" =~ ^[0-9]+$ && "$first_task_start" =~ ^[0-9]+$ ]]; then
+        if (( first_task_start < preparation_start )); then
+          preparation_observation_status=reversed
+        elif [[ "$install_status" == success && "$install_assignment_id" == "$ASSIGNMENT_ID" && "$install_cwd" == "$CWD" && "$install_mode" == focused && "$preparation_pm" =~ ^(pnpm|yarn|npm)$ && -n "$preparation_pm_version" ]]; then
+          case "$preparation_pm" in
+            pnpm) lockfile="$CWD/pnpm-lock.yaml" ;;
+            yarn) lockfile="$CWD/yarn.lock" ;;
+            npm) lockfile="$CWD/package-lock.json" ;;
+          esac
+          if [[ -f "$lockfile" ]]; then
+            if command -v sha256sum >/dev/null 2>&1; then
+              lockfile_digest=$(sha256sum "$lockfile" | awk '{print $1}')
+              checkout_digest=$(jq -c '.checkoutPaths | unique | sort' "$ASSIGNMENT_FILE" | sha256sum | awk '{print $1}')
+              workspace_set_digest=$(jq -c '[.items[].name] | unique | sort' "$ASSIGNMENT_FILE" | sha256sum | awk '{print $1}')
+            elif command -v shasum >/dev/null 2>&1; then
+              lockfile_digest=$(shasum -a 256 "$lockfile" | awk '{print $1}')
+              checkout_digest=$(jq -c '.checkoutPaths | unique | sort' "$ASSIGNMENT_FILE" | shasum -a 256 | awk '{print $1}')
+              workspace_set_digest=$(jq -c '[.items[].name] | unique | sort' "$ASSIGNMENT_FILE" | shasum -a 256 | awk '{print $1}')
+            else
+              lockfile_digest=''
+            fi
+            if [[ "$lockfile_digest" =~ ^[0-9a-f]{64}$ && "$checkout_digest" =~ ^[0-9a-f]{64}$ && "$workspace_set_digest" =~ ^[0-9a-f]{64}$ ]]; then
+              preparation_id=$(jq -cn --arg run "$RUN_ID" --arg attempt "$RUN_ATTEMPT" --arg job "${GITHUB_JOB:-run}" --arg matrix "${MATRIX_INDEX:-0}" '["preparation",$run,$attempt,$job,$matrix] | tojson')
+              preparation_observations=$(jq -cn --arg executionId "$preparation_id" --argjson observedAtMs "$first_task_start" --arg packageManager "$preparation_pm" --arg packageManagerVersion "$preparation_pm_version" --arg installMode "$install_mode" --arg lockfileDigest "$lockfile_digest" --arg checkoutDigest "$checkout_digest" --arg workspaceSetDigest "$workspace_set_digest" --argjson durationMs "$((first_task_start - preparation_start))" '[{executionId:$executionId,observedAtMs:$observedAtMs,packageManager:$packageManager,packageManagerVersion:$packageManagerVersion,installMode:$installMode,lockfileDigest:$lockfileDigest,checkoutDigest:$checkoutDigest,workspaceSetDigest:$workspaceSetDigest,durationMs:$durationMs}]')
+              preparation_observation_status=recorded
+            else
+              preparation_observation_status=incomplete
+            fi
+          else
+            preparation_observation_status=incomplete
+          fi
+        else
+          preparation_observation_status=incomplete
+        fi
+      fi
+      jq -sn --argjson identity "$identity" --arg group "$GROUP" --arg runner "$TOOL" --arg environment "$TIMING_ENVIRONMENT" --arg run "$RUN_ID" --argjson attempt "$RUN_ATTEMPT" --argjson preparation "$preparation_observations" --slurpfile details "$DETAIL_FILE" '{version:3,scope:($identity + {group:$group,taskRunner:$runner,timingEnvironment:$environment}),runId:$run,runAttempt:$attempt,observations:[$details[] | select(.status == "success") | .item as $item | .execution as $execution | {executionId:$execution.executionId,observedAtMs:$execution.observedAtMs,group:$group,workspace:$execution.workspace,task:$item.task,shard:($item.shard // null),totalShards:($item.totalShards // null),taskRunner:$runner,timingEnvironment:$environment,durationMs:(if $execution.durationMs > 0 then $execution.durationMs else 1 end)}],preparationObservations:$preparation}' > "$sample_path"
       echo "sample-path=$sample_path" >> "$GITHUB_OUTPUT"
       echo "sample-name=nanoom-measurement-v3-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$sample_name" >> "$GITHUB_OUTPUT"
       echo "upload-started=$(date +%s)" >> "$GITHUB_OUTPUT"
@@ -141,7 +186,7 @@ if [[ "$static_plan" == true ]]; then
       echo 'could not construct a branch or pull-request measurement scope; successful tasks are unchanged and no timing artifact will be uploaded' >&2
     fi
   fi
-  result=$(jq -c --arg measurementStatus "$measurement_status" '. + {measurementArtifactStatus:$measurementStatus}' <<<"$result")
+  result=$(jq -c --arg measurementStatus "$measurement_status" --arg preparationStatus "$preparation_observation_status" '. + {measurementArtifactStatus:$measurementStatus,preparationObservationStatus:$preparationStatus}' <<<"$result")
   echo "result=$result" >> "$GITHUB_OUTPUT"
   printf '  Result\n    ✓ items=%s; elapsed=%ss\n  Final JSON\n    %s\n' "$completed_count" "$elapsed" "$result"
   { echo '### nanoom run'; echo; echo "**Result:** $completed_count assignment items succeeded in ${elapsed}s."; echo; echo "Detailed result: \`$DETAIL_FILE\`."; } >> "$GITHUB_STEP_SUMMARY"

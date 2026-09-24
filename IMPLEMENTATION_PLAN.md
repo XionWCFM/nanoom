@@ -1,10 +1,10 @@
 # Nanoom 개선 실행 계획 — LUNA 작업 명세
 
-상태: **A1~A3 구현·local gates·parent review 완료. A4 local Rust/Action 구현과 회귀 완료; 공식 OpenAPI validator 실행은 DNS로 막힘. PR/hosted validation/release 미실시. A5~A7과 S0~S6 미완료.** 기준 source `539b2c08cc7e2543f3a0cdd10fbdba451b2502d5`(v0.6.0). 조사일 2026-09-24. 이 문서의 나머지 proposed 동작을 released product 기능으로 설명하지 않는다.
+상태: **A1~A4 local 구현·gates 완료. A4 공식 OpenAPI validator는 DNS로 미실시. A5 preparation telemetry/automatic k local 구현·gates와 384-item synthetic scheduler 측정 완료; real trace wall time·prediction error·실제 artifact bytes는 미실시. A6~A7과 S0~S6 미완료. PR/hosted validation/release 미실시.** 기준 source `539b2c08cc7e2543f3a0cdd10fbdba451b2502d5`(v0.6.0). 조사일 2026-09-24. 이 문서의 나머지 proposed 동작을 released product 기능으로 설명하지 않는다.
 
 ## 다른 세션에서 시작하기
 
-Luna Max 실행 세션은 [LUNA_HANDOFF.md](LUNA_HANDOFF.md)에서 시작한다. 인계 브랜치는 `codex/prediction-state-v3`이며, 이 저장소 루트의 `IMPLEMENTATION_PLAN.md`가 상세 실행 계획이다. [SPEC](SPEC.md)으로 현재/제안 계약을 구분하고, [예측 모델](docs/prediction-model-spec.md), [선택적 서버](docs/history-server-spec.md), [OpenAPI](docs/api/history.openapi.yaml), [CHECKLIST](CHECKLIST.md)를 함께 읽는다. 현재 runtime 완료 범위는 A1~A4 local뿐이다. A4 공식 OpenAPI validator, hosted GitHub/GHES, release는 미검증이며 A5부터 계속한다. 결과와 미실시 항목은 CHECKLIST에 갱신한다.
+Luna Max 실행 세션은 [LUNA_HANDOFF.md](LUNA_HANDOFF.md)에서 시작한다. 인계 브랜치는 `codex/prediction-state-v3`이며, 이 저장소 루트의 `IMPLEMENTATION_PLAN.md`가 상세 실행 계획이다. [SPEC](SPEC.md)으로 현재/제안 계약을 구분하고, [예측 모델](docs/prediction-model-spec.md), [선택적 서버](docs/history-server-spec.md), [OpenAPI](docs/api/history.openapi.yaml), [CHECKLIST](CHECKLIST.md)를 함께 읽는다. A1~A5의 local implementation/gates는 CHECKLIST에 기록했다. A4 공식 OpenAPI validator와 A5 real trace metrics, hosted GitHub/GHES, release는 미검증이며 A6부터 계속한다. 결과와 미실시 항목은 CHECKLIST에 갱신한다.
 
 문서 검증은 저장소 루트에서 실행한다.
 

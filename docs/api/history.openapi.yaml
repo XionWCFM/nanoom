@@ -672,10 +672,71 @@ components:
         taskRunner: yarn
         timingEnvironment: linux-x64-node24
         durationMs: 12000
+    PreparationObservation:
+      type: object
+      additionalProperties: false
+      required:
+      - executionId
+      - observedAtMs
+      - packageManager
+      - packageManagerVersion
+      - installMode
+      - lockfileDigest
+      - checkoutDigest
+      - workspaceSetDigest
+      - durationMs
+      properties:
+        executionId:
+          type: string
+          minLength: 1
+          maxLength: 1024
+          pattern: ^[^\u0000-\u001f\u007f]+$
+        observedAtMs:
+          $ref: '#/components/schemas/EpochMs'
+        packageManager:
+          type: string
+          enum: [pnpm, yarn, npm]
+        packageManagerVersion:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[^\u0000-\u001f\u007f]+$
+        installMode:
+          type: string
+          minLength: 1
+          maxLength: 32
+          pattern: ^[^\u0000-\u001f\u007f]+$
+        lockfileDigest:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+        checkoutDigest:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+        workspaceSetDigest:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+        durationMs:
+          type: integer
+          minimum: 0
+          maximum: 604800000
+      description: Preparation interval from the matching prepare action start to the first task subprocess start. It identifies the resolved package manager and install mode; checkout and workspace digests use sorted unique arrays. The executionId must be unique across both measurement arrays.
+      examples:
+      - executionId: '123456789:1:run:0:preparation'
+        observedAtMs: 1790208000000
+        packageManager: pnpm
+        packageManagerVersion: 10.0.0
+        installMode: focused
+        lockfileDigest: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        checkoutDigest: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+        workspaceSetDigest: cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+        durationMs: 45000
     MeasurementArtifact:
       type: object
       additionalProperties: false
-      required: [version, scope, runId, runAttempt, observations]
+      required: [version, scope, runId, runAttempt]
+      anyOf:
+      - required: [observations]
+      - required: [preparationObservations]
       properties:
         version:
           const: 3
@@ -694,7 +755,13 @@ components:
             $ref: '#/components/schemas/SuccessfulObservation'
           minItems: 1
           maxItems: 50000
-      description: Current-attempt successful measurements only. Retain for one day and download only
+        preparationObservations:
+          type: array
+          items:
+            $ref: '#/components/schemas/PreparationObservation'
+          minItems: 1
+          maxItems: 50000
+      description: Current-attempt successful task and optional preparation measurements only; the combined observation count is at most 50000. Retain for one day and download only
         in the history updater. Maximum canonical JSON size is 16 MiB. Older/versionless artifacts are
         ignored and never converted from raw history.
       examples:
@@ -1230,6 +1297,28 @@ x-contract-examples:
     taskRunner: yarn
     timingEnvironment: linux-x64-node24
   keyId: 8e3a060d9912f5f4230ab9f0a25df7fe50c4d9814cca14ec6f20f795a7e0fcda
+  preparationExactKey:
+    kind: preparationExact
+    group: ci
+    taskRunner: yarn
+    timingEnvironment: linux-x64-node24
+    packageManager: pnpm
+    packageManagerVersion: 10.0.0
+    installMode: focused
+    lockfileDigest: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    checkoutDigest: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+    workspaceSetDigest: cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+  preparationExactKeyId: 33b32e3cced63c6a6145a6cf8b555960a5ff113a9f9bed03a27222ed2f79e609
+  preparationFallbackKey:
+    kind: preparationFallback
+    group: ci
+    taskRunner: yarn
+    timingEnvironment: linux-x64-node24
+    packageManager: pnpm
+    packageManagerVersion: 10.0.0
+    installMode: focused
+    lockfileDigest: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  preparationFallbackKeyId: 752cb84cd99f4670014a68b5b3c61cc5e700ba86e8ff564a6191605ed44f6b7e
   batchId: 1368e6bbb03a78c15d423d23afac569f4f8bfd6e1b10a38b9f4c8e647177b9b5
   idempotencyKeyForCanonicalBatch: da6555f1a7f41374048173faaec4116a03740d83fd9114ba8880aa4dce8fe4c9
   predictionEtag: '"sha256:2e3b67ef98b6f9153a343838e9399ebfcdf3cdff0683363ed2e46cbbf8f5762f"'

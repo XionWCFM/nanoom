@@ -3,6 +3,8 @@ description: Run one authoritative matrix entry
 inputs:
   plan: {description: "Original affected Plan reference used to anchor assignment-file validation", default: ''}
   assignmentFile: {description: "Validated assignment-file output from nanoom prepare for static work", default: ''}
+  preparedAtMs: {description: "prepared-at-ms output from the matching prepare action", default: ''}
+  installResult: {description: "Canonical result output from the matching nanoom install action", default: ''}
   matrix: {description: "scheduler=http continuous agent only; static inline matrices are not accepted", default: ''}
   group: {description: "Affected group for a scheduler=http continuous agent", default: ''}
   packageManager: {description: "Package manager override: auto, pnpm, yarn, or npm", default: auto}
@@ -37,6 +39,8 @@ runs:
       env:
         MATRIX: ${{ inputs.matrix }}
         ASSIGNMENT_FILE: ${{ inputs.assignmentFile }}
+        PREPARED_AT_MS: ${{ inputs.preparedAtMs }}
+        INSTALL_RESULT: ${{ inputs.installResult }}
         PLAN: ${{ inputs.plan }}
         GROUP: ${{ inputs.group }}
         PM: ${{ inputs.packageManager }}

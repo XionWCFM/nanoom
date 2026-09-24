@@ -100,7 +100,8 @@ jobs:
           plan: ${{ needs.affected.outputs.plan }}
           group: ${{ matrix.group }}
           assignmentId: ${{ matrix.assignmentId }}
-      - uses: XionWCFM/nanoom/.github/actions/install@latest
+      - id: install
+        uses: XionWCFM/nanoom/.github/actions/install@latest
         with:
           plan: ${{ needs.affected.outputs.plan }}
           assignmentFile: ${{ steps.prepare.outputs.assignment-file }}
@@ -111,6 +112,8 @@ jobs:
           plan: ${{ needs.affected.outputs.plan }}
           assignmentFile: ${{ steps.prepare.outputs.assignment-file }}
           cwd: ${{ steps.prepare.outputs.cwd }}
+          preparedAtMs: ${{ steps.prepare.outputs.prepared-at-ms }}
+          installResult: ${{ steps.install.outputs.result }}
           cleanupCheckout: true
 ```
 
@@ -127,7 +130,7 @@ artifact history는 기본으로 켜져 있습니다. static Plan을 쓰는 arti
 
 task prediction은 `(group, workspace, task, shard, totalShards, runner, environment)` exact key를 먼저 보고, 없으면 workspace를 제외한 동일 task/layout/runner/environment fallback을 확인합니다. key별 최근 30 UTC일 안의 최대 7개 일별 count/duration 집계로 7일 half-life 가중 평균을 계산합니다. 유효한 값이 없거나 history가 만료·손상·지연되면 cold weight `1`로 배분합니다. history lookup은 요청과 parse를 합쳐 최대 3초, metadata와 archive 수신량 합계 8 MiB, prediction JSON 8 MiB, archive 4 MiB로 제한합니다. 제한이나 네트워크 오류는 affected/task 결과를 실패시키지 않고 cold 배분을 유지합니다.
 
-배치는 configured distribution tier의 concurrency 상한 안에서 예상 runtime makespan을 먼저 최소화합니다. runtime이 같은 후보에서는 모든 assignment의 sparse checkout path 수 합계가 가장 작은 bucket을 선택합니다. `result.scheduling`의 `historyStatus`, `historySourceRunId`, `historyFetchMs`, `predictionSources` (`exact`, `group`, `cold`), `totalCheckoutPathCount`, `uniqueCheckoutPathCount`, `duplicatedCheckoutPathCount`로 근거를 확인할 수 있습니다. 배치와 artifact 결정은 [ADR-0014](docs/adr/0014-prediction-state-v3-artifact-history.md), 상세 wire/한도는 [PredictionState v3 명세](docs/prediction-model-spec.md)를 참고하세요.
+배치는 configured distribution tier의 concurrency 상한 안에서 후보 assignment 수를 비교합니다. task와 preparation 이력이 모두 warm이면 preparation+task makespan, 총 runner time, sparse checkout 경로 수, assignment 수, 안정적인 배치 순서로 선택합니다. 후보는 1·2의 거듭제곱, 선택된 tier의 concurrency 설정값, 상한이며 중복은 제거합니다. task history가 cold이거나 후보 중 preparation 예측을 만들 수 없으면 상한 concurrency를 유지합니다. preparation exact key는 group/runner/environment/package manager/version/install mode/lockfile/checkout/workspace-set을 구분하고, fallback key는 checkout/workspace-set만 제외합니다. `affected`는 package-manager 명령을 실행하지 않고 root `package.json`의 `packageManager` 정확한 버전과 lockfile digest를 사용합니다. 선언과 Action의 `packageManager` 입력이 맞지 않거나 버전/lockfile을 확정할 수 없으면 cold-cap을 유지합니다. `result.scheduling`은 `automaticAssignmentCount`, `coldCapAssignmentCount`, `preparationPredictionSources`와 기존 `historyStatus`, `historySourceRunId`, `historyFetchMs`, `predictionSources`, checkout 경로 수를 제공합니다. 실제 CI 개선은 hosted cold→warm wall time과 real trace 오차를 확인하기 전까지 주장하지 않습니다. 배치와 artifact 결정은 [ADR-0014](docs/adr/0014-prediction-state-v3-artifact-history.md), 상세 wire/한도는 [PredictionState v3 명세](docs/prediction-model-spec.md)를 참고하세요.
 
 group 또는 distribution tier의 `runnerLabels`로 matrix job의 runner를 정할 수 있습니다. 배열은 fallback 순서가 아니라 모든 라벨을 만족해야 하는 AND 조건입니다. tier 설정이 group 설정을 덮어쓰며, 생략하면 workflow의 `ubuntu-latest` fallback을 사용합니다.
 
@@ -182,6 +185,8 @@ Planned install은 `nanoom install --filter-file FILE`로 non-empty JSON string 
 ```yaml
 - id: affected
   uses: XionWCFM/nanoom/.github/actions/affected@latest
+  with:
+    packageManager: pnpm
 
 - id: prepare
   uses: XionWCFM/nanoom/.github/actions/prepare@latest
@@ -190,7 +195,8 @@ Planned install은 `nanoom install --filter-file FILE`로 non-empty JSON string 
     group: ${{ matrix.group }}
     assignmentId: ${{ matrix.assignmentId }}
 
-- uses: XionWCFM/nanoom/.github/actions/install@latest
+- id: install
+  uses: XionWCFM/nanoom/.github/actions/install@latest
   with:
     plan: ${{ needs.affected.outputs.plan }}
     assignmentFile: ${{ steps.prepare.outputs.assignment-file }}
@@ -202,6 +208,8 @@ Planned install은 `nanoom install --filter-file FILE`로 non-empty JSON string 
     plan: ${{ needs.affected.outputs.plan }}
     assignmentFile: ${{ steps.prepare.outputs.assignment-file }}
     cwd: ${{ steps.prepare.outputs.cwd }}
+    preparedAtMs: ${{ steps.prepare.outputs.prepared-at-ms }}
+    installResult: ${{ steps.install.outputs.result }}
     cleanupCheckout: true
 
 - uses: XionWCFM/nanoom/.github/actions/history@latest
@@ -214,6 +222,8 @@ history job은 run 성공 뒤 실행하고 aggregate `status`의 dependency에 �
 ```yaml
 # GHES only; GitHub.com은 기본 run/history를 그대로 사용합니다.
 - uses: XionWCFM/nanoom/.github/actions/affected-ghes@latest
+  with:
+    packageManager: pnpm
 - id: prepare
   uses: XionWCFM/nanoom/.github/actions/prepare-ghes@latest
   with:
@@ -221,11 +231,21 @@ history job은 run 성공 뒤 실행하고 aggregate `status`의 dependency에 �
     group: ${{ matrix.group }}
     assignmentId: ${{ matrix.assignmentId }}
 
+- id: install
+  uses: XionWCFM/nanoom/.github/actions/install@latest
+  with:
+    plan: ${{ needs.affected.outputs.plan }}
+    assignmentFile: ${{ steps.prepare.outputs.assignment-file }}
+    cwd: ${{ steps.prepare.outputs.cwd }}
+    packageManager: pnpm
+
 - uses: XionWCFM/nanoom/.github/actions/run-ghes@latest
   with:
     plan: ${{ needs.affected.outputs.plan }}
     assignmentFile: ${{ steps.prepare.outputs.assignment-file }}
     cwd: ${{ steps.prepare.outputs.cwd }}
+    preparedAtMs: ${{ steps.prepare.outputs.prepared-at-ms }}
+    installResult: ${{ steps.install.outputs.result }}
     cleanupCheckout: true
 
 - uses: XionWCFM/nanoom/.github/actions/history-ghes@latest

@@ -93,6 +93,52 @@ if [[ "$SCHEDULER" != http ]]; then
   plan_path="$plan_dir/plan-v1.json"
   context_path="$plan_dir/plan-context.json"
   prediction_context_path="$plan_dir/prediction-context.json"
+  preparation_context_args=()
+  if [[ "$SCHEDULER" == artifact ]]; then
+    preparation_declaration=$(jq -r '.packageManager // empty' "$CWD/package.json" 2>/dev/null || true)
+    declared_pm=${preparation_declaration%%@*}
+    declared_pm_version=''
+    if [[ "$preparation_declaration" == *@* ]]; then
+      declared_pm_version=${preparation_declaration#*@}
+      declared_pm_version=${declared_pm_version%%+*}
+    fi
+    preparation_pm=${PACKAGE_MANAGER:-auto}
+    if [[ "$preparation_pm" == auto ]]; then
+      preparation_pm=$declared_pm
+      if [[ ! "$preparation_pm" =~ ^(pnpm|yarn|npm)$ ]]; then
+        if [[ -f "$CWD/pnpm-lock.yaml" ]]; then preparation_pm=pnpm
+        elif [[ -f "$CWD/yarn.lock" ]]; then preparation_pm=yarn
+        else preparation_pm=npm
+        fi
+      fi
+    fi
+    case "$preparation_pm" in
+      pnpm) preparation_lockfile="$CWD/pnpm-lock.yaml" ;;
+      yarn) preparation_lockfile="$CWD/yarn.lock" ;;
+      npm) preparation_lockfile="$CWD/package-lock.json" ;;
+      *) preparation_lockfile='' ;;
+    esac
+    if [[ -n "$preparation_lockfile" && -f "$preparation_lockfile" && "$preparation_pm" == "$declared_pm" ]]; then
+      preparation_pm_version=$declared_pm_version
+      if [[ "$preparation_pm_version" =~ ^[A-Za-z0-9._+-]+$ ]]; then
+        if command -v sha256sum >/dev/null 2>&1; then
+          preparation_lockfile_digest=$(sha256sum "$preparation_lockfile" | awk '{print $1}')
+        elif command -v shasum >/dev/null 2>&1; then
+          preparation_lockfile_digest=$(shasum -a 256 "$preparation_lockfile" | awk '{print $1}')
+        else
+          preparation_lockfile_digest=''
+        fi
+        if [[ "$preparation_lockfile_digest" =~ ^[0-9a-f]{64}$ ]]; then
+          preparation_context_path="$plan_dir/preparation-context.json"
+          jq -cn --arg packageManager "$preparation_pm" --arg packageManagerVersion "$preparation_pm_version" --arg lockfileDigest "$preparation_lockfile_digest" '{packageManager:$packageManager,packageManagerVersion:$packageManagerVersion,installMode:"focused",lockfileDigest:$lockfileDigest}' > "$preparation_context_path"
+          preparation_context_args+=(--preparation-context "$preparation_context_path")
+        fi
+      fi
+    fi
+    if ((${#preparation_context_args[@]} == 0)); then
+      echo 'preparation prediction context unavailable (package-manager version or root lockfile missing); candidate selection will retain the concurrency cap' >&2
+    fi
+  fi
   prediction_identity=''
   if [[ "$SCHEDULER" == artifact ]]; then
     prediction_identity=$(nanoom_prediction_identity "${GITHUB_EVENT_NAME:-$EVENT}" "$WORKFLOW_REF" "${GITHUB_REPOSITORY_ID:-}" "${GITHUB_SERVER_URL:-}" "${GITHUB_REF:-}" "${PR_NUMBER:-}" "${PR_HEAD_REPOSITORY_ID:-}" "${PR_HEAD_REF:-}" "${PR_BASE_REF:-}") || prediction_identity=''
@@ -114,6 +160,9 @@ if [[ "$SCHEDULER" != http ]]; then
     '{repository:$repository,workflow:$workflow,runId:$run,producerAttempt:$attempt,planningJob:$job,base:$base,head:$head,taskRunner:$taskRunner,predictionReason:$reason}' > "$context_path"
 
   plan_args=(-C "$CWD" -c "$CONFIG" affected --base "$resolved_base" --head "$resolved_head" --timing-runner "$TIMING_RUNNER" --timing-environment "$TIMING_ENVIRONMENT" --plan-output "$plan_path" --plan-context "$context_path")
+  if ((${#preparation_context_args[@]})); then
+    plan_args+=("${preparation_context_args[@]}")
+  fi
   plan_args+=(--history-status "$history_status")
   printf -v ACTION_COMMAND '%q ' nanoom "${plan_args[@]}"; ACTION_COMMAND=${ACTION_COMMAND% }
   printf '◆ nanoom affected plan\n  Command\n    %s\n' "$ACTION_COMMAND"

@@ -10,7 +10,9 @@ git -C "$cwd" init -q
 git -C "$cwd" config user.email test@example.com
 git -C "$cwd" config user.name test
 printf '{"name":"root"}\n' > "$cwd/package.json"
+printf 'lockfileVersion: 9\n' > "$cwd/pnpm-lock.yaml"
 git -C "$cwd" add package.json
+git -C "$cwd" add pnpm-lock.yaml
 git -C "$cwd" commit -qm checkout
 head=$(git -C "$cwd" rev-parse HEAD)
 reference=$(jq -cn --arg head "$head" '{version:1,artifactName:"nanoom-plan-v1-1-1-test",sha256:"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",provenance:{repository:"owner/repo",workflow:"owner/repo/.github/workflows/ci.yml@refs/heads/main",runId:"1",producerAttempt:1,planningJob:"test",base:$head,head:$head},current:{repository:"owner/repo",workflow:"owner/repo/.github/workflows/ci.yml@refs/heads/main",runId:"1",attempt:1,base:$head,head:$head}}')
@@ -46,7 +48,7 @@ if [[ "${3:-}" == install ]]; then
   while (($#)); do
     if [[ "$1" == --filter-file ]]; then cp "$2" "$FAKE_FILTER_FILE"; shift 2; else shift; fi
   done
-  printf '%s\n' '{"status":"success","scope":{"root":true}}'
+  printf '%s\n' '{"status":"success","packageManager":"pnpm","scope":{"root":true}}'
   exit 0
 fi
 if [[ "${FAKE_EMPTY:-}" == 1 ]]; then
@@ -54,13 +56,23 @@ if [[ "${FAKE_EMPTY:-}" == 1 ]]; then
   exit 0
 fi
 if [[ "${FAKE_SUCCESS:-}" == 1 ]]; then
-  printf '%s\n' '{"status":"success","item":{"name":"pkg-a","task":"test"},"executions":[{"workspace":"pkg-a","runner":"turbo","durationMs":1}]}'
+  workspace=''
+  while (($#)); do
+    if [[ "$1" == --filter ]]; then workspace=$2; shift 2; else shift; fi
+  done
+  started_at_ms=$(($(date +%s) * 1000))
+  jq -cn --arg name "$workspace" --argjson startedAtMs "$started_at_ms" '{status:"success",item:{name:$name,task:"test"},executions:[{workspace:$name,runner:"pnpm",startedAtMs:$startedAtMs,durationMs:1}]}'
   exit 0
 fi
 printf '%s\n' '{"status":"failure","completed":[],"failed":["pkg-a"],"pending":[],"executions":[],"error":"expected"}'
 exit 1
 SH
 chmod +x "$tmp/bin/nanoom"
+cat > "$tmp/bin/pnpm" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' '10.0.0'
+SH
+chmod +x "$tmp/bin/pnpm"
 export PATH="$tmp/bin:$PATH" GITHUB_ACTION_PATH="$root/.github/actions/run" GITHUB_STEP_SUMMARY="$tmp/summary" RUNNER_TEMP="$tmp/runner"
 mkdir -p "$RUNNER_TEMP"
 export GITHUB_WORKSPACE="$workspace" GITHUB_SHA="$head" REPOSITORY=owner/repo
@@ -132,10 +144,29 @@ bash "$GITHUB_ACTION_PATH/run.sh" >/dev/null
 grep -q -- '--filter-file' "$FAKE_INSTALL_CALLS"
 jq -e '. == ["pkg-a","pkg-b"]' "$FAKE_FILTER_FILE" >/dev/null
 install_result=$(sed -n 's/^result=//p' "$GITHUB_OUTPUT")
-jq -e '.assignment.itemCount == 2 and (.assignment | has("items") | not)' <<<"$install_result" >/dev/null
+jq -e '.assignment.itemCount == 2 and (.assignment | has("items") | not) and .packageManager == "pnpm" and .packageManagerVersion == "10.0.0" and .installMode == "focused"' <<<"$install_result" >/dev/null
+
+GITHUB_ACTION_PATH="$root/.github/actions/run"
+export GITHUB_ACTION_PATH SCHEDULER=artifact PREPARED_AT_MS="$(($(date +%s) * 1000 - 5000))" INSTALL_RESULT="$install_result" GITHUB_JOB=telemetry-run ARTIFACT_VERSION=v4
+: > "$GITHUB_OUTPUT"
+bash "$GITHUB_ACTION_PATH/run.sh" >/dev/null
+telemetry_sample=$(sed -n 's/^sample-path=//p' "$GITHUB_OUTPUT")
+jq -e '.preparationObservations | length == 1' "$telemetry_sample" >/dev/null
+jq -e '.preparationObservations[0] | .packageManager == "pnpm" and .packageManagerVersion == "10.0.0" and .installMode == "focused" and .durationMs >= 0 and (.lockfileDigest | test("^[0-9a-f]{64}$")) and (.checkoutDigest | test("^[0-9a-f]{64}$")) and (.workspaceSetDigest | test("^[0-9a-f]{64}$"))' "$telemetry_sample" >/dev/null
+result=$(sed -n 's/^result=//p' "$GITHUB_OUTPUT")
+jq -e '.preparationObservationStatus == "recorded"' <<<"$result" >/dev/null
+
+export GITHUB_JOB=reversed-telemetry PREPARED_AT_MS=99999999999999
+: > "$GITHUB_OUTPUT"
+bash "$GITHUB_ACTION_PATH/run.sh" >/dev/null
+telemetry_sample=$(sed -n 's/^sample-path=//p' "$GITHUB_OUTPUT")
+jq -e '.preparationObservations | length == 0' "$telemetry_sample" >/dev/null
+result=$(sed -n 's/^result=//p' "$GITHUB_OUTPUT")
+jq -e '.preparationObservationStatus == "reversed" and .status == "success"' <<<"$result" >/dev/null
 
 export ASSIGNMENT_FILE='' PLAN=''
-export MATRIX='{"mode":"continuous","items":[]}'
+export GITHUB_ACTION_PATH="$root/.github/actions/install"
+export MATRIX='{"mode":"continuous","runId":"run-1","agentId":"agent-1"}'
 : > "$GITHUB_OUTPUT"
 bash "$GITHUB_ACTION_PATH/run.sh" >/dev/null
 grep -q ' install --package-manager pnpm --json' "$FAKE_INSTALL_CALLS"

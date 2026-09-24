@@ -10,6 +10,7 @@ mkdir -p "$repo/packages/pkg-a" "$repo/packages/pkg-shared" "$repo/packages/pkg-
 cat > "$repo/package.json" <<'JSON'
 {"name":"root","private":true,"packageManager":"pnpm@9.1.0","workspaces":["packages/*"]}
 JSON
+printf 'lockfileVersion: 9\n' > "$repo/pnpm-lock.yaml"
 cat > "$repo/nanoom.config.json" <<'JSON'
 {"workspace":{"include":["packages/*"]},"checkout":{"always":["tools/always"]},"group":{"ci":{"tasks":["test"]}}}
 JSON
@@ -48,7 +49,8 @@ export GITHUB_OUTPUT="$tmp/affected-output" GITHUB_ACTION_PATH="$root/.github/ac
 export ACTION_NAME=affected ACTION_CWD="$repo" CWD="$repo" CONFIG=nanoom.config.json
 export BASE="$base" HEAD="$head" EVENT=push EVENT_BASE="$base" EVENT_HEAD="$head"
 export REF_NAME=feature HISTORY_REF=feature WORKFLOW_REF=owner/repo/.github/workflows/ci.yml@refs/heads/feature
-export SCHEDULER=off TIMING_RUNNER=auto TIMING_ENVIRONMENT=linux-x64 COORDINATOR_URL='' COORDINATOR_TOKEN=''
+export SCHEDULER=artifact TIMING_RUNNER=auto TIMING_ENVIRONMENT=linux-x64 COORDINATOR_URL='' COORDINATOR_TOKEN=''
+export PACKAGE_MANAGER=auto
 export REPOSITORY=owner/repo RUN_ID=8675309 RUN_ATTEMPT=1 GITHUB_SHA="$head" GITHUB_JOB=affected
 export API=https://api.github.com TOKEN=test-token HISTORY_ARTIFACT=nanoom-timing-history RELEASE_BASE_URL=https://github.com
 mkdir -p "$RUNNER_TEMP"
@@ -60,6 +62,8 @@ test -n "$plan_ref"
 jq -e '.artifactName == "nanoom-plan-v1-8675309-1-affected" and .provenance.head == $head' --arg head "$head" <<<"$plan_ref" >/dev/null
 jq -e '.ci.include | length == 1 and .[0].group == "ci" and (.[] | has("items") | not)' <<<"$groups" >/dev/null
 artifact_dir="$RUNNER_TEMP/nanoom-plan-8675309-1-affected"
+jq -e '.packageManager == "pnpm" and .packageManagerVersion == "9.1.0" and .installMode == "focused" and (.lockfileDigest | test("^[0-9a-f]{64}$"))' "$artifact_dir/preparation-context.json" >/dev/null
+test ! -s "$FAKE_PNPM_CALLS"
 plan_sha=$(sha256sum "$artifact_dir/plan-v1.json" | awk '{print $1}')
 jq -e --arg sha "$plan_sha" '.sha256 == $sha' "$artifact_dir/plan-reference.json" >/dev/null
 

@@ -53,6 +53,7 @@ struct TaskConfig {
 struct TaskExecution {
     workspace: String,
     runner: String,
+    started_at_ms: u64,
     duration_ms: u64,
 }
 
@@ -355,6 +356,12 @@ async fn run_task(
         cmd.env(key, value);
     }
 
+    let started_at_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+        .try_into()
+        .unwrap_or(u64::MAX);
     let started = Instant::now();
     let status = if json {
         crate::commands::run_streamed(&mut cmd).await?
@@ -373,6 +380,7 @@ async fn run_task(
     Ok(TaskExecution {
         workspace: project.name.clone(),
         runner: program,
+        started_at_ms,
         duration_ms: started.elapsed().as_millis().try_into().unwrap_or(u64::MAX),
     })
 }

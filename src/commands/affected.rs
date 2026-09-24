@@ -5,6 +5,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 const MAX_PREDICTION_CONTEXT_BYTES: usize = 4096;
+const MAX_PREPARATION_CONTEXT_BYTES: usize = 4096;
 
 #[derive(Args, Debug, Clone)]
 pub struct AffectedArgs {
@@ -26,6 +27,12 @@ pub struct AffectedArgs {
 
     #[arg(long, requires = "predictions", help = "Prediction scope context JSON")]
     pub prediction_context: Option<PathBuf>,
+
+    #[arg(
+        long,
+        help = "PreparationContext JSON containing package-manager identity and lockfile digest"
+    )]
+    pub preparation_context: Option<PathBuf>,
 
     #[arg(
         long = "history",
@@ -140,12 +147,17 @@ pub async fn execute(
     } else {
         history_status = "history_not_needed".into();
     }
-    let matrix = crate::affected::generate_matrix_with_prediction_index(
+    let preparation_context = args
+        .preparation_context
+        .as_deref()
+        .and_then(|path| load_preparation_context(cwd, path));
+    let matrix = crate::affected::generate_matrix_with_prediction_index_and_preparation(
         &result,
         &prediction_index,
         prediction_context.as_ref(),
         &timing_runner,
         &args.timing_environment,
+        preparation_context.as_ref(),
         now_ms,
     );
     let compact_plan = match (&args.plan_output, &args.plan_context) {
@@ -205,6 +217,7 @@ pub async fn execute(
                 .unwrap_or(0);
             counts
         });
+    let concurrency_diagnostics = scheduling_diagnostics(&matrix);
 
     if args.json {
         println!(
@@ -217,7 +230,7 @@ pub async fn execute(
                     "historyNeeded": history_needed,
                     "timingRunner": timing_runner,
                     "timingEnvironment": args.timing_environment,
-                    "objective": ["predictedRuntimeMakespanMs", "totalCheckoutPathCount", "targetBucketRuntimeMs", "assignmentId"],
+                    "objective": ["predictedPreparationPlusTaskMakespanMs", "totalRunnerMs", "totalCheckoutPathCount", "assignmentCount", "stableAssignmentOrder"],
                     "totalCheckoutPathCount": total_checkout_path_count,
                     "uniqueCheckoutPathCount": unique_checkout_path_count,
                     "duplicatedCheckoutPathCount": total_checkout_path_count.saturating_sub(unique_checkout_path_count),
@@ -226,7 +239,8 @@ pub async fn execute(
                         "group": prediction_sources[1],
                         "cold": prediction_sources[2],
                         "sampleCount": prediction_sources[3]
-                    }
+                    },
+                    "concurrency": concurrency_diagnostics
                 }
             }))?
         );
@@ -239,6 +253,7 @@ pub async fn execute(
         compact["result"]["timingEnvironment"] = serde_json::Value::String(args.timing_environment);
         compact["result"]["historyStatus"] = serde_json::Value::String(history_status);
         compact["result"]["historyNeeded"] = serde_json::Value::Bool(history_needed);
+        compact["result"]["concurrency"] = concurrency_diagnostics;
         println!("{}", serde_json::to_string(&compact)?);
         return Ok(());
     }
@@ -306,6 +321,47 @@ pub async fn execute(
     Ok(())
 }
 
+fn scheduling_diagnostics(matrix: &serde_json::Value) -> serde_json::Value {
+    let mut automatic = 0_u64;
+    let mut cold_cap = 0_u64;
+    let mut preparation_exact = 0_u64;
+    let mut preparation_group = 0_u64;
+    let mut preparation_unknown = 0_u64;
+    for assignment in matrix
+        .as_object()
+        .into_iter()
+        .flat_map(|groups| groups.values())
+        .filter_map(|group| group.get("include").and_then(serde_json::Value::as_array))
+        .flatten()
+    {
+        match assignment
+            .get("schedulingMode")
+            .and_then(serde_json::Value::as_str)
+        {
+            Some("automatic") => automatic += 1,
+            Some("cold-cap") => cold_cap += 1,
+            _ => continue,
+        }
+        match assignment
+            .get("preparationPredictionSource")
+            .and_then(serde_json::Value::as_str)
+        {
+            Some("exact") => preparation_exact += 1,
+            Some("group") => preparation_group += 1,
+            _ => preparation_unknown += 1,
+        }
+    }
+    serde_json::json!({
+        "automaticAssignmentCount": automatic,
+        "coldCapAssignmentCount": cold_cap,
+        "preparationPredictionSources": {
+            "exact": preparation_exact,
+            "group": preparation_group,
+            "unknown": preparation_unknown
+        }
+    })
+}
+
 fn load_prediction_context(
     cwd: &std::path::Path,
     path: &std::path::Path,
@@ -322,6 +378,26 @@ fn load_prediction_context(
         return None;
     }
     let context: crate::prediction::PredictionContext = serde_json::from_slice(&bytes).ok()?;
+    context.validate().ok()?;
+    Some(context)
+}
+
+fn load_preparation_context(
+    cwd: &std::path::Path,
+    path: &std::path::Path,
+) -> Option<crate::prediction::PreparationContext> {
+    use std::io::Read;
+
+    let mut bytes = Vec::new();
+    std::fs::File::open(crate::plan::resolve_path(cwd, path))
+        .ok()?
+        .take((MAX_PREPARATION_CONTEXT_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)
+        .ok()?;
+    if bytes.len() > MAX_PREPARATION_CONTEXT_BYTES {
+        return None;
+    }
+    let context: crate::prediction::PreparationContext = serde_json::from_slice(&bytes).ok()?;
     context.validate().ok()?;
     Some(context)
 }

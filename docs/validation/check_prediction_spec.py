@@ -66,6 +66,8 @@ def document_check():
     vectors = API['x-contract-examples']
     assert SHA(batch['scope']) == vectors['scopeId']
     assert SHA(vectors['key']) == vectors['keyId']
+    assert SHA(vectors['preparationExactKey']) == vectors['preparationExactKeyId']
+    assert SHA(vectors['preparationFallbackKey']) == vectors['preparationFallbackKeyId']
     assert SHA([vectors['scopeId'], batch['runId'], batch['runAttempt']]) == vectors['batchId']
     assert SHA(batch) == vectors['idempotencyKeyForCanonicalBatch']
     assert '"sha256:' + SHA(table) + '"' == vectors['predictionEtag']

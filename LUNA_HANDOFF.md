@@ -8,7 +8,7 @@
 - 인계 브랜치: `codex/prediction-state-v3`.
 - 구현 조사 기준: `539b2c08cc7e2543f3a0cdd10fbdba451b2502d5`(v0.6.0). 문서 커밋 이후 현재 HEAD와 차이는 시작할 때 다시 확인한다.
 - 준비된 것: 전체 실행 계획, 데이터/서버 명세, OpenAPI, 체크리스트, 문서 검증 스크립트.
-- 완료: A1~A3 local runtime gates와 parent review. A3 phase commit은 `c372891`. A4 local Rust/Action 구현 및 regression은 [CHECKLIST.md](CHECKLIST.md)에 기록했으며, 공식 OpenAPI validator는 DNS로 막혔다. hosted GitHub/GHES transport, release, producer/consumer PR, 실제 성능 검증은 미실시다. 현재 단계는 A5다. OpenAPI·합성 payload 검증을 hosted/전체 구현 검증으로 승계하지 않는다.
+- 완료: A1~A3 local runtime gates와 parent review. A3 phase commit은 `c372891`. A4 local Rust/Action 구현 및 regression은 [CHECKLIST.md](CHECKLIST.md)에 기록했으며, 공식 OpenAPI validator는 DNS로 막혔다. A5 preparation telemetry/automatic k local gates와 384-item synthetic scheduler timing도 기록했다. Real CI wall time·prediction error·actual artifact bytes, hosted GitHub/GHES transport, release, producer/consumer PR은 미실시다. 현재 단계는 A6다. OpenAPI·합성 payload 검증을 hosted/전체 구현 검증으로 승계하지 않는다.
 - 인계 시 기존 사용자 파일 `.opencode/`가 untracked다. 읽을 필요 없이 보존하며 작업 커밋에 포함하지 않는다. 이후 발견하는 사용자 변경도 같은 원칙으로 보존한다.
 
 목표는 **이력 조회와 갱신 비용까지 포함한 전체 CI 완료 시간 감소**다. 서버 없는 GitHub artifact 경로를 먼저 완성하고, 같은 집계·예측 로직을 재사용하는 선택적 Rust/S3 서버를 이어서 구현한다. 실제 검증으로 확인한 범위만 완료로 표시한다.
@@ -35,7 +35,7 @@ git status --short
 git log -3 --oneline
 ```
 
-현재 branch/HEAD와 기존 변경 목록을 확인하고 `.opencode/`를 보존한다. A3 local contract gates 및 parent review와 A4 local Rust/Action work는 완료되어 CHECKLIST에 기록했다. A4 OpenAPI 공식 검증은 DNS로 미실시이고 hosted 증거는 별도다. **A5부터 순서대로 계속**한다.
+현재 branch/HEAD와 기존 변경 목록을 확인하고 `.opencode/`를 보존한다. A3 local contract gates 및 parent review, A4/A5 local Rust/Action work는 CHECKLIST에 기록했다. A4 OpenAPI 공식 검증은 DNS로 미실시이고 A5 real trace metrics와 hosted 증거는 별도다. **A6부터 순서대로 계속**한다.
 
 문서 검증은 다음 명령으로 재현할 수 있다. 최초 한 번 실행하고 이후에는 관련 계약을 바꿨을 때 다시 실행한다. 설치가 막히면 네트워크/도구 오류를 기록하며 독립적인 Rust 작업은 계속한다.
 
@@ -151,8 +151,8 @@ local unit/Action contract, 생성 fixture, 실제 GitHub consumer, GHES, S3-com
 Luna 모델, reasoning max로 Nanoom 작업을 시작해줘.
 브랜치는 codex/prediction-state-v3이고 이 브랜치의 문서 커밋을 포함한 checkout을 사용해.
 루트 LUNA_HANDOFF.md를 먼저 읽고 연결된 명세와 CHECKLIST를 확인해.
-계획만 다시 제안하지 말고 CHECKLIST의 첫 미완료 단계인 A4부터 수행해.
-각 단계 검증과 실행 기록을 남기며 A4~A6을 순서대로 진행하고,
+계획만 다시 제안하지 말고 CHECKLIST의 첫 미완료 단계인 A6부터 수행해.
+각 단계 검증과 실행 기록을 남기며 A6을 완료하고,
 A7의 실제 artifact 사용자 경로를 확인한 후 S0~S6 서버 단계로 진행해.
 기존 사용자 변경은 보존하고, 외부 환경이 없으면 해당 검증을 미실시로 정확히 기록해.
 merge/release/운영 배포는 하지 말고 검토 가능한 변경과 증거를 인계해.

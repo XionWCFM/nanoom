@@ -184,6 +184,9 @@ fn history_compiles_v3_measurements_and_reuses_its_published_model() {
                 {"executionId":"exec-a","observedAtMs":1790208000000_i64,"group":"ci","workspace":"a","task":"test","shard":1,"totalShards":2,"taskRunner":"nx","timingEnvironment":"linux","durationMs":10},
                 {"executionId":"exec-b","observedAtMs":1790208000000_i64,"group":"ci","workspace":"a","task":"test","shard":1,"totalShards":2,"taskRunner":"nx","timingEnvironment":"linux","durationMs":20},
                 {"executionId":"exec-c","observedAtMs":1790208000000_i64,"group":"ci","workspace":"b","task":"test","shard":1,"totalShards":4,"taskRunner":"nx","timingEnvironment":"linux","durationMs":30}
+            ],
+            "preparationObservations": [
+                {"executionId":"prep-a","observedAtMs":1790208000000_i64,"packageManager":"pnpm","packageManagerVersion":"10.0.0","installMode":"focused","lockfileDigest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","checkoutDigest":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","workspaceSetDigest":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","durationMs":400}
             ]
         }),
     );
@@ -216,7 +219,7 @@ fn history_compiles_v3_measurements_and_reuses_its_published_model() {
     );
     let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(result["status"], "success");
-    assert_eq!(result["acceptedObservationCount"], 3);
+    assert_eq!(result["acceptedObservationCount"], 4);
     let model_bytes = fs::read(&model).unwrap();
     let expected_digest = format!("{:x}", Sha256::digest(&model_bytes));
     let state: serde_json::Value = serde_json::from_slice(&model_bytes).unwrap();
@@ -225,7 +228,7 @@ fn history_compiles_v3_measurements_and_reuses_its_published_model() {
             .as_array()
             .unwrap()
             .len(),
-        4
+        6
     );
     assert!(state.get("samples").is_none());
     let table: serde_json::Value = serde_json::from_slice(&fs::read(&prediction).unwrap()).unwrap();
@@ -234,7 +237,7 @@ fn history_compiles_v3_measurements_and_reuses_its_published_model() {
             .as_array()
             .unwrap()
             .len(),
-        4
+        6
     );
     assert_eq!(
         table["predictions"][0]["modelArtifact"]["sha256"],

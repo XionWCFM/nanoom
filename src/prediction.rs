@@ -179,7 +179,10 @@ pub struct MeasurementArtifact {
     pub scope: Scope,
     pub run_id: String,
     pub run_attempt: u32,
+    #[serde(default)]
     pub observations: Vec<SuccessfulObservation>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub preparation_observations: Vec<PreparationObservation>,
 }
 
 impl MeasurementArtifact {
@@ -194,22 +197,38 @@ impl MeasurementArtifact {
         if self.version != VERSION
             || !valid_positive_decimal(&self.run_id)
             || self.run_attempt == 0
-            || self.observations.is_empty()
+            || (self.observations.is_empty() && self.preparation_observations.is_empty())
         {
             return Err("invalid or empty v3 MeasurementArtifact".into());
         }
         self.scope.validate()?;
-        if self.observations.len() > MAX_BATCH_COUNT as usize {
+        if self.observations.len() + self.preparation_observations.len() > MAX_BATCH_COUNT as usize
+        {
             return Err("MeasurementArtifact exceeds 50000 observations".into());
         }
         let produced_at_ms = self
             .observations
             .iter()
             .map(|observation| observation.observed_at_ms)
+            .chain(
+                self.preparation_observations
+                    .iter()
+                    .map(|observation| observation.observed_at_ms),
+            )
             .max()
             .ok_or("MeasurementArtifact has no observations")?;
+        let mut execution_ids = BTreeSet::new();
         for observation in &self.observations {
             validate_observation(&self.scope, observation, produced_at_ms)?;
+            if !execution_ids.insert(&observation.execution_id) {
+                return Err("MeasurementArtifact contains duplicate executionIds".into());
+            }
+        }
+        for observation in &self.preparation_observations {
+            validate_preparation_observation(&self.scope, observation, produced_at_ms)?;
+            if !execution_ids.insert(&observation.execution_id) {
+                return Err("MeasurementArtifact contains duplicate executionIds".into());
+            }
         }
         if canonical_bytes(self)?.len() > MAX_MEASUREMENT_BYTES {
             return Err("MeasurementArtifact exceeds 16 MiB".into());
@@ -489,6 +508,45 @@ pub struct SuccessfulObservation {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PreparationObservation {
+    pub execution_id: String,
+    pub observed_at_ms: u64,
+    pub package_manager: String,
+    pub package_manager_version: String,
+    pub install_mode: String,
+    pub lockfile_digest: String,
+    pub checkout_digest: String,
+    pub workspace_set_digest: String,
+    pub duration_ms: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PreparationContext {
+    pub package_manager: String,
+    pub package_manager_version: String,
+    pub install_mode: String,
+    pub lockfile_digest: String,
+}
+
+impl PreparationContext {
+    pub fn validate(&self) -> Result<(), String> {
+        if !matches!(self.package_manager.as_str(), "pnpm" | "yarn" | "npm")
+            || self.package_manager_version.is_empty()
+            || self.package_manager_version.len() > 128
+            || has_control(&self.package_manager_version)
+            || self.install_mode.is_empty()
+            || self.install_mode.len() > 32
+            || has_control(&self.install_mode)
+        {
+            return Err("invalid preparation context".into());
+        }
+        validate_digest(&self.lockfile_digest)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AggregateObservation {
     pub key_id: String,
     pub utc_epoch_day: u64,
@@ -628,9 +686,30 @@ pub fn compile_batch(
     produced_at_ms: u64,
     observations: &[SuccessfulObservation],
 ) -> Result<ObservationBatch, String> {
+    compile_batch_with_preparation(
+        scope,
+        run_id,
+        run_attempt,
+        produced_at_ms,
+        observations,
+        &[],
+    )
+}
+
+pub fn compile_batch_with_preparation(
+    scope: Scope,
+    run_id: String,
+    run_attempt: u32,
+    produced_at_ms: u64,
+    observations: &[SuccessfulObservation],
+    preparation_observations: &[PreparationObservation],
+) -> Result<ObservationBatch, String> {
     scope.validate()?;
     if !valid_positive_decimal(&run_id) || run_attempt == 0 {
         return Err("invalid run identity".into());
+    }
+    if observations.is_empty() && preparation_observations.is_empty() {
+        return Err("cannot compile an empty observation batch".into());
     }
     let mut unique: BTreeMap<String, &SuccessfulObservation> = BTreeMap::new();
     for observation in observations {
@@ -664,6 +743,59 @@ pub fn compile_batch(
             total_shards: observation.total_shards,
             task_runner: observation.task_runner.clone(),
             timing_environment: observation.timing_environment.clone(),
+        }
+        .id()?;
+        let day = observation.observed_at_ms / DAY_MS;
+        for key_id in [exact, fallback] {
+            let value = aggregates.entry((key_id, day)).or_default();
+            value.0 = value.0.checked_add(1).ok_or("observation count overflow")?;
+            value.1 = value
+                .1
+                .checked_add(observation.duration_ms)
+                .ok_or("duration sum overflow")?;
+            value.2 = value.2.max(observation.observed_at_ms);
+            if value.0 > MAX_BATCH_COUNT || value.1 > MAX_SAFE_INTEGER {
+                return Err("compiled aggregate exceeds count or safe integer limit".into());
+            }
+        }
+    }
+    let mut unique_preparation: BTreeMap<String, &PreparationObservation> = BTreeMap::new();
+    for observation in preparation_observations {
+        validate_preparation_observation(&scope, observation, produced_at_ms)?;
+        match unique_preparation.get(observation.execution_id.as_str()) {
+            Some(previous) if **previous != *observation => {
+                return Err("one preparation executionId has conflicting observations".into())
+            }
+            Some(_) => continue,
+            None => {
+                unique_preparation.insert(observation.execution_id.clone(), observation);
+            }
+        }
+    }
+    if unique.keys().any(|id| unique_preparation.contains_key(id)) {
+        return Err("task and preparation executionIds must use separate identities".into());
+    }
+    for observation in unique_preparation.values() {
+        let exact = PredictionKey::PreparationExact {
+            group: scope.group.clone(),
+            task_runner: scope.task_runner.clone(),
+            timing_environment: scope.timing_environment.clone(),
+            package_manager: observation.package_manager.clone(),
+            package_manager_version: observation.package_manager_version.clone(),
+            install_mode: observation.install_mode.clone(),
+            lockfile_digest: observation.lockfile_digest.clone(),
+            checkout_digest: observation.checkout_digest.clone(),
+            workspace_set_digest: observation.workspace_set_digest.clone(),
+        }
+        .id()?;
+        let fallback = PredictionKey::PreparationFallback {
+            group: scope.group.clone(),
+            task_runner: scope.task_runner.clone(),
+            timing_environment: scope.timing_environment.clone(),
+            package_manager: observation.package_manager.clone(),
+            package_manager_version: observation.package_manager_version.clone(),
+            install_mode: observation.install_mode.clone(),
+            lockfile_digest: observation.lockfile_digest.clone(),
         }
         .id()?;
         let day = observation.observed_at_ms / DAY_MS;
@@ -1024,6 +1156,33 @@ fn validate_observation(
     Ok(())
 }
 
+fn validate_preparation_observation(
+    scope: &Scope,
+    observation: &PreparationObservation,
+    produced_at_ms: u64,
+) -> Result<(), String> {
+    let context = PreparationContext {
+        package_manager: observation.package_manager.clone(),
+        package_manager_version: observation.package_manager_version.clone(),
+        install_mode: observation.install_mode.clone(),
+        lockfile_digest: observation.lockfile_digest.clone(),
+    };
+    if observation.execution_id.is_empty()
+        || observation.execution_id.len() > 1024
+        || has_control(&observation.execution_id)
+        || observation.observed_at_ms > MAX_SAFE_INTEGER
+        || observation.observed_at_ms > produced_at_ms.saturating_add(FUTURE_TOLERANCE_MS)
+        || produced_at_ms.saturating_sub(observation.observed_at_ms) >= BATCH_MAX_AGE_MS
+        || observation.duration_ms > MAX_DURATION_MS
+    {
+        return Err("invalid or expired preparation observation".into());
+    }
+    scope.validate()?;
+    context.validate()?;
+    validate_digest(&observation.checkout_digest)?;
+    validate_digest(&observation.workspace_set_digest)
+}
+
 fn validate_aggregate(aggregate: &AggregateObservation, now_ms: u64) -> Result<(), String> {
     validate_digest(&aggregate.key_id)?;
     let day = aggregate.utc_epoch_day;
@@ -1143,6 +1302,106 @@ mod tests {
             timing_environment: "linux-x64-node24".into(),
             duration_ms: duration,
         }
+    }
+
+    fn preparation_observation(id: &str, at: u64, duration: u64) -> PreparationObservation {
+        PreparationObservation {
+            execution_id: id.into(),
+            observed_at_ms: at,
+            package_manager: "pnpm".into(),
+            package_manager_version: "10.0.0".into(),
+            install_mode: "focused".into(),
+            lockfile_digest: "a".repeat(64),
+            checkout_digest: "b".repeat(64),
+            workspace_set_digest: "c".repeat(64),
+            duration_ms: duration,
+        }
+    }
+
+    #[test]
+    fn preparation_observations_compile_to_exact_and_fallback_rows() {
+        let observation = preparation_observation("preparation:1", 100_000, 25_000);
+        let batch = compile_batch_with_preparation(
+            scope(),
+            "123456789".into(),
+            1,
+            observation.observed_at_ms,
+            &[],
+            std::slice::from_ref(&observation),
+        )
+        .unwrap();
+        let expected = [
+            PredictionKey::PreparationExact {
+                group: "ci".into(),
+                task_runner: "yarn".into(),
+                timing_environment: "linux-x64-node24".into(),
+                package_manager: "pnpm".into(),
+                package_manager_version: "10.0.0".into(),
+                install_mode: "focused".into(),
+                lockfile_digest: "a".repeat(64),
+                checkout_digest: "b".repeat(64),
+                workspace_set_digest: "c".repeat(64),
+            }
+            .id()
+            .unwrap(),
+            PredictionKey::PreparationFallback {
+                group: "ci".into(),
+                task_runner: "yarn".into(),
+                timing_environment: "linux-x64-node24".into(),
+                package_manager: "pnpm".into(),
+                package_manager_version: "10.0.0".into(),
+                install_mode: "focused".into(),
+                lockfile_digest: "a".repeat(64),
+            }
+            .id()
+            .unwrap(),
+        ];
+        assert_eq!(
+            expected[0],
+            "33b32e3cced63c6a6145a6cf8b555960a5ff113a9f9bed03a27222ed2f79e609"
+        );
+        assert_eq!(
+            expected[1],
+            "752cb84cd99f4670014a68b5b3c61cc5e700ba86e8ff564a6191605ed44f6b7e"
+        );
+        assert_eq!(batch.aggregates.len(), 2);
+        for key_id in expected {
+            let row = batch
+                .aggregates
+                .iter()
+                .find(|row| row.key_id == key_id)
+                .unwrap();
+            assert_eq!(row.observation_count, 1);
+            assert_eq!(row.total_duration_ms, 25_000);
+        }
+    }
+
+    #[test]
+    fn measurement_without_preparation_observations_remains_valid() {
+        let row = observation("task:1", 100_000, 500);
+        let measurement: MeasurementArtifact = serde_json::from_value(serde_json::json!({
+            "version": VERSION,
+            "scope": scope(),
+            "runId": "123456789",
+            "runAttempt": 1,
+            "observations": [row]
+        }))
+        .unwrap();
+        measurement.validate().unwrap();
+        let preparation_only: MeasurementArtifact = serde_json::from_value(serde_json::json!({
+            "version": VERSION,
+            "scope": scope(),
+            "runId": "123456789",
+            "runAttempt": 1,
+            "preparationObservations": [preparation_observation("preparation:1", 100_000, 20)]
+        }))
+        .unwrap();
+        preparation_only.validate().unwrap();
+        let invalid = MeasurementArtifact {
+            preparation_observations: vec![preparation_observation("task:1", 100_000, 20)],
+            ..measurement
+        };
+        assert!(invalid.validate().is_err());
     }
 
     #[test]

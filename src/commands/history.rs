@@ -1,7 +1,7 @@
 use crate::error::Result;
 use crate::prediction::{
-    apply_batch, canonical_bytes, compile_batch, digest_value, hex_digest, project_predictions,
-    ApplyOutcome, MeasurementArtifact, ModelStateBundle, PredictionArtifact,
+    apply_batch, canonical_bytes, compile_batch_with_preparation, digest_value, hex_digest,
+    project_predictions, ApplyOutcome, MeasurementArtifact, ModelStateBundle, PredictionArtifact,
     PredictionArtifactBundle, Scope, VERSION,
 };
 use clap::Args;
@@ -77,7 +77,7 @@ pub fn execute(args: HistoryArgs) -> Result<()> {
             .as_millis() as u64
     });
     let (mut states, previous_model_degraded) = load_previous_states(&args)?;
-    let mut measurements: BTreeMap<String, (Scope, Vec<_>)> = BTreeMap::new();
+    let mut measurements: BTreeMap<String, (Scope, Vec<_>, Vec<_>)> = BTreeMap::new();
     let mut rejected_measurement_count = 0_u64;
     for path in &args.inputs {
         let measurement = match MeasurementArtifact::load(path) {
@@ -108,33 +108,40 @@ pub fn execute(args: HistoryArgs) -> Result<()> {
             .scope
             .id()
             .map_err(crate::error::Error::InvalidConfig)?;
-        let (scope, observations) = measurements
+        let (scope, observations, preparation_observations) = measurements
             .entry(scope_id)
-            .or_insert_with(|| (measurement.scope.clone(), Vec::new()));
+            .or_insert_with(|| (measurement.scope.clone(), Vec::new(), Vec::new()));
         if *scope != measurement.scope {
             return Err(crate::error::Error::InvalidConfig(
                 "scope ID collision while grouping measurements".into(),
             ));
         }
         observations.extend(measurement.observations);
+        preparation_observations.extend(measurement.preparation_observations);
     }
 
     let mut applied_batch_count = 0_u64;
     let mut duplicate_batch_count = 0_u64;
     let mut degraded_scope_count = 0_u64;
     let mut accepted_observation_count = 0_u64;
-    for (scope_id, (scope, observations)) in measurements {
+    for (scope_id, (scope, observations, preparation_observations)) in measurements {
         let produced_at_ms = observations
             .iter()
             .map(|observation| observation.observed_at_ms)
+            .chain(
+                preparation_observations
+                    .iter()
+                    .map(|observation| observation.observed_at_ms),
+            )
             .max()
             .unwrap_or(now_ms);
-        let batch = match compile_batch(
+        let batch = match compile_batch_with_preparation(
             scope.clone(),
             args.run_id.clone(),
             args.run_attempt,
             produced_at_ms,
             &observations,
+            &preparation_observations,
         ) {
             Ok(batch) => batch,
             Err(error) => {
@@ -143,11 +150,17 @@ pub fn execute(args: HistoryArgs) -> Result<()> {
                 continue;
             }
         };
-        let unique_observations = observations
+        let unique_task_observations = observations
             .iter()
             .map(|observation| observation.execution_id.as_str())
             .collect::<BTreeSet<_>>()
             .len() as u64;
+        let unique_preparation_observations = preparation_observations
+            .iter()
+            .map(|observation| observation.execution_id.as_str())
+            .collect::<BTreeSet<_>>()
+            .len() as u64;
+        let unique_observations = unique_task_observations + unique_preparation_observations;
 
         match apply_batch(states.get(&scope_id).cloned(), &batch, now_ms) {
             Ok((state, ApplyOutcome::Applied { .. })) => {

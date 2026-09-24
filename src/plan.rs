@@ -102,7 +102,15 @@ pub struct PlanAssignment {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub predicted_duration_ms: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub predicted_preparation_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub prediction_sources: Option<PredictionSources>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preparation_prediction_source: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preparation_sample_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scheduling_mode: Option<String>,
     pub prediction_reason: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub runner_labels: Option<Vec<String>>,
@@ -137,7 +145,15 @@ pub struct AssignmentContext {
     pub checkout_paths: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub predicted_duration_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub predicted_preparation_ms: Option<u64>,
     pub prediction_reason: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preparation_prediction_source: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preparation_sample_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scheduling_mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub runner_labels: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -282,6 +298,12 @@ impl Plan {
                         assignment.assignment_id
                     )));
                 }
+                validate_assignment_prediction(
+                    assignment.predicted_preparation_ms,
+                    assignment.preparation_prediction_source.as_deref(),
+                    assignment.preparation_sample_count,
+                    assignment.scheduling_mode.as_deref(),
+                )?;
                 validate_sorted_paths(group_name, &assignment.checkout_paths)?;
                 for item in &assignment.items {
                     items += 1;
@@ -448,7 +470,11 @@ pub fn select_assignment(
         items: assignment.items.clone(),
         checkout_paths: assignment.checkout_paths.clone(),
         predicted_duration_ms: assignment.predicted_duration_ms,
+        predicted_preparation_ms: assignment.predicted_preparation_ms,
         prediction_reason: assignment.prediction_reason.clone(),
+        preparation_prediction_source: assignment.preparation_prediction_source.clone(),
+        preparation_sample_count: assignment.preparation_sample_count,
+        scheduling_mode: assignment.scheduling_mode.clone(),
         runner_labels: assignment.runner_labels.clone(),
         timing_environment: assignment.timing_environment.clone(),
     };
@@ -490,6 +516,31 @@ pub fn compact_output(plan: &Plan, reference: &PlanReference) -> Result<String> 
                     row.insert(
                         "timingEnvironment".into(),
                         Value::String(environment.clone()),
+                    );
+                }
+                if let Some(duration) = assignment.predicted_duration_ms {
+                    row.insert("predictedDurationMs".into(), serde_json::json!(duration));
+                }
+                if let Some(duration) = assignment.predicted_preparation_ms {
+                    row.insert("predictedPreparationMs".into(), serde_json::json!(duration));
+                }
+                if let Some(reason) = &assignment.prediction_sources {
+                    row.insert("predictionSources".into(), serde_json::json!(reason));
+                }
+                if let Some(source) = &assignment.preparation_prediction_source {
+                    row.insert(
+                        "preparationPredictionSource".into(),
+                        serde_json::json!(source),
+                    );
+                }
+                if let Some(count) = assignment.preparation_sample_count {
+                    row.insert("preparationSampleCount".into(), serde_json::json!(count));
+                }
+                if let Some(mode) = &assignment.scheduling_mode {
+                    row.insert("schedulingMode".into(), serde_json::json!(mode));
+                    row.insert(
+                        "predictionReason".into(),
+                        Value::String(assignment.prediction_reason.clone()),
                     );
                 }
                 Value::Object(row)
@@ -602,7 +653,20 @@ fn assignment_from_matrix(
         items,
         checkout_paths,
         predicted_duration_ms: row.get("predictedDurationMs").and_then(Value::as_u64),
+        predicted_preparation_ms: row.get("predictedPreparationMs").and_then(Value::as_u64),
         prediction_sources,
+        preparation_prediction_source: row
+            .get("preparationPredictionSource")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        preparation_sample_count: row
+            .get("preparationSampleCount")
+            .and_then(Value::as_u64)
+            .and_then(|value| usize::try_from(value).ok()),
+        scheduling_mode: row
+            .get("schedulingMode")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
         prediction_reason: row
             .get("reason")
             .and_then(Value::as_str)
@@ -747,6 +811,24 @@ fn validate_sorted_paths(group: &str, paths: &[String]) -> Result<()> {
     Ok(())
 }
 
+fn validate_assignment_prediction(
+    preparation_ms: Option<u64>,
+    preparation_source: Option<&str>,
+    preparation_samples: Option<usize>,
+    scheduling_mode: Option<&str>,
+) -> Result<()> {
+    if !matches!(scheduling_mode, None | Some("automatic") | Some("cold-cap")) {
+        return Err(invalid("Plan assignment has an unknown schedulingMode"));
+    }
+    match (preparation_ms, preparation_source, preparation_samples) {
+        (None, None, None) => Ok(()),
+        (Some(_), Some("exact" | "group"), Some(samples)) if samples > 0 => Ok(()),
+        _ => Err(invalid(
+            "Plan assignment has incomplete preparation prediction diagnostics",
+        )),
+    }
+}
+
 fn valid_relative_path(path: &str) -> bool {
     if path == "." {
         return true;
@@ -825,7 +907,11 @@ mod tests {
                 checkout_paths: items.iter().map(|item| item.path.clone()).collect(),
                 items,
                 predicted_duration_ms: Some(1),
+                predicted_preparation_ms: None,
                 prediction_sources: None,
+                preparation_prediction_source: None,
+                preparation_sample_count: None,
+                scheduling_mode: None,
                 prediction_reason: "cold".into(),
                 runner_labels: Some(vec!["ubuntu-latest".into()]),
                 timing_environment: Some("ubuntu-24.04-x64".into()),
@@ -873,6 +959,32 @@ mod tests {
         let reference = PlanReference::for_plan(&plan, &bytes).unwrap();
         let error = compact_output(&plan, &reference).unwrap_err().to_string();
         assert!(error.contains("maximum is 256"));
+    }
+
+    #[test]
+    fn compact_matrix_keeps_preparation_prediction_diagnostics() {
+        let mut plan = plan_with_items(1, 1);
+        let assignment = &mut plan.groups.get_mut("ci").unwrap().assignments[0];
+        assignment.predicted_preparation_ms = Some(250);
+        assignment.preparation_prediction_source = Some("group".into());
+        assignment.preparation_sample_count = Some(7);
+        assignment.scheduling_mode = Some("automatic".into());
+        assignment.prediction_reason =
+            "automatic concurrency: selected 1 assignments by preparation + task makespan".into();
+        plan.validate().unwrap();
+        let bytes = serde_json::to_vec_pretty(&plan).unwrap();
+        let reference = PlanReference::for_plan(&plan, &bytes).unwrap();
+        let compact: Value =
+            serde_json::from_str(&compact_output(&plan, &reference).unwrap()).unwrap();
+        let row = &compact["groups"]["ci"]["include"][0];
+        assert_eq!(row["predictedPreparationMs"], 250);
+        assert_eq!(row["preparationPredictionSource"], "group");
+        assert_eq!(row["preparationSampleCount"], 7);
+        assert_eq!(row["schedulingMode"], "automatic");
+        assert!(row["predictionReason"]
+            .as_str()
+            .unwrap()
+            .contains("selected 1"));
     }
 
     #[test]

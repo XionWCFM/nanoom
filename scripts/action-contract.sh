@@ -17,6 +17,10 @@ for action in affected-ghes prepare-ghes run-ghes history-ghes; do
   ruby -e 'require "yaml"; inputs = YAML.load_file(ARGV.fetch(0)).fetch("inputs"); abort "input description missing" unless inputs.values.all? { |input| input["description"].is_a?(String) && !input["description"].empty? }' ".github/actions/$action/action.yml"
   grep -q 'TOKEN:.*github.token' ".github/actions/$action/action.yml"
 done
+for action in prepare prepare-ghes; do
+  ruby -e 'require "yaml"; steps = YAML.load_file(ARGV.fetch(0)).dig("runs", "steps"); abort "preparation clock must run first" unless steps.first["id"] == "started"' ".github/actions/$action/action.yml"
+  grep -q 'prepared-at-ms:' ".github/actions/$action/action.yml"
+done
 test -f .github/actions/_setup/setup.sh
 for action in affected install run history _setup; do
   grep -q 'TOKEN:.*github.token' ".github/actions/$action/action.yml"
@@ -53,6 +57,8 @@ grep -q '^  cleanupCheckout:' .github/actions/run/action.yml
 grep -q 'always() && inputs.cleanupCheckout' .github/actions/run/action.yml
 grep -q 'items' .github/actions/run/run.sh
 grep -q 'durationMs' .github/actions/run/run.sh
+grep -q 'startedAtMs' .github/actions/run/run.sh
+grep -q 'preparationObservations' .github/actions/run/run.sh
 grep -q 'matrix_timing_environment' .github/actions/run/run.sh
 grep -q 'retention-days: 30' .github/actions/{affected,run,history}/action.yml
 test "$(grep -R -l 'actions/upload-artifact@v3.2.2' .github/actions/{affected-ghes,run-ghes,history-ghes} | wc -l | tr -d ' ')" -eq 3

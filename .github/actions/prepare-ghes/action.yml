@@ -14,9 +14,16 @@ outputs:
   group: {description: "Validated affected group", value: "${{ steps.select.outputs.group }}"}
   assignment-id: {description: "Validated assignment ID", value: "${{ steps.select.outputs.assignment-id }}"}
   result: {description: "Canonical prepare result", value: "${{ steps.checkout.outputs.result }}"}
+  prepared-at-ms: {description: "UTC millisecond timestamp at the start of the prepare action", value: "${{ steps.started.outputs.prepared-at-ms }}"}
 runs:
   using: composite
   steps:
+    - name: Record preparation start
+      id: started
+      shell: bash
+      run: |
+        source "$GITHUB_ACTION_PATH/../_setup/artifacts.sh"
+        echo "prepared-at-ms=$(nanoom_utc_now_ms)" >> "$GITHUB_OUTPUT"
     - name: Set up nanoom
       shell: bash
       env:

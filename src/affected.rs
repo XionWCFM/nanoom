@@ -477,8 +477,28 @@ pub fn generate_matrix_with_prediction_index(
     environment: &str,
     now_ms: u64,
 ) -> serde_json::Value {
+    generate_matrix_with_prediction_index_and_preparation(
+        output,
+        predictions,
+        context,
+        runner,
+        environment,
+        None,
+        now_ms,
+    )
+}
+
+pub fn generate_matrix_with_prediction_index_and_preparation(
+    output: &AffectedOutput,
+    predictions: &crate::prediction::PredictionIndex,
+    context: Option<&crate::prediction::PredictionContext>,
+    runner: &str,
+    environment: &str,
+    preparation_context: Option<&crate::prediction::PreparationContext>,
+    now_ms: u64,
+) -> serde_json::Value {
     generate_matrix_using(output, |group_name, group_output, distribution| {
-        crate::scheduler::assign_with_prediction_index(
+        crate::scheduler::assign_with_prediction_index_auto(
             group_name,
             &group_output.workspaces,
             distribution.concurrency,
@@ -496,6 +516,8 @@ pub fn generate_matrix_with_prediction_index(
                     .clone()
                     .or_else(|| group_output.timing_environment.clone()),
             ),
+            &distribution.concurrency_candidates,
+            preparation_context,
             now_ms,
         )
     })

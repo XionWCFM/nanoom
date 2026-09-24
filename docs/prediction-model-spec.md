@@ -1,6 +1,6 @@
 # PredictionState v3 — 실행 이력 대신 예측 상태 저장
 
-상태: A4 local Rust/Action 구현 및 회귀가 통과한 branch 후보 계약. Official OpenAPI validator는 패키지 DNS 문제로 미실시다. Hosted GitHub, GHES, released consumer, 선택적 서버 증거는 별도다. 이전 원본 sample 7개/128 MiB snapshot 설계는 사용하지 않는다. [ADR-0014](adr/0014-prediction-state-v3-artifact-history.md), [전체 계획](../IMPLEMENTATION_PLAN.md), [서버](history-server-spec.md), [OpenAPI](api/history.openapi.yaml)와 함께 적용한다.
+상태: A4/A5 local Rust/Action 구현 및 회귀가 통과한 branch 후보 계약. A5 real trace의 전체 CI 시간·prediction error·실제 artifact 크기는 미측정이며 Official OpenAPI validator도 패키지 DNS 문제로 미실시다. Hosted GitHub, GHES, released consumer, 선택적 서버 증거는 별도다. 이전 원본 sample 7개/128 MiB snapshot 설계는 사용하지 않는다. [ADR-0014](adr/0014-prediction-state-v3-artifact-history.md), [전체 계획](../IMPLEMENTATION_PLAN.md), [서버](history-server-spec.md), [OpenAPI](api/history.openapi.yaml)와 함께 적용한다.
 
 ## 1. 목적과 데이터 분리
 
@@ -13,7 +13,7 @@ Nanoom이 보존할 것은 다음 CI의 배분에 필요한 예측값과 이를 
 | 현재 attempt 측정 | history job | 실행 ID, 실제 duration, 시각, provenance | 임시 sample artifact 1일, 학습 후 장기 이력에 복사하지 않음 |
 | Plan v1 | prepare/install/run | 실제 실행할 작업과 checkout 계획 | 기존 30일, 변경 없음 |
 
-Artifact file envelopes are `MeasurementArtifact {version, scope, runId, runAttempt, observations}`, `ModelStateBundle {version, states}`, and `PredictionArtifact {version, predictions}`. A prediction entry links one scope's compact table to the canonical ModelStateBundle name and digest. The publish marker is uploaded last; planning downloads that marker only.
+Artifact file envelopes are `MeasurementArtifact {version, scope, runId, runAttempt, observations, preparationObservations?}`, `ModelStateBundle {version, states}`, and `PredictionArtifact {version, predictions}`. The optional preparation array keeps earlier v3 measurement files readable. A prediction entry links one scope's compact table to the canonical ModelStateBundle name and digest. The publish marker is uploaded last; planning downloads that marker only.
 
 동일 key는 하루에 1번이든 10만 번이든 **날짜별 count와 totalDurationMs만 증가**한다. raw duration 배열, command/log, 각 실행의 SHA·workflow metadata를 model에 반복 보관하지 않는다. scope에 공통인 정보는 envelope에 한 번만 저장한다.
 
@@ -26,7 +26,7 @@ key ID는 아래 Key의 RFC8785 JCS bytes SHA-256 hex다. scope(ref/PR 포함)�
 - PreparationExact: kind, group, taskRunner, timingEnvironment, packageManager+version, installMode, lockfileDigest, checkoutDigest, workspaceSetDigest.
 - PreparationFallback: PreparationExact에서 checkoutDigest/workspaceSetDigest만 제외.
 
-Key JSON의 필드는 생략하지 않는다. kind는 `taskExact`, `taskFallback`, `preparationExact`, `preparationFallback` 중 하나다. Task의 shard/totalShards는 둘 다 null이거나 1 ≤ shard ≤ totalShards인 정수 쌍이다. 나머지 이름/환경은 config에서 해석한 nonempty string이다. preparation 필드는 `packageManager`, `packageManagerVersion`, `installMode`, `lockfileDigest`, `checkoutDigest`, `workspaceSetDigest`로 고정한다. lockfileDigest는 실제 lockfile bytes SHA-256이며 파일이 없으면 준비 예측은 unknown이다. checkoutDigest/workspaceSetDigest는 중복 제거 후 UTF-8 byte 순으로 정렬한 POSIX 상대 경로/워크스페이스 이름 배열의 JCS SHA-256이다. taskRunner는 실제 실행 도구를 사용한다. exact/fallback Key는 지정된 필드만 포함하며 추가 필드를 허용하지 않는다. taskExact JSON과 keyId 기준값은 OpenAPI `x-contract-examples`를 따른다.
+Key JSON의 필드는 생략하지 않는다. kind는 `taskExact`, `taskFallback`, `preparationExact`, `preparationFallback` 중 하나다. Task의 shard/totalShards는 둘 다 null이거나 1 ≤ shard ≤ totalShards인 정수 쌍이다. 나머지 이름/환경은 config에서 해석한 nonempty string이다. preparation 필드는 `packageManager`, `packageManagerVersion`, `installMode`, `lockfileDigest`, `checkoutDigest`, `workspaceSetDigest`로 고정한다. lockfileDigest는 실제 lockfile bytes SHA-256이며 파일이 없으면 준비 예측은 unknown이다. checkoutDigest/workspaceSetDigest는 중복 제거 후 UTF-8 byte 순으로 정렬한 POSIX 상대 경로/워크스페이스 이름 배열의 JCS SHA-256이다. taskRunner는 실제 실행 도구를 사용한다. exact/fallback Key는 지정된 필드만 포함하며 추가 필드를 허용하지 않는다. Task exact와 preparation exact/fallback JSON 및 keyId 기준값은 OpenAPI `x-contract-examples`와 Rust regression에서 고정한다.
 
 모든 JSON 숫자는 0..2^53−1 범위의 정수다. count/sum overflow는 저장 전에 거부한다. 배열은 prediction rows/model entries를 keyId 순, buckets를 날짜 오름차순, receipts를 batchId 순, aggregate rows를 (keyId,day) 순으로 정렬한다. JCS만으로 배열 순서가 정규화되지 않으므로 이 규칙을 함께 적용한다. 같은 model/기준 날짜의 projection bytes와 ETag는 항상 같아야 한다.
 

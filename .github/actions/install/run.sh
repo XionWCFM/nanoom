@@ -39,7 +39,21 @@ printf -v ACTION_COMMAND '%q ' nanoom "${args[@]}"; ACTION_COMMAND=${ACTION_COMM
 printf '◆ nanoom install\n  Inputs\n    normalized assignment: %s\n    package manager: %s\n    cwd: %s\n  Command\n    %s\n' "$matrix_json" "$PM" "$CWD" "$ACTION_COMMAND"
 ACTION_PHASE=focused-install; cli_result=$(nanoom "${args[@]}")
 elapsed=$(( $(date +%s) - started ))
-result=$(jq -cn --argjson matrix "$matrix_json" --arg command "$ACTION_COMMAND" --arg cwd "$CWD" --argjson cli "$cli_result" --argjson elapsed "$elapsed" --argjson continuous "$continuous" '{status:"success",reason:(if $continuous then "installed the full workspace closure because future claims are unknown" else "installed the union of assignment workspace closures" end),assignment:$matrix,command:$command,cwd:$cwd,cli:$cli,elapsedSeconds:$elapsed}')
+resolved_pm=$(jq -r '.packageManager // empty' <<<"$cli_result")
+resolved_pm_version=''
+if [[ "$resolved_pm" =~ ^(pnpm|yarn|npm)$ ]]; then
+  set +e
+  resolved_pm_version=$("$resolved_pm" --version 2>/dev/null)
+  version_status=$?
+  set -e
+  if (( version_status == 0 )); then
+    resolved_pm_version=${resolved_pm_version%%$'\n'*}
+    resolved_pm_version=${resolved_pm_version:0:128}
+  else
+    resolved_pm_version=''
+  fi
+fi
+result=$(jq -cn --argjson matrix "$matrix_json" --arg command "$ACTION_COMMAND" --arg cwd "$CWD" --argjson cli "$cli_result" --argjson elapsed "$elapsed" --argjson continuous "$continuous" --arg packageManager "$resolved_pm" --arg packageManagerVersion "$resolved_pm_version" '{status:"success",reason:(if $continuous then "installed the full workspace closure because future claims are unknown" else "installed the union of assignment workspace closures" end),assignment:$matrix,command:$command,cwd:$cwd,cli:$cli,elapsedSeconds:$elapsed} + (if $packageManager == "" then {} else {packageManager:$packageManager,installMode:(if $continuous then "full" else "focused" end)} + (if $packageManagerVersion == "" then {} else {packageManagerVersion:$packageManagerVersion} end) end)')
 echo "result=$result" >> "$GITHUB_OUTPUT"
 printf '  Result\n    ✓ workspaces=%s; elapsed=%ss\n  Final JSON\n    %s\n' "$name_count" "$elapsed" "$result"
 { echo '### nanoom install'; echo; echo "**Result:** $name_count assignment workspaces installed in ${elapsed}s."; echo; echo "Command: \`$ACTION_COMMAND\`"; } >> "$GITHUB_STEP_SUMMARY"
