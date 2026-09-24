@@ -267,7 +267,7 @@ run Action 회귀는 no execution 및 task failure가 assignment를 실패시키
 ```text
 단계: A5 local implementation
 시작 HEAD: 01b6a75 (A4 validation evidence)
-결과 commit: 기록 예정
+결과 commits: `718900b8baff5a4bb9e58329c8a14e27da312cbf` (implementation), `c01cfdbacec175d2eb3d20a5c7604e1b50c7ab40` (ADR decision)
 브랜치: codex/prediction-state-v3
 시작 상태: tracked A4 tree clean; 사용자 .opencode/ 미추적 상태 보존.
 ```
@@ -290,6 +290,6 @@ A5 수정 중 `bash scripts/action-contract.sh`가 empty Bash array를 `set -u`�
 - `cargo fmt --all --check`, `git diff --check`, Python PyYAML structural check, Ruby OpenAPI YAML parse — exit 0.
 - preparation exact/fallback JCS IDs — stdlib canonical-ASCII digest 계산과 Rust regression vectors 일치.
 - 공식 `uv run --no-project --with openapi-spec-validator --with pyyaml --with rfc8785 ...` — exit 2, PyPI DNS lookup 실패. schema metadata parse/shape 검사는 통과했지만 official OpenAPI validator는 미실시다.
-- `bash scripts/review-change.sh 01b6a75` — 결과 기록 예정; A5 commit 뒤 committed diff에 다시 실행.
+- `bash scripts/review-change.sh 01b6a75` — exit 0, 31 committed files, heuristics PASS. 첫 실행은 `docs/content`/ADR 경로 변경이 없어 block됐고, ADR-0014에 A5 사용자 경로·key·cold-cap·warm objective 결정을 추가해 다시 실행했다.
 
 미실시: actual GHES/GitHub artifact transport, real preparation/task traces, real prediction error vs median, actual artifact bytes, hosted consumer PR/run, released binary. `.opencode/`는 stage하지 않았다. 다음 단계는 A6 예제·requiredJobs·96% completion gate다.
