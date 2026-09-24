@@ -62,7 +62,9 @@ grep -q 'preparationObservations' .github/actions/run/run.sh
 grep -q 'matrix_timing_environment' .github/actions/run/run.sh
 grep -q 'retention-days: 30' .github/actions/{affected,run,history}/action.yml
 test "$(grep -R -l 'actions/upload-artifact@v3.2.2' .github/actions/{affected-ghes,run-ghes,history-ghes} | wc -l | tr -d ' ')" -eq 3
-test "$(grep -R -l 'actions/upload-artifact@v4.6.2' .github | wc -l | tr -d ' ')" -eq 5
+for file in .github/actions/{affected,history,run}/action.yml .github/workflows/{ci,history-server-e2e,release}.yml; do
+  grep -q 'actions/upload-artifact@v4.6.2' "$file"
+done
 test "$(grep -R -l 'actions/download-artifact@v3.1.0' .github/actions/prepare-ghes | wc -l | tr -d ' ')" -eq 1
 test "$(grep -R -l 'actions/download-artifact@v4.3.0' .github/actions/prepare | wc -l | tr -d ' ')" -eq 1
 ! grep -R -nE 'actions/(upload|download)-artifact@(v4$|v3$)' .github

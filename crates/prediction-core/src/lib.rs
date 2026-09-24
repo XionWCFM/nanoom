@@ -1649,6 +1649,182 @@ mod tests {
     }
 
     #[test]
+    fn scope_and_preparation_context_reject_invalid_public_fields() {
+        let mut invalid = scope();
+        invalid.repository_key = "Bad/repository".into();
+        assert!(invalid.validate().is_err());
+
+        let mut invalid = scope();
+        invalid.workflow_path = ".github/workflows/nested/ci.yml".into();
+        assert!(invalid.validate().is_err());
+
+        let mut invalid = scope();
+        invalid.group.clear();
+        assert!(invalid.validate().is_err());
+
+        let mut invalid = scope();
+        invalid.task_runner = "make".into();
+        assert!(invalid.validate().is_err());
+
+        let mut invalid = scope();
+        invalid.git_ref = ScopeRef::PullRequest {
+            number: 0,
+            head_repository_id: "123".into(),
+            head_ref: "refs/heads/feature".into(),
+            base_ref: "refs/heads/main".into(),
+        };
+        assert!(invalid.validate().is_err());
+
+        let mut invalid = scope();
+        invalid.git_ref = ScopeRef::Push {
+            git_ref: "refs/heads/bad..name".into(),
+        };
+        assert!(invalid.validate().is_err());
+
+        let invalid = PreparationContext {
+            package_manager: "bun".into(),
+            package_manager_version: "1.0.0".into(),
+            install_mode: "focused".into(),
+            lockfile_digest: "a".repeat(64),
+        };
+        assert!(invalid.validate().is_err());
+    }
+
+    #[test]
+    fn model_validation_rejects_corrupt_order_horizon_and_aggregate_rows() {
+        let at = 1_790_208_000_000;
+        let batch = compile_batch(
+            scope(),
+            "123456789".into(),
+            1,
+            at,
+            &[observation("exec-a", at, 12_000)],
+        )
+        .unwrap();
+        let (state, _) = apply_batch(None, &batch, at).unwrap();
+
+        let mut invalid = state.clone();
+        invalid.version = VERSION + 1;
+        assert!(validate_model(&invalid).is_err());
+
+        let mut invalid = state.clone();
+        invalid.entries.push(invalid.entries[0].clone());
+        assert!(validate_model(&invalid).is_err());
+
+        let mut invalid = state.clone();
+        invalid.entries[0].buckets.clear();
+        assert!(validate_model(&invalid).is_err());
+
+        let mut invalid = state.clone();
+        let bucket = invalid.entries[0].buckets[0].clone();
+        invalid.entries[0].buckets.push(bucket);
+        assert!(validate_model(&invalid).is_err());
+
+        let mut invalid = state.clone();
+        invalid.pruning_day += BUCKET_HORIZON_DAYS;
+        assert!(validate_model(&invalid).is_err());
+
+        let mut invalid = state.clone();
+        invalid.entries[0].prediction.0 += 1;
+        assert!(validate_model(&invalid).is_err());
+
+        let mut invalid = state.clone();
+        invalid.receipts.push(invalid.receipts[0].clone());
+        assert!(validate_model(&invalid).is_err());
+
+        let mut invalid = batch;
+        invalid.aggregates[0].observation_count = 0;
+        assert!(invalid.validate(at).is_err());
+        assert!(validate_bucket(&DayBucket(1, 0, 1, DAY_MS)).is_err());
+    }
+
+    #[test]
+    fn measurement_and_batch_validation_reject_invalid_envelopes() {
+        let at = 1_790_208_000_000;
+        let row = observation("exec-a", at, 500);
+        let artifact = MeasurementArtifact {
+            version: VERSION,
+            scope: scope(),
+            run_id: "123456789".into(),
+            run_attempt: 1,
+            observations: vec![row.clone()],
+            preparation_observations: Vec::new(),
+        };
+
+        let mut invalid = artifact.clone();
+        invalid.version = VERSION + 1;
+        assert!(invalid.validate().is_err());
+
+        let mut invalid = artifact.clone();
+        invalid.observations = vec![row.clone(); MAX_BATCH_COUNT as usize + 1];
+        assert!(invalid.validate().is_err());
+
+        let mut invalid = artifact;
+        invalid.observations.push(row);
+        assert!(invalid.validate().is_err());
+
+        let batch = compile_batch(
+            scope(),
+            "123456789".into(),
+            1,
+            at,
+            &[observation("exec-b", at, 500)],
+        )
+        .unwrap();
+        let mut invalid = batch.clone();
+        invalid.version = VERSION + 1;
+        assert!(invalid.validate(at).is_err());
+
+        let mut invalid = batch.clone();
+        invalid.produced_at_ms -= BATCH_MAX_AGE_MS;
+        assert!(invalid.validate(at).is_err());
+
+        let mut invalid = batch.clone();
+        invalid.batch_id.clear();
+        assert!(invalid.validate(at).is_err());
+
+        let mut invalid = batch;
+        invalid.aggregates.clear();
+        assert!(invalid.validate(at).is_err());
+    }
+
+    #[test]
+    fn bounded_artifact_reader_rejects_oversize_input() {
+        let path = std::env::temp_dir().join(format!("nanoom-artifact-{}", std::process::id()));
+        std::fs::write(&path, b"too large").unwrap();
+        let result = read_bounded(&path, 2);
+        std::fs::remove_file(path).unwrap();
+        assert!(result.unwrap_err().contains("artifact exceeds 0 MiB"));
+    }
+
+    #[test]
+    fn model_bundle_rejects_wrong_version_and_duplicate_scopes() {
+        let at = 1_790_208_000_000;
+        let batch = compile_batch(
+            scope(),
+            "123456789".into(),
+            1,
+            at,
+            &[observation("exec-a", at, 500)],
+        )
+        .unwrap();
+        let (state, _) = apply_batch(None, &batch, at).unwrap();
+        let bundle = ModelStateBundle {
+            version: VERSION,
+            states: vec![state.clone()],
+        };
+        assert!(bundle.validate().is_ok());
+
+        let mut invalid = bundle.clone();
+        invalid.version = VERSION + 1;
+        assert!(invalid.validate().is_err());
+
+        let mut invalid = bundle;
+        invalid.states.push(state);
+        assert!(invalid.validate().is_err());
+    }
+
+    #[test]
     fn conflicting_execution_and_duplicate_aggregate_rows_are_rejected() {
         let at = 1_790_208_000_000;
         let rows = [observation("same", at, 1), observation("same", at, 2)];

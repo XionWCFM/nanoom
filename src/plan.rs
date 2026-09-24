@@ -694,6 +694,12 @@ fn required_string(value: &Value, field: &str, group: &str) -> Result<String> {
 }
 
 fn workspace_relative_path(path: &str, cwd: &Path, repo_root: &Path) -> Result<String> {
+    if path.contains('\\') && !Path::new(path).is_absolute() {
+        return Err(invalid(format!(
+            "Plan item path '{}' is not a safe relative path",
+            path
+        )));
+    }
     let path = Path::new(path);
     let relative = if path.is_absolute() {
         path.strip_prefix(cwd)
@@ -704,6 +710,14 @@ fn workspace_relative_path(path: &str, cwd: &Path, repo_root: &Path) -> Result<S
                     path.display()
                 ))
             })?
+    } else if let Ok(workspace_path) = path.strip_prefix(cwd) {
+        workspace_path
+    } else if let Some(workspace_root) = cwd
+        .strip_prefix(repo_root)
+        .ok()
+        .filter(|prefix| !prefix.as_os_str().is_empty())
+    {
+        path.strip_prefix(workspace_root).unwrap_or(path)
     } else {
         path
     };
@@ -1331,23 +1345,44 @@ mod tests {
         });
         assert!(context.validate().is_err());
 
+        let repo_root = std::env::temp_dir().join("nanoom-plan-path-test");
+        let cwd = repo_root.join(".fixture");
+        let outside = std::env::temp_dir()
+            .join("nanoom-plan-path-outside")
+            .to_string_lossy()
+            .into_owned();
         for value in [
-            "/outside",
+            outside.as_str(),
             "../escape",
             "packages/../escape",
             "packages\\escape",
         ] {
             assert!(
-                workspace_relative_path(value, Path::new("/repo"), Path::new("/repo")).is_err()
+                workspace_relative_path(value, &cwd, &repo_root).is_err(),
+                "{value}"
             );
         }
+        assert_eq!(workspace_relative_path(".", &cwd, &repo_root).unwrap(), ".");
         assert_eq!(
-            workspace_relative_path(".", Path::new("/repo"), Path::new("/repo")).unwrap(),
-            "."
+            workspace_relative_path(
+                &cwd.join("packages/pkg").to_string_lossy(),
+                &cwd,
+                &repo_root
+            )
+            .unwrap(),
+            "packages/pkg"
         );
         assert_eq!(
-            workspace_relative_path("/repo/packages/pkg", Path::new("/repo"), Path::new("/repo"))
-                .unwrap(),
+            workspace_relative_path(".fixture/packages/pkg", &cwd, &repo_root).unwrap(),
+            "packages/pkg"
+        );
+        assert_eq!(
+            workspace_relative_path(
+                ".fixture/packages/pkg",
+                Path::new(".fixture"),
+                Path::new(".fixture")
+            )
+            .unwrap(),
             "packages/pkg"
         );
         assert!(optional_usize(&serde_json::json!({"shard":"one"}), "shard").is_err());
