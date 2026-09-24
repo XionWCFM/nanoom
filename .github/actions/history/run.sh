@@ -196,9 +196,9 @@ else
   echo "result=$result" >> "$GITHUB_OUTPUT"
   if [[ "$publish" == true ]]; then echo "upload-started=$(date +%s)" >> "$GITHUB_OUTPUT"; fi
   printf 'Final JSON\n%s\n' "$result"
-  { echo '### nanoom history'; echo; echo "PredictionState v3 compilation finished with status `$(jq -r .status <<<"$cli_result")`."; } >> "$GITHUB_STEP_SUMMARY"
+  { echo '### nanoom history'; echo; printf 'PredictionState v3 compilation finished with status `%s`.\n' "$(jq -r .status <<<"$cli_result")"; } >> "$GITHUB_STEP_SUMMARY"
   exit 0
 fi
 echo "result=$result" >> "$GITHUB_OUTPUT"
 printf 'Final JSON\n%s\n' "$result"
-{ echo '### nanoom history'; echo; echo "`$SCHEDULER` timing lifecycle completed."; } >> "$GITHUB_STEP_SUMMARY"
+{ echo '### nanoom history'; echo; printf '`%s` timing lifecycle completed.\n' "$SCHEDULER"; } >> "$GITHUB_STEP_SUMMARY"
