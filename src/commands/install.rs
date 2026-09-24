@@ -1,7 +1,7 @@
 use crate::config::Config;
 use crate::error::{Error, Result};
 use clap::Args;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tokio::process::Command;
 
 #[derive(Args, Debug, Clone)]
@@ -9,8 +9,19 @@ pub struct InstallArgs {
     #[arg(long, help = "Package manager to use (auto, pnpm, yarn, npm)")]
     pub package_manager: Option<String>,
 
-    #[arg(long, help = "Install these workspaces and their dependency closure")]
+    #[arg(
+        long,
+        conflicts_with = "filter_file",
+        help = "Install these workspaces and their dependency closure"
+    )]
     pub filter: Vec<String>,
+
+    #[arg(
+        long,
+        conflicts_with = "filter",
+        help = "File with a JSON string array of workspace filters for a planned assignment"
+    )]
+    pub filter_file: Option<PathBuf>,
 
     #[arg(long, help = "Output a JSON result")]
     pub json: bool,
@@ -22,6 +33,15 @@ pub async fn execute(
     base_cwd: &std::path::Path,
 ) -> Result<()> {
     let cwd = base_cwd;
+    if args.filter_file.is_some() && !args.filter.is_empty() {
+        return Err(Error::ConfigValidation(
+            "--filter and --filter-file cannot be used together".into(),
+        ));
+    }
+    let filters = match &args.filter_file {
+        Some(path) => read_filter_file(cwd, path)?,
+        None => args.filter,
+    };
 
     let pm = detect_package_manager(cwd, args.package_manager.as_deref())?;
     eprintln!("◆ nanoom install");
@@ -32,8 +52,8 @@ pub async fn execute(
     // when packages do not have their own lockfile. Always install the root;
     // the opt-in flag retains the legacy per-workspace behavior for projects
     // that explicitly need it.
-    if !args.filter.is_empty() {
-        let filters = dedupe(&args.filter);
+    if !filters.is_empty() {
+        let filters = dedupe(&filters);
         if pm == "yarn" && is_yarn_berry(cwd) {
             let root = root_workspace_name(cwd)?;
             let command_args = yarn_focused_args(&root, &filters);
@@ -92,6 +112,39 @@ pub async fn execute(
         );
     }
     Ok(())
+}
+
+fn read_filter_file(cwd: &Path, path: &Path) -> Result<Vec<String>> {
+    let path = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        cwd.join(path)
+    };
+    let bytes = std::fs::read(&path)?;
+    let value: serde_json::Value = serde_json::from_slice(&bytes)?;
+    let filters = value.as_array().ok_or_else(|| {
+        Error::ConfigValidation("--filter-file must contain a JSON string array".into())
+    })?;
+    if filters.is_empty() {
+        return Err(Error::ConfigValidation(
+            "--filter-file must contain at least one workspace filter".into(),
+        ));
+    }
+    filters
+        .iter()
+        .map(|filter| {
+            filter
+                .as_str()
+                .filter(|filter| !filter.trim().is_empty() && !filter.chars().any(char::is_control))
+                .map(str::to_owned)
+                .ok_or_else(|| {
+                    Error::ConfigValidation(
+                        "--filter-file entries must be non-empty strings without control characters"
+                            .into(),
+                    )
+                })
+        })
+        .collect()
 }
 
 fn dedupe(filters: &[String]) -> Vec<String> {
@@ -490,6 +543,7 @@ mod tests {
             InstallArgs {
                 package_manager: Some("yarn".into()),
                 filter: vec![],
+                filter_file: None,
                 json: true,
             },
             &config,
@@ -522,6 +576,7 @@ mod tests {
                 InstallArgs {
                     package_manager: Some(manager.into()),
                     filter: vec!["@repo/app".into(), "@repo/lib".into()],
+                    filter_file: None,
                     json: true,
                 },
                 &config,
@@ -534,6 +589,7 @@ mod tests {
             InstallArgs {
                 package_manager: Some("npm".into()),
                 filter: vec!["@repo/app".into()],
+                filter_file: None,
                 json: true,
             },
             &config,

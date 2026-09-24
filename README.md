@@ -43,6 +43,7 @@ nanoom plan select --input <file> --reference <file> --group <name>
 nanoom run <group> <task> [--filter <workspace>] [--all]
            [--shard N --total-shards N] [--continue-on-error] [--json]
 nanoom install [--package-manager auto|pnpm|yarn|npm] [--filter <workspace>]...
+              [--filter-file <file>]
 nanoom history --input <sample-or-history.json>... --output <history.json>
 nanoom status <job,...> --results job=status,... [--json]
 nanoom schema [--output <file>]
@@ -167,6 +168,8 @@ nanoom plan select --input plan-v1.json --reference plan-reference.json \
 ```
 
 `selected/assignment.json`에는 검증된 assignment context가, `selected/paths.txt`에는 sparse checkout 경로가 기록됩니다. selector는 계획 파일의 raw bytes SHA-256, schema, repository/workflow/run/head를 검증합니다. 재실행은 같은 run의 이전 producer attempt(`producerAttempt <= current.attempt`)만 재사용할 수 있으며 reference의 `current` identity는 실행 중인 caller가 제공해야 합니다. 각 group의 compact matrix는 최대 256 assignment, 전체 결과는 UTF-16 인코딩 1 MiB 이하입니다. 이를 넘으면 group과 이유를 출력하고 실패합니다. no-change는 assignment 0개인 정상 Plan입니다. 기존 `affected --json` 상세 report와 bounded Plan output은 함께 요청할 수 없습니다. Artifact 업로드와 checkout/install/run 연결은 별도 후속 단계입니다.
+
+Planned install은 `nanoom install --filter-file FILE`로 non-empty JSON string array를 전달할 수 있습니다. 상대 경로는 working directory 기준입니다. JSON이 아니거나 배열이 아닌 값, 문자열이 아닌 값, 빈 문자열, 제어문자는 package manager를 실행하기 전에 오류가 됩니다. 기존 `--filter`와 동시 사용도 거부합니다. 두 옵션을 생략한 standalone `nanoom install`은 계속 root 전체 설치를 수행합니다.
 
 ```yaml
 - id: affected
