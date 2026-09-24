@@ -52,7 +52,7 @@ if [[ "$static_plan" == true ]]; then
 fi
 
 run_item() {
-  local item=$1 group task name cli_result
+  local item=$1 group task name cli_result observed_at_ms execution_id
   group=$(jq -r --arg fallback "$GROUP" '.group // $fallback' <<<"$item"); task=$(jq -er .task <<<"$item"); name=$(jq -er .name <<<"$item")
   local args=(-C "$CWD" run "$group" "$task" --all --filter "$name" --json)
   [[ -n $(jq -r '.shard // empty' <<<"$item") ]] && args+=(--shard "$(jq -r .shard <<<"$item")" --total-shards "$(jq -r .totalShards <<<"$item")")
@@ -69,9 +69,11 @@ run_item() {
   if cli_result=$(nanoom "${args[@]}"); then
     if jq -e --arg name "$name" '(.executions | type) == "array" and ([.executions[].workspace] | index($name) != null)' <<<"$cli_result" >/dev/null; then
       if [[ "$static_plan" == true ]]; then
-        detail=$(jq -cn --argjson item "$item" --arg command "$ACTION_COMMAND" --argjson cli "$cli_result" '{status:"success",item:$item,command:$command,cli:$cli}')
+        observed_at_ms=$(($(date +%s) * 1000))
+        execution_id=$(jq -cn --arg run "$RUN_ID" --arg attempt "$RUN_ATTEMPT" --arg job "${GITHUB_JOB:-run}" --arg matrix "${MATRIX_INDEX:-0}" --arg index "${ACTION_ITEM_INDEX:-0}" --arg name "$name" --arg task "$task" '[$run,$attempt,$job,$matrix,$index,$name,$task] | tojson')
+        execution=$(jq -ce --arg name "$name" --arg executionId "$execution_id" --argjson observedAtMs "$observed_at_ms" '[.executions[] | select(.workspace == $name) | {executionId:$executionId,observedAtMs:$observedAtMs,workspace,runner,durationMs}] | first' <<<"$cli_result")
+        detail=$(jq -cn --argjson item "$item" --arg command "$ACTION_COMMAND" --argjson cli "$cli_result" --argjson execution "$execution" '{status:"success",item:$item,command:$command,cli:$cli,execution:$execution}')
         printf '%s\n' "$detail" >> "$DETAIL_FILE"
-        execution=$(jq -ce --arg name "$name" '[.executions[] | select(.workspace == $name) | {workspace,runner,durationMs}] | first' <<<"$cli_result")
         jq -cn --argjson item "$item" --argjson execution "$execution" '{status:"success",item:$item,execution:$execution}'
       else
         jq -cn --argjson item "$item" --arg command "$ACTION_COMMAND" --argjson cli "$cli_result" '{status:"success",item:$item,command:$command,cli:$cli}'
@@ -99,6 +101,7 @@ run_item() {
 if [[ "$static_plan" == true ]]; then
   completed_count=0; item_index=0
   while IFS= read -r item; do
+    ACTION_ITEM_INDEX=$item_index
     item_result=$(run_item "$item")
     if [[ $(jq -r .status <<<"$item_result") == success ]]; then
       completed_count=$((completed_count + 1))
@@ -121,17 +124,25 @@ if [[ "$static_plan" == true ]]; then
 
   elapsed=$(( $(date +%s) - started ))
   result=$(jq -cn --arg group "$GROUP" --arg assignmentId "$ASSIGNMENT_ID" --arg detailFile "$DETAIL_FILE" --argjson planned "$planned_count" --argjson executed "$completed_count" --argjson elapsed "$elapsed" --arg artifactVersion "$artifact_version" --arg scheduler "$SCHEDULER" '{status:"success",group:$group,assignmentId:$assignmentId,plannedItemCount:$planned,executedItemCount:$executed,detailFile:$detailFile,elapsedSeconds:$elapsed} + (if $scheduler == "artifact" then {artifactVersion:$artifactVersion} else {} end)')
-  echo "result=$result" >> "$GITHUB_OUTPUT"
   echo "detail-file=$DETAIL_FILE" >> "$GITHUB_OUTPUT"
+  measurement_status=not_requested
   if [[ "$SCHEDULER" == artifact ]]; then
-    sample_dir="$RUNNER_TEMP/nanoom-timing"; mkdir -p "$sample_dir"
-    sample_name=$(printf '%s-%s' "${GITHUB_JOB:-run}" "$ASSIGNMENT_ID" | tr -c 'A-Za-z0-9._-' '-' | cut -c1-80)
-    sample_path="$sample_dir/$sample_name.json"
-    jq -s --arg group "$GROUP" --arg environment "$TIMING_ENVIRONMENT" --arg assignmentId "$ASSIGNMENT_ID" --argjson predicted "$(jq -c '.predictedDurationMs // 0' "$ASSIGNMENT_FILE")" --argjson checkoutPathCount "$(jq '.checkoutPaths | length' "$ASSIGNMENT_FILE")" '{batch:{assignmentId:$assignmentId,predictedDurationMs:$predicted,checkoutPathCount:$checkoutPathCount},samples:[.[] | select(.status == "success") | .item as $item | .cli.executions[] | {group:$group,workspace:.workspace,task:$item.task,shard:$item.shard,totalShards:$item.totalShards,runner:.runner,environment:$environment,durationMs:.durationMs} | with_entries(select(.value != null))]}' "$DETAIL_FILE" > "$sample_path"
-    echo "sample-path=$sample_path" >> "$GITHUB_OUTPUT"
-    echo "sample-name=nanoom-timing-sample-v2-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$sample_name" >> "$GITHUB_OUTPUT"
-    echo "upload-started=$(date +%s)" >> "$GITHUB_OUTPUT"
+    measurement_status=skipped
+    if identity=$(nanoom_prediction_identity "${GITHUB_EVENT_NAME:-}" "$WORKFLOW_REF" "${GITHUB_REPOSITORY_ID:-}" "${GITHUB_SERVER_URL:-}" "${GITHUB_REF:-}" "${PR_NUMBER:-}" "${PR_HEAD_REPOSITORY_ID:-}" "${PR_HEAD_REF:-}" "${PR_BASE_REF:-}"); then
+      sample_dir="$RUNNER_TEMP/nanoom-timing"; mkdir -p "$sample_dir"
+      sample_name=$(printf '%s-%s' "${GITHUB_JOB:-run}" "$ASSIGNMENT_ID" | tr -c 'A-Za-z0-9._-' '-' | cut -c1-80)
+      sample_path="$sample_dir/$sample_name.json"
+      jq -sn --argjson identity "$identity" --arg group "$GROUP" --arg runner "$TOOL" --arg environment "$TIMING_ENVIRONMENT" --arg run "$RUN_ID" --argjson attempt "$RUN_ATTEMPT" --slurpfile details "$DETAIL_FILE" '{version:3,scope:($identity + {group:$group,taskRunner:$runner,timingEnvironment:$environment}),runId:$run,runAttempt:$attempt,observations:[$details[] | select(.status == "success") | .item as $item | .execution as $execution | {executionId:$execution.executionId,observedAtMs:$execution.observedAtMs,group:$group,workspace:$execution.workspace,task:$item.task,shard:($item.shard // null),totalShards:($item.totalShards // null),taskRunner:$runner,timingEnvironment:$environment,durationMs:(if $execution.durationMs > 0 then $execution.durationMs else 1 end)}]}' > "$sample_path"
+      echo "sample-path=$sample_path" >> "$GITHUB_OUTPUT"
+      echo "sample-name=nanoom-measurement-v3-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$sample_name" >> "$GITHUB_OUTPUT"
+      echo "upload-started=$(date +%s)" >> "$GITHUB_OUTPUT"
+      measurement_status=prepared
+    else
+      echo 'could not construct a branch or pull-request measurement scope; successful tasks are unchanged and no timing artifact will be uploaded' >&2
+    fi
   fi
+  result=$(jq -c --arg measurementStatus "$measurement_status" '. + {measurementArtifactStatus:$measurementStatus}' <<<"$result")
+  echo "result=$result" >> "$GITHUB_OUTPUT"
   printf '  Result\n    ✓ items=%s; elapsed=%ss\n  Final JSON\n    %s\n' "$completed_count" "$elapsed" "$result"
   { echo '### nanoom run'; echo; echo "**Result:** $completed_count assignment items succeeded in ${elapsed}s."; echo; echo "Detailed result: \`$DETAIL_FILE\`."; } >> "$GITHUB_STEP_SUMMARY"
   exit 0
@@ -185,10 +196,5 @@ fi
 
 elapsed=$(( $(date +%s) - started )); matrix_json=$(jq -c '{assignmentId,agentId,runId,mode,predictedDurationMs,runnerLabels,timingEnvironment,items} | with_entries(select(.value != null))' <<<"$entry")
 result=$(jq -cn --argjson matrix "$matrix_json" --argjson results "$results" --argjson elapsed "$elapsed" --arg artifactVersion "$artifact_version" --arg scheduler "$SCHEDULER" '{status:"success",reason:"executed assignment items in order",matrix:$matrix,results:$results,elapsedSeconds:$elapsed} + (if $scheduler == "artifact" then {artifactVersion:$artifactVersion} else {} end)'); echo "result=$result" >> "$GITHUB_OUTPUT"
-if [[ "$SCHEDULER" == artifact ]]; then
-  sample_dir="$RUNNER_TEMP/nanoom-timing"; mkdir -p "$sample_dir"; assignment_id=$(jq -r '.assignmentId // "legacy"' <<<"$entry"); sample_name=$(printf '%s-%s' "${GITHUB_JOB:-local}" "$assignment_id" | tr -c 'A-Za-z0-9._-' '-' | cut -c1-80); sample_path="$sample_dir/$sample_name.json"
-  jq -n --arg group "$GROUP" --arg environment "$TIMING_ENVIRONMENT" --argjson entry "$entry" --argjson results "$results" '{batch:{assignmentId:($entry.assignmentId // "legacy"),predictedDurationMs:($entry.predictedDurationMs // 0),checkoutPathCount:($entry.checkoutPathCount // 0)},samples:[$results[] | .item as $item | .cli.executions[] | {group:$group,workspace:.workspace,task:$item.task,shard:$item.shard,totalShards:$item.totalShards,runner:.runner,environment:$environment,durationMs:.durationMs} | with_entries(select(.value != null))]}' > "$sample_path"
-  echo "sample-path=$sample_path" >> "$GITHUB_OUTPUT"; echo "sample-name=nanoom-timing-sample-v2-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$sample_name" >> "$GITHUB_OUTPUT"; echo "upload-started=$(date +%s)" >> "$GITHUB_OUTPUT"
-fi
 printf '  Result\n    ✓ items=%s; elapsed=%ss\n  Final JSON\n    %s\n' "$(jq length <<<"$results")" "$elapsed" "$result"
 { echo '### nanoom run'; echo; echo "**Result:** $(jq length <<<"$results") assignment items succeeded in ${elapsed}s."; } >> "$GITHUB_STEP_SUMMARY"

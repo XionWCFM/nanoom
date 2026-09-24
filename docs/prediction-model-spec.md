@@ -1,6 +1,6 @@
 # PredictionState v3 — 실행 이력 대신 예측 상태 저장
 
-상태: 구현 전 계약. 이전의 원본 sample 7개/128 MiB snapshot 설계를 이 문서로 교체한다. 기존 배포 코드가 바뀌었다는 뜻은 아니다. [전체 계획](../IMPLEMENTATION_PLAN.md), [서버](history-server-spec.md), [OpenAPI](api/history.openapi.yaml)와 함께 적용한다.
+상태: A4 local Rust/Action 구현 및 회귀가 통과한 branch 후보 계약. Official OpenAPI validator는 패키지 DNS 문제로 미실시다. Hosted GitHub, GHES, released consumer, 선택적 서버 증거는 별도다. 이전 원본 sample 7개/128 MiB snapshot 설계는 사용하지 않는다. [전체 계획](../IMPLEMENTATION_PLAN.md), [서버](history-server-spec.md), [OpenAPI](api/history.openapi.yaml)와 함께 적용한다.
 
 ## 1. 목적과 데이터 분리
 
@@ -12,6 +12,8 @@ Nanoom이 보존할 것은 다음 CI의 배분에 필요한 예측값과 이를 
 | ModelState v3 | history updater / 선택적 Rust server | key별 날짜 집계, 계산된 예측값, 작은 batch receipt | artifact 30일 / S3 현재 scope 객체 |
 | 현재 attempt 측정 | history job | 실행 ID, 실제 duration, 시각, provenance | 임시 sample artifact 1일, 학습 후 장기 이력에 복사하지 않음 |
 | Plan v1 | prepare/install/run | 실제 실행할 작업과 checkout 계획 | 기존 30일, 변경 없음 |
+
+Artifact file envelopes are `MeasurementArtifact {version, scope, runId, runAttempt, observations}`, `ModelStateBundle {version, states}`, and `PredictionArtifact {version, predictions}`. A prediction entry links one scope's compact table to the canonical ModelStateBundle name and digest. The publish marker is uploaded last; planning downloads that marker only.
 
 동일 key는 하루에 1번이든 10만 번이든 **날짜별 count와 totalDurationMs만 증가**한다. raw duration 배열, command/log, 각 실행의 SHA·workflow metadata를 model에 반복 보관하지 않는다. scope에 공통인 정보는 envelope에 한 번만 저장한다.
 
@@ -76,7 +78,7 @@ PredictionTable rows는 `[keyId, estimatedMs, observationCount, lastObservedAtMs
 기본 read budget:
 
 - prediction artifact 압축 전 JSON 최대 8 MiB, archive 최대 4 MiB.
-- affected의 이력 조회·다운로드·파싱 전체 budget 3초, scope별 후보 body 다운로드 최대 2개, 모든 scope의 수신 archive 합계 최대 8 MiB. metadata·재시도도 같은 deadline에 포함한다. scope마다 3초를 새로 부여하지 않는다.
+- affected의 이력 조회·다운로드·파싱 전체 budget 3초, scope별 후보 body 다운로드 최대 2개, 모든 scope의 metadata+archive 수신 합계 최대 8 MiB. metadata·재시도도 같은 deadline에 포함한다. API 요청, archive unzip, bounded JSON/JQ/CLI parse는 남은 deadline으로 취소한다. scope마다 3초를 새로 부여하지 않는다.
 - artifact metadata의 size를 먼저 확인하고, 스트리밍 수신 크기와 unzip 후 JSON 크기를 다시 제한한다. Content-Length만 신뢰하지 않는다. budget 초과는 즉시 warning/cold다.
 - model JSON 최대 16 MiB, aggregate batch JSON 최대 16 MiB. model은 planning critical path에서 받지 않는다.
 - task/fallback/preparation 전체 key 합계 최대 50,000개. 7개 날짜 bucket과 4096 receipt도 최종 byte budget에 포함한다. 만료/prune 후 검사하고, 초과하면 저장하지 않는다. byte budget이 key 개수보다 먼저 찰 수 있다.

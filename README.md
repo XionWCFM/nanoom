@@ -44,7 +44,9 @@ nanoom run <group> <task> [--filter <workspace>] [--all]
            [--shard N --total-shards N] [--continue-on-error] [--json]
 nanoom install [--package-manager auto|pnpm|yarn|npm] [--filter <workspace>]...
               [--filter-file <file>]
-nanoom history --input <sample-or-history.json>... --output <history.json>
+nanoom history --input <measurement-v3.json>... --model-output <model-v3.json>
+               --prediction-output <prediction-v3.json> --model-artifact-name <name>
+               --run-id <id> --run-attempt <n>
 nanoom status <job,...> --results job=status,... [--json]
 nanoom schema [--output <file>]
 ```

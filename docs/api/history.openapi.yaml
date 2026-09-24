@@ -609,6 +609,114 @@ components:
       description: scopeId = lowercase SHA256(RFC8785 JCS(this object)); no Unicode normalization. The
         URL repositoryKey must match. PR head/base refs are full refs/heads/... values. Schema-independent
         semantic validation rejects dot path segments and invalid Git refs.
+    SuccessfulObservation:
+      type: object
+      additionalProperties: false
+      required:
+      - executionId
+      - observedAtMs
+      - group
+      - workspace
+      - task
+      - taskRunner
+      - timingEnvironment
+      - durationMs
+      properties:
+        executionId:
+          type: string
+          minLength: 1
+          maxLength: 1024
+          pattern: ^[^\u0000-\u001f\u007f]+$
+        observedAtMs:
+          $ref: '#/components/schemas/EpochMs'
+        group:
+          type: string
+          minLength: 1
+          maxLength: 128
+        workspace:
+          type: string
+          minLength: 1
+          pattern: ^[^\u0000-\u001f\u007f]+$
+        task:
+          type: string
+          minLength: 1
+          pattern: ^[^\u0000-\u001f\u007f]+$
+        shard:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        totalShards:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        taskRunner:
+          type: string
+          enum: [pnpm, yarn, npm, nx, turbo]
+        timingEnvironment:
+          type: string
+          minLength: 1
+          maxLength: 256
+        durationMs:
+          type: integer
+          minimum: 1
+          maximum: 604800000
+      description: Successful task execution for the current attempt. shard and totalShards are both
+        omitted or a complete 1-based tuple. Scope group/runner/environment must match. Input artifacts
+        older than seven days or more than five minutes in the future are rejected by runtime validation.
+      examples:
+      - executionId: '123456789:1:build:0:@fixture/web:test'
+        observedAtMs: 1790208000000
+        group: ci
+        workspace: '@fixture/web'
+        task: test
+        taskRunner: yarn
+        timingEnvironment: linux-x64-node24
+        durationMs: 12000
+    MeasurementArtifact:
+      type: object
+      additionalProperties: false
+      required: [version, scope, runId, runAttempt, observations]
+      properties:
+        version:
+          const: 3
+        scope:
+          $ref: '#/components/schemas/Scope'
+        runId:
+          type: string
+          pattern: ^[1-9][0-9]{0,19}$
+        runAttempt:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        observations:
+          type: array
+          items:
+            $ref: '#/components/schemas/SuccessfulObservation'
+          minItems: 1
+          maxItems: 50000
+      description: Current-attempt successful measurements only. Retain for one day and download only
+        in the history updater. Maximum canonical JSON size is 16 MiB. Older/versionless artifacts are
+        ignored and never converted from raw history.
+      examples:
+      - version: 3
+        scope:
+          repositoryKey: github-12345
+          workflowPath: .github/workflows/ci.yml
+          ref: {kind: push, ref: refs/heads/main}
+          group: ci
+          taskRunner: yarn
+          timingEnvironment: linux-x64-node24
+        runId: '123456789'
+        runAttempt: 1
+        observations:
+        - executionId: '123456789:1:build:0:@fixture/web:test'
+          observedAtMs: 1790208000000
+          group: ci
+          workspace: '@fixture/web'
+          task: test
+          taskRunner: yarn
+          timingEnvironment: linux-x64-node24
+          durationMs: 12000
     Health:
       type: object
       additionalProperties: false
@@ -994,7 +1102,38 @@ components:
         - - 1368e6bbb03a78c15d423d23afac569f4f8bfd6e1b10a38b9f4c8e647177b9b5
           - da6555f1a7f41374048173faaec4116a03740d83fd9114ba8880aa4dce8fe4c9
           - 1790208000000
-    PredictionArtifact:
+    ModelStateBundle:
+      type: object
+      additionalProperties: false
+      required: [version, states]
+      properties:
+        version:
+          const: 3
+        states:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModelState'
+          maxItems: 50000
+      description: Artifact wire envelope used by nanoom history. Canonical JSON is bounded to 16 MiB
+        across all scopes, entries and receipts. The SHA-256 pointer in PredictionArtifact covers this
+        bundle, not an individual ModelState.
+      examples:
+      - version: 3
+        states:
+        - version: 3
+          scope:
+            repositoryKey: github-12345
+            workflowPath: .github/workflows/ci.yml
+            ref: {kind: push, ref: refs/heads/main}
+            group: ci
+            taskRunner: yarn
+            timingEnvironment: linux-x64-node24
+          updatedAtMs: 1790208000000
+          pruningDay: 20691
+          batchAcceptanceAfterMs: 1789603200000
+          entries: []
+          receipts: []
+    PredictionArtifactEntry:
       type: object
       additionalProperties: false
       required:
@@ -1016,9 +1155,8 @@ components:
               maxLength: 256
             sha256:
               $ref: '#/components/schemas/Digest'
-      description: GitHub artifact envelope. Upload model first and this envelope last as publish marker.
-        Planner reads table only; updater alone follows modelArtifact. 8 MiB uncompressed JSON / 4 MiB
-        archive cap.
+      description: One scope entry in the PredictionArtifact v3 bundle. Planner reads table only; updater
+        alone follows modelArtifact.
       examples:
       - table:
           version: 3
@@ -1041,6 +1179,42 @@ components:
         modelArtifact:
           name: nanoom-model-v3-123456789-1
           sha256: ada20f873e74812b9e056d9134c73ae06102c808739d5fd1c73f0b40e800302b
+    PredictionArtifact:
+      type: object
+      additionalProperties: false
+      required: [version, predictions]
+      properties:
+        version:
+          const: 3
+        predictions:
+          type: array
+          items:
+            $ref: '#/components/schemas/PredictionArtifactEntry'
+          maxItems: 50000
+      description: GitHub publish-marker envelope uploaded after ModelStateBundle. The planner downloads
+        this artifact only. Maximum 8 MiB uncompressed JSON and 4 MiB archive.
+      examples:
+      - version: 3
+        predictions:
+        - table:
+            version: 3
+            scope:
+              repositoryKey: github-12345
+              workflowPath: .github/workflows/ci.yml
+              ref: {kind: push, ref: refs/heads/main}
+              group: ci
+              taskRunner: yarn
+              timingEnvironment: linux-x64-node24
+            modelUpdatedAtMs: 1790208000000
+            rows:
+            - - 8e3a060d9912f5f4230ab9f0a25df7fe50c4d9814cca14ec6f20f795a7e0fcda
+              - 12000
+              - 1
+              - 1790208000000
+              - 1792800000000
+          modelArtifact:
+            name: nanoom-model-v3-123456789-1
+            sha256: ada20f873e74812b9e056d9134c73ae06102c808739d5fd1c73f0b40e800302b
 externalDocs:
   description: Implementation and operational contract
   url: ../history-server-spec.md
@@ -1071,7 +1245,7 @@ x-runtime-limits:
   predictionJsonBytes: 8388608
   predictionArchiveBytes: 4194304
   plannerHistoryBudgetMs: 3000
-  plannerMaxArchiveBytesCombined: 8388608
+  plannerMaxReceivedBytesCombined: 8388608
   dataPlaneConcurrencyPerReplica: 2
   casAttempts: 8
   writeDeadlineSeconds: 20

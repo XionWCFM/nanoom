@@ -15,10 +15,11 @@
 - [x] A1 identity/fallback/empty/no-execution 회귀와 수정 — 아래 A1 실행 기록 참조.
 - [x] A2 Plan v1 CLI·compact matrix·provenance/rerun·planned install filter-file 검증 — 아래 A2 실행 및 follow-up 기록 참조.
 - [x] A3 prepare·sparse checkout·install/run·GHES local contracts — 아래 A3 실행 기록 참조. Hosted GitHub/GHES transport는 별도 미실시.
-- [ ] A4 PredictionState v3·compile/apply/project·작은 prediction artifact·bounded lookup.
+- [x] A4 PredictionState v3·compile/apply/project·분리된 artifact·bounded lookup의 local Rust/Action 구현과 회귀.
 - [ ] A5 preparation telemetry·automatic k·determinism·대규모 benchmark.
 - [ ] A6 examples·requiredJobs·계획 기반 completion gate·96% coverage 기준.
-- [ ] Local fmt/lint/tests/schema/Action/실제 Git 및 focused-install 회귀.
+- [x] Local fmt/lint/tests/Action/실제 Git 및 focused-install 회귀 — A4 공통 로컬 gates 포함.
+- [ ] 현재 A4 OpenAPI 변경의 공식 schema/examples/digest 검증 — uv 설치는 PyPI DNS로 미실시.
 - [ ] Producer hosted PR CI: exact candidate SHA 기록.
 - [ ] Consumer Yarn+Turbo / pnpm+Nx: cold→warm, positive/non-skipped, selected closure.
 - [ ] Consumer no-change / task failure / unexpected skip / rerun aggregate 검증.
@@ -40,7 +41,7 @@
 - [ ] 실제 S3-compatible 제품/버전: 계약 통과 전 지원 주장 금지.
 - [ ] Released Action/CLI/server consumer: release하지 않은 후보 증거와 분리.
 
-이번 문서 단계에는 runtime 구현·서버 배포·AWS 리소스 생성·merge·release가 없다. 실제 구현 phase의 acceptance가 충족될 때만 해당 항목을 갱신한다. 증거는 명령/환경/시나리오/result/commit/run URL 및 미검증 범위를 함께 기록한다.
+runtime 구현은 A4 실행 기록을 따른다. 서버 배포·AWS 리소스 생성·merge·release는 없다. 각 phase의 증거는 명령/환경/시나리오/result/commit/run URL 및 미검증 범위를 함께 기록한다.
 
 
 ## 문서 검증 evidence — 2026-09-24
@@ -231,3 +232,30 @@ run Action 회귀는 no execution 및 task failure가 assignment를 실패시키
 미실시 및 경계: 실제 GitHub.com `upload-artifact`/`download-artifact`, GHES v3 transport, released binary/Action, hosted producer/consumer fixture, PR/run URL은 없다. `.opencode/`는 commit에 포함하지 않았다. A7에서 candidate SHA를 기록한 실제 hosted producer/fixture 경로를 확인해야 한다.
 
 다음 단계: A4의 PredictionState v3 compile/apply/project 및 prediction/model artifact separation. Plan v1/Action contract를 유지하고 shared pure aggregation부터 구현한다.
+
+## A4 실행 기록 — 2026-09-24
+
+```text
+단계: A4
+시작 HEAD: 9faa14024285e5ad5cc562d1e29e14b0bedd1389
+결과: PredictionState v3 Rust core, artifact-backed history Action 경로, CLI warm lookup regression. phase-local commit은 이 실행 기록을 포함한 구현 변경이다.
+시작 상태: tracked tree clean; 사용자 .opencode/ 미추적 1개 보존하고 stage하지 않음.
+```
+
+`MeasurementArtifact → ObservationBatch → ModelState → PredictionTable` 경로와 sorted deterministic aggregate/apply/project, duplicate receipt, expiry, PR scope, key/model/prediction/measurement byte caps를 구현했다. `affected`는 history가 assignment를 바꿀 수 있을 때만 같은 workflow/event scope의 v3 prediction artifact를 조회한다. planner는 model이나 measurements를 받지 않고, history API/archive/unzip/JSON/CLI 재계산에 하나의 3초 deadline을 전달한다. 메타데이터와 압축 파일 수신 bytes를 합산해 8 MiB에서 cold 처리하고 ZIP JSON은 각자 한도를 넘기지 못한다. upload/update 오류는 task 결과에 영향을 주지 않는 degraded 경로다.
+
+실제 CLI regression에서 PR `ScopeRef`가 OpenAPI가 요구하는 camelCase (`headRepositoryId`, `headRef`, `baseRef`)를 Rust runtime은 snake_case로만 받아 `corrupt`가 되는 불일치를 발견했다. enum variant 필드 serde를 camelCase로 맞춘 뒤 같은 v3 prediction file이 `loaded`가 되고 `pkg-a` exact row의 250 ms 추정치를 사용했다. 두 번째 item은 cold로 남았으며 source count는 exact 1/cold 1이다. 수정 전 실패와 수정 후 통과를 `affected_loads_v3_prediction_artifact_for_an_exact_task_estimate`에서 확인했다.
+
+검증:
+
+- `cargo test --locked --test plan_cli_tests affected_loads_v3_prediction_artifact_for_an_exact_task_estimate -- --nocapture` — exit 0, 1 passed. 수정 전에는 OpenAPI PR ref의 `baseRef` unknown field로 `historyStatus=corrupt`가 재현됐다.
+- `cargo test --locked --all-targets --all-features` — A4 구현과 새 scope regression 포함, exit 0, 216 passed.
+- `cargo clippy --locked --all-targets --all-features -- -D warnings` — exit 0.
+- `cargo fmt --all --check` — exit 0.
+- `bash scripts/action-contract.sh` — exit 0; assignment/history lookup/Plan/checkout/completion contracts 포함.
+- `bash scripts/history-artifact-test.sh` — exit 0; push/PR run 선택, prediction-only planning download, updater-only model download, metadata+archive 합산 byte limit, deadline cancellation, no-change metadata I/O 0회.
+- `bash scripts/assignment-action-test.sh` — exit 0.
+- `bash -n` changed Action/test scripts, Ruby/Node YAML parse, `git diff --check` — exit 0.
+- OpenAPI 공식 validator 실행은 uv 임시 cache에서도 PyPI DNS 차단으로 exit 2. 현재 환경의 Node YAML parser는 파싱했지만 공식 schema/examples/digest validation 통과로 기록하지 않는다.
+
+미실시: 실제 GitHub artifact transport, GHES, producer/consumer hosted PR, released binary, full-workflow cold→warm 성능·정확도, AWS/S3, OpenAPI 공식 validator. A7까지 hosted evidence와 runtime 성능을 완료로 표시하지 않는다. 다음 단계는 A5 preparation telemetry와 automatic assignment count다.

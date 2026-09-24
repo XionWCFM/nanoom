@@ -64,6 +64,7 @@ chmod +x "$tmp/bin/nanoom"
 export PATH="$tmp/bin:$PATH" GITHUB_ACTION_PATH="$root/.github/actions/run" GITHUB_STEP_SUMMARY="$tmp/summary" RUNNER_TEMP="$tmp/runner"
 mkdir -p "$RUNNER_TEMP"
 export GITHUB_WORKSPACE="$workspace" GITHUB_SHA="$head" REPOSITORY=owner/repo
+export GITHUB_REPOSITORY_ID=12345 GITHUB_SERVER_URL=https://github.com GITHUB_REF=refs/heads/main GITHUB_EVENT_NAME=push
 export WORKFLOW_REF=owner/repo/.github/workflows/ci.yml@refs/heads/main RUN_ID=1 RUN_ATTEMPT=1 GITHUB_RUN_ID=1 GITHUB_RUN_ATTEMPT=1 GITHUB_JOB=run MATRIX_INDEX=0
 export PLAN="$reference" ASSIGNMENT_FILE="$assignment_file" FAKE_SELECTED_ASSIGNMENT="$tmp/selected-source.json"
 export GITHUB_OUTPUT="$tmp/output" FAKE_RUN_CALLS="$tmp/run-calls" FAKE_INSTALL_CALLS="$tmp/install-calls" FAKE_FILTER_FILE="$tmp/filter-file.json"
@@ -114,9 +115,9 @@ pnpm_sample=$(sed -n 's/^sample-path=//p' "$GITHUB_OUTPUT")
 pnpm_name=$(sed -n 's/^sample-name=//p' "$GITHUB_OUTPUT")
 test "$yarn_sample" != "$pnpm_sample" && test "$yarn_name" != "$pnpm_name"
 test -s "$yarn_sample" && test -s "$pnpm_sample"
-jq -e '.samples | length == 1' "$yarn_sample" "$pnpm_sample" >/dev/null
-jq -e --arg env 'runner-labels:["linux","self-hosted"]' '.samples[0].environment == $env' "$yarn_sample" "$pnpm_sample" >/dev/null
-jq -e '.samples[0].shard == 1 and .samples[0].totalShards == 4' "$yarn_sample" "$pnpm_sample" >/dev/null
+jq -e '.version == 3 and (.observations | length == 1)' "$yarn_sample" "$pnpm_sample" >/dev/null
+jq -e --arg env 'runner-labels:["linux","self-hosted"]' '.scope.timingEnvironment == $env and .observations[0].timingEnvironment == $env' "$yarn_sample" "$pnpm_sample" >/dev/null
+jq -e '.observations[0].shard == 1 and .observations[0].totalShards == 4 and (.observations[0].executionId | length > 0)' "$yarn_sample" "$pnpm_sample" >/dev/null
 
 GITHUB_ACTION_PATH="$root/.github/actions/install"
 export GITHUB_ACTION_PATH PM=pnpm GITHUB_JOB=install SCHEDULER=off

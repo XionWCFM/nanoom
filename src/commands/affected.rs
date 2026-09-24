@@ -1,8 +1,10 @@
-use crate::affected::{calculate_with_override, generate_matrix_with_history};
+use crate::affected::calculate_with_override;
 use crate::error::Result;
 use clap::Args;
 use std::collections::HashSet;
 use std::path::PathBuf;
+
+const MAX_PREDICTION_CONTEXT_BYTES: usize = 4096;
 
 #[derive(Args, Debug, Clone)]
 pub struct AffectedArgs {
@@ -15,8 +17,25 @@ pub struct AffectedArgs {
     #[arg(long, help = "Output the canonical affected report as JSON")]
     pub json: bool,
 
-    #[arg(long, help = "Timing history JSON used for runner assignments")]
-    pub history: Option<PathBuf>,
+    #[arg(
+        long = "prediction",
+        value_name = "FILE",
+        help = "PredictionArtifact v3 JSON used for runner assignments"
+    )]
+    pub predictions: Vec<PathBuf>,
+
+    #[arg(long, requires = "predictions", help = "Prediction scope context JSON")]
+    pub prediction_context: Option<PathBuf>,
+
+    #[arg(
+        long = "history",
+        hide = true,
+        help = "Deprecated raw timing history; ignored for v3 planning"
+    )]
+    pub legacy_history: Option<PathBuf>,
+
+    #[arg(long, hide = true, value_parser = ["disabled", "fallback", "corrupt"])]
+    pub history_status: Option<String>,
 
     #[arg(
         long,
@@ -61,24 +80,74 @@ pub async fn execute(
     let timing_runner = resolve_timing_runner(cwd, &args.timing_runner)?;
     let result =
         calculate_with_override(config, cwd, args.base.as_deref(), args.head.as_deref()).await?;
-    let (history, history_status) = match args.history.as_deref() {
-        Some(path) => match crate::scheduler::TimingHistory::load(path) {
-            Ok(history) => (history, "loaded".to_string()),
-            Err(error) => {
-                eprintln!("timing history unavailable; using deterministic cold start: {error}");
-                (
-                    crate::scheduler::TimingHistory::default(),
-                    "fallback".to_string(),
-                )
+    let history_needed = result.group.values().any(|group| {
+        group.workspaces.len() > 1
+            && group
+                .distribution
+                .as_ref()
+                .is_some_and(|tier| tier.concurrency > 1)
+    });
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|error| crate::error::Error::InvalidConfig(error.to_string()))?
+        .as_millis() as u64;
+    let mut history_status = args
+        .history_status
+        .clone()
+        .unwrap_or_else(|| "disabled".into());
+    let mut prediction_index =
+        crate::prediction::PredictionIndex::new([]).map_err(crate::error::Error::InvalidConfig)?;
+    let mut prediction_context = None;
+    if history_needed {
+        if args.legacy_history.is_some() && args.predictions.is_empty() {
+            eprintln!("legacy raw timing history is ignored; using cold scheduling");
+            history_status = args
+                .history_status
+                .clone()
+                .unwrap_or_else(|| "fallback".into());
+        }
+        if !args.predictions.is_empty() && history_status != "corrupt" {
+            let bundles = args
+                .predictions
+                .iter()
+                .map(|path| {
+                    crate::prediction::PredictionArtifactBundle::load(&crate::plan::resolve_path(
+                        cwd, path,
+                    ))
+                })
+                .collect::<std::result::Result<Vec<_>, _>>();
+            match bundles.and_then(crate::prediction::PredictionIndex::new) {
+                Ok(index) if index.has_valid_rows(now_ms) => {
+                    prediction_index = index;
+                    history_status = "loaded".into();
+                    if let Some(path) = args.prediction_context.as_deref() {
+                        prediction_context = load_prediction_context(cwd, path);
+                    }
+                    if prediction_context.is_none() {
+                        eprintln!("PredictionContext is unavailable; using cold scheduling");
+                        prediction_index = crate::prediction::PredictionIndex::new([])
+                            .map_err(crate::error::Error::InvalidConfig)?;
+                        history_status = "fallback".into();
+                    }
+                }
+                Ok(_) => history_status = "fallback".into(),
+                Err(error) => {
+                    eprintln!("PredictionArtifact v3 unavailable; using cold scheduling: {error}");
+                    history_status = "corrupt".into();
+                }
             }
-        },
-        None => (
-            crate::scheduler::TimingHistory::default(),
-            "disabled".to_string(),
-        ),
-    };
-    let matrix =
-        generate_matrix_with_history(&result, &history, &timing_runner, &args.timing_environment);
+        }
+    } else {
+        history_status = "history_not_needed".into();
+    }
+    let matrix = crate::affected::generate_matrix_with_prediction_index(
+        &result,
+        &prediction_index,
+        prediction_context.as_ref(),
+        &timing_runner,
+        &args.timing_environment,
+        now_ms,
+    );
     let compact_plan = match (&args.plan_output, &args.plan_context) {
         (Some(plan_output), Some(plan_context)) => Some(crate::plan::write_affected_plan(
             &result,
@@ -145,6 +214,7 @@ pub async fn execute(
                 "matrix": matrix,
                 "scheduling": {
                     "historyStatus": history_status,
+                    "historyNeeded": history_needed,
                     "timingRunner": timing_runner,
                     "timingEnvironment": args.timing_environment,
                     "objective": ["predictedRuntimeMakespanMs", "totalCheckoutPathCount", "targetBucketRuntimeMs", "assignmentId"],
@@ -165,14 +235,10 @@ pub async fn execute(
 
     if let Some(compact_plan) = compact_plan {
         let mut compact: serde_json::Value = serde_json::from_str(&compact_plan)?;
-        compact["result"]["historyStatus"] =
-            serde_json::Value::String(if history_status == "fallback" {
-                "corrupt".into()
-            } else {
-                history_status
-            });
         compact["result"]["timingRunner"] = serde_json::Value::String(timing_runner);
         compact["result"]["timingEnvironment"] = serde_json::Value::String(args.timing_environment);
+        compact["result"]["historyStatus"] = serde_json::Value::String(history_status);
+        compact["result"]["historyNeeded"] = serde_json::Value::Bool(history_needed);
         println!("{}", serde_json::to_string(&compact)?);
         return Ok(());
     }
@@ -238,6 +304,26 @@ pub async fn execute(
     }
 
     Ok(())
+}
+
+fn load_prediction_context(
+    cwd: &std::path::Path,
+    path: &std::path::Path,
+) -> Option<crate::prediction::PredictionContext> {
+    use std::io::Read;
+
+    let mut bytes = Vec::new();
+    std::fs::File::open(crate::plan::resolve_path(cwd, path))
+        .ok()?
+        .take((MAX_PREDICTION_CONTEXT_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)
+        .ok()?;
+    if bytes.len() > MAX_PREDICTION_CONTEXT_BYTES {
+        return None;
+    }
+    let context: crate::prediction::PredictionContext = serde_json::from_slice(&bytes).ok()?;
+    context.validate().ok()?;
+    Some(context)
 }
 
 fn resolve_timing_runner(cwd: &std::path::Path, requested: &str) -> Result<String> {

@@ -10,7 +10,7 @@ inputs:
   timingRunner: {description: "Runner identity used for timing prediction", default: auto}
   timingEnvironment: {description: "Stable hardware identity used for timing history", default: ''}
   coordinatorUrl: {description: "HTTPS coordinator base URL for scheduler=http", default: ''}
-  historyArtifactName: {description: "Artifact name used to load timing history", default: nanoom-timing-history}
+  historyArtifactName: {description: "PredictionArtifact v3 name used for bounded assignment lookup", default: nanoom-prediction-v3}
   releaseBaseUrl: {description: "HTTPS origin hosting Nanoom release assets; use your GitHub Enterprise Server URL when it mirrors releases", default: "https://github.com"}
 outputs:
   has_change: {description: "Whether any group has work", value: "${{ steps.out.outputs.has_change }}"}
@@ -44,6 +44,14 @@ runs:
         EVENT_HEAD: ${{ github.sha }}
         REF_NAME: ${{ github.ref_name }}
         HISTORY_REF: ${{ github.head_ref || github.ref_name }}
+        GITHUB_REF: ${{ github.ref }}
+        GITHUB_SERVER_URL: ${{ github.server_url }}
+        GITHUB_EVENT_NAME: ${{ github.event_name }}
+        GITHUB_REPOSITORY_ID: ${{ github.repository_id }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        PR_HEAD_REPOSITORY_ID: ${{ github.event.pull_request.head.repo.id }}
+        PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
         WORKFLOW_REF: ${{ github.workflow_ref }}
         SCHEDULER: ${{ inputs.scheduler }}
         TIMING_RUNNER: ${{ inputs.timingRunner }}

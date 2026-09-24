@@ -5,6 +5,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use tempfile::tempdir;
 
+use nanoom::prediction::PredictionKey;
+
 fn write_json(path: &Path, value: &Value) {
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(path, serde_json::to_vec_pretty(value).unwrap()).unwrap();
@@ -115,7 +117,8 @@ fn changed_fixture() -> Fixture {
     let compact: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(compact["has_change"], true);
     assert_eq!(compact["result"]["itemCount"], 1);
-    assert_eq!(compact["result"]["historyStatus"], "disabled");
+    assert_eq!(compact["result"]["historyStatus"], "history_not_needed");
+    assert_eq!(compact["result"]["historyNeeded"], false);
     assert_eq!(compact["result"]["timingRunner"], "pnpm");
     assert_eq!(
         compact["groups"]["ci"]["include"][0],
@@ -371,4 +374,121 @@ fn affected_rejects_plan_context_for_a_different_execution_tool() {
         String::from_utf8_lossy(&output.stderr).contains("does not match resolved affected runner")
     );
     assert!(!fixture.dir.path().join("wrong-tool-plan.json").exists());
+}
+
+#[test]
+fn affected_loads_v3_prediction_artifact_for_an_exact_task_estimate() {
+    let dir = tempdir().unwrap();
+    write_json(
+        &dir.path().join("package.json"),
+        &json!({"name":"root","private":true,"workspaces":["packages/*"]}),
+    );
+    for name in ["pkg-a", "pkg-b"] {
+        write_json(
+            &dir.path().join(format!("packages/{name}/package.json")),
+            &json!({"name":name,"version":"1.0.0","scripts":{"test":"exit 0"}}),
+        );
+    }
+    write_json(
+        &dir.path().join("nanoom.config.json"),
+        &json!({"group":{"ci":{"tasks":["test"],"timingEnvironment":"linux-x64-node24","distribution":{
+            "small":{"maxAffectedPercent":25,"concurrency":1},
+            "medium":{"maxAffectedPercent":60,"concurrency":2},
+            "full":{"maxAffectedPercent":100,"concurrency":2}
+        }}}}),
+    );
+    init_repo(dir.path());
+    git(dir.path(), &["checkout", "-b", "feature"]);
+    for name in ["pkg-a", "pkg-b"] {
+        fs::write(
+            dir.path().join(format!("packages/{name}/change.txt")),
+            "change\n",
+        )
+        .unwrap();
+    }
+    git(dir.path(), &["add", "."]);
+    git(dir.path(), &["commit", "-m", "change", "--no-gpg-sign"]);
+
+    let prediction_context = json!({
+        "repositoryKey":"github-12345",
+        "workflowPath":".github/workflows/ci.yml",
+        "ref":{"kind":"pull_request","number":17,"headRepositoryId":"12345","headRef":"refs/heads/feature","baseRef":"refs/heads/main"}
+    });
+    let scope = json!({
+        "repositoryKey":"github-12345",
+        "workflowPath":".github/workflows/ci.yml",
+        "ref":{"kind":"pull_request","number":17,"headRepositoryId":"12345","headRef":"refs/heads/feature","baseRef":"refs/heads/main"},
+        "group":"ci",
+        "taskRunner":"pnpm",
+        "timingEnvironment":"linux-x64-node24"
+    });
+    let key_id = PredictionKey::TaskExact {
+        group: "ci".into(),
+        workspace: "pkg-a".into(),
+        task: "test".into(),
+        shard: None,
+        total_shards: None,
+        task_runner: "pnpm".into(),
+        timing_environment: "linux-x64-node24".into(),
+    }
+    .id()
+    .unwrap();
+    write_json(
+        &dir.path().join("prediction-context.json"),
+        &prediction_context,
+    );
+    write_json(
+        &dir.path().join("prediction.json"),
+        &json!({
+            "version":3,
+            "predictions":[{
+                "table":{"version":3,"scope":scope,"modelUpdatedAtMs":1000,
+                    "rows":[[key_id,250,3,1000,4_102_444_800_000_u64]]},
+                "modelArtifact":{"name":"model-ci.json","sha256":"a".repeat(64)}
+            }]
+        }),
+    );
+
+    let output = run_cli(
+        dir.path(),
+        &[
+            "affected",
+            "--json",
+            "--base",
+            "main",
+            "--head",
+            "feature",
+            "--timing-runner",
+            "pnpm",
+            "--timing-environment",
+            "linux-x64-node24",
+            "--prediction",
+            "prediction.json",
+            "--prediction-context",
+            "prediction-context.json",
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "affected failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["scheduling"]["historyNeeded"], true);
+    assert_eq!(
+        report["scheduling"]["historyStatus"],
+        "loaded",
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(report["scheduling"]["predictionSources"]["exact"], 1);
+    assert_eq!(report["scheduling"]["predictionSources"]["cold"], 1);
+    let assignments = report["matrix"]["ci"]["include"].as_array().unwrap();
+    assert_eq!(assignments.len(), 2);
+    let exact = assignments
+        .iter()
+        .find(|assignment| assignment["items"][0]["name"] == "pkg-a")
+        .unwrap();
+    assert_eq!(exact["predictedDurationMs"], 250);
+    assert_eq!(exact["predictionSources"]["exact"], 1);
 }

@@ -47,27 +47,38 @@ runs:
         COORDINATOR_TOKEN: ${{ env.NANOOM_COORDINATOR_TOKEN }}
         GITHUB_SHA: ${{ github.sha }}
         REPOSITORY: ${{ github.repository }}
+        GITHUB_REPOSITORY_ID: ${{ github.repository_id }}
+        GITHUB_SERVER_URL: ${{ github.server_url }}
+        GITHUB_REF: ${{ github.ref }}
+        GITHUB_EVENT_NAME: ${{ github.event_name }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        PR_HEAD_REPOSITORY_ID: ${{ github.event.pull_request.head.repo.id }}
+        PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
         WORKFLOW_REF: ${{ github.workflow_ref }}
         RUN_ID: ${{ github.run_id }}
         RUN_ATTEMPT: ${{ github.run_attempt }}
         MATRIX_INDEX: ${{ strategy.job-index || 0 }}
       run: bash "$GITHUB_ACTION_PATH/../run/run.sh"
     - name: Upload successful timing sample
-      if: inputs.scheduler == 'artifact' && steps.run.outcome == 'success'
+      id: upload
+      if: inputs.scheduler == 'artifact' && steps.run.outcome == 'success' && steps.run.outputs.sample-path != ''
+      continue-on-error: true
       uses: actions/upload-artifact@v3.2.2
       with:
         name: ${{ steps.run.outputs.sample-name }}
         path: ${{ steps.run.outputs.sample-path }}
-        retention-days: 30
+        retention-days: 1
         if-no-files-found: error
     - name: Record timing upload cost
       id: final
-      if: inputs.scheduler == 'artifact' && steps.run.outcome == 'success'
+      if: always() && inputs.scheduler == 'artifact' && steps.run.outcome == 'success' && steps.run.outputs.sample-path != ''
       shell: bash
       env:
         BASE_RESULT: ${{ steps.run.outputs.result }}
         UPLOAD_STARTED: ${{ steps.run.outputs.upload-started }}
-      run: echo "result=$(jq -c --argjson ms "$(( ($(date +%s) - UPLOAD_STARTED) * 1000 ))" '. + {telemetryUploadMs:$ms}' <<<"$BASE_RESULT")" >> "$GITHUB_OUTPUT"
+        UPLOAD_OUTCOME: ${{ steps.upload.outcome }}
+      run: echo "result=$(jq -c --argjson ms "$(( ($(date +%s) - UPLOAD_STARTED) * 1000 ))" --arg outcome "$UPLOAD_OUTCOME" '. + {telemetryUploadMs:$ms,measurementArtifactStatus:(if $outcome == "success" then "uploaded" else "degraded" end)}' <<<"$BASE_RESULT")" >> "$GITHUB_OUTPUT"
     - name: Clean isolated checkout
       if: ${{ always() && inputs.cleanupCheckout == 'true' }}
       shell: bash

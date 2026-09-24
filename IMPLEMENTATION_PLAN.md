@@ -1,10 +1,10 @@
 # Nanoom 개선 실행 계획 — LUNA 작업 명세
 
-상태: **A1~A3 구현·local gates·parent review 완료. PR/hosted validation/release 미실시. A4~A7과 S0~S6 runtime 미구현**. 기준 source `539b2c08cc7e2543f3a0cdd10fbdba451b2502d5`(v0.6.0). 조사일 2026-09-24. 이 문서의 나머지 proposed 동작을 현재 제품 기능으로 설명하지 않는다.
+상태: **A1~A3 구현·local gates·parent review 완료. A4 local Rust/Action 구현과 회귀 완료; 공식 OpenAPI validator 실행은 DNS로 막힘. PR/hosted validation/release 미실시. A5~A7과 S0~S6 미완료.** 기준 source `539b2c08cc7e2543f3a0cdd10fbdba451b2502d5`(v0.6.0). 조사일 2026-09-24. 이 문서의 나머지 proposed 동작을 released product 기능으로 설명하지 않는다.
 
 ## 다른 세션에서 시작하기
 
-Luna Max 실행 세션은 [LUNA_HANDOFF.md](LUNA_HANDOFF.md)에서 시작한다. 인계 브랜치는 `codex/prediction-state-v3`이며, 이 저장소 루트의 `IMPLEMENTATION_PLAN.md`가 상세 실행 계획이다. [SPEC](SPEC.md)으로 현재/제안 계약을 구분하고, [예측 모델](docs/prediction-model-spec.md), [선택적 서버](docs/history-server-spec.md), [OpenAPI](docs/api/history.openapi.yaml), [CHECKLIST](CHECKLIST.md)를 함께 읽는다. 현재 완료 범위는 문서·OpenAPI·합성 크기 검증이며 runtime은 미구현이다. 구현 시 A1부터 선행 조건 순서대로 LUNA에 작업을 맡기고 주 에이전트가 검토한다. 결과와 미실시 항목은 CHECKLIST에 갱신한다.
+Luna Max 실행 세션은 [LUNA_HANDOFF.md](LUNA_HANDOFF.md)에서 시작한다. 인계 브랜치는 `codex/prediction-state-v3`이며, 이 저장소 루트의 `IMPLEMENTATION_PLAN.md`가 상세 실행 계획이다. [SPEC](SPEC.md)으로 현재/제안 계약을 구분하고, [예측 모델](docs/prediction-model-spec.md), [선택적 서버](docs/history-server-spec.md), [OpenAPI](docs/api/history.openapi.yaml), [CHECKLIST](CHECKLIST.md)를 함께 읽는다. 현재 runtime 완료 범위는 A1~A4 local뿐이다. A4 공식 OpenAPI validator, hosted GitHub/GHES, release는 미검증이며 A5부터 계속한다. 결과와 미실시 항목은 CHECKLIST에 갱신한다.
 
 문서 검증은 저장소 루트에서 실행한다.
 
@@ -90,7 +90,7 @@ GitHub.com upload v4.6.2/download v4.3.0, GHES upload v3.2.2/download v3.1.0을 
 - PR은 같은 workflow/head repository/PR/head branch, 없으면 신뢰하는 base branch의 성공 push를 조회한다. push는 같은 workflow/branch 성공 push만 조회한다. 각 출처 최근 30일 성공 run metadata 최대 20개를 검토하되 공용 읽기 예산이 우선한다.
 - affected가 선택한 prediction의 model pointer로 history를 갱신한다. artifact updater는 latest를 다시 찾지 않는다. 서로 병렬인 run의 독립 artifact 상태가 모두 합쳐지는 것은 보장하지 않는다. 이 경로는 best-effort 학습이며 원자적 다중 writer 병합은 선택적 서버가 제공한다.
 - work item 0/1개, assignment cap 1, distribution 미설정으로 배분 선택지가 없는 group은 history 조회를 생략한다. 모두 해당하면 metadata를 포함한 history read 0회다. `history_not_needed`와 오류 fallback을 구분한다.
-- planning 전체 이력 조회·다운로드·파싱은 **공유 3초 예산**이다. scope별 3초를 차례로 소비하지 않는다. JSON 8 MiB/개, archive 4 MiB/개, 모든 archive 수신 합계 8 MiB, scope별 후보 body 최대 2개. metadata 사전 검사 + streaming/압축 해제 크기 제한을 적용하고 초과 시 즉시 warning/cold다.
+- planning 전체 이력 조회·다운로드·파싱은 **공유 3초 예산**이다. scope별 3초를 차례로 소비하지 않는다. JSON 8 MiB/개, archive 4 MiB/개, 모든 scope의 metadata+archive 수신 합계 8 MiB, scope별 후보 body 최대 2개. metadata 사전 검사 + 수신/압축 해제 크기 제한을 적용하고 초과 시 즉시 warning/cold다.
 - 최적화 목적은 **이력 조회와 필요한 갱신 후처리까지 포함한 전체 CI 완료 시간 감소**다. 조회가 절약한 시간보다 오래 걸리면 성공이 아니다. timing lookup 실패와 fatal인 affected base SHA 선택 실패는 구분한다.
 
 준비 구간은 prepare 시작부터 첫 task subprocess 시작 직전까지다. plan download/checkout/tool setup/install을 포함한다. task는 기존 monotonic 측정; wrapper와 upload 비용은 진단값; queue는 unknown이다. 여러 Action 사이의 timestamp 역전은 학습에서 제외한다.

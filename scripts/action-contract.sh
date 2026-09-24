@@ -76,7 +76,10 @@ grep -q 'Optional newline-delimited job=result pairs' .github/actions/status/act
 bash scripts/status-action-test.sh
 bash scripts/coordinator-contract-test.sh
 bash scripts/assignment-action-test.sh
-grep -Fq 'totalShards:$item.totalShards' .github/actions/run/run.sh
+grep -Fq 'version:3,scope:' .github/actions/run/run.sh
+grep -Fq 'totalShards:($item.totalShards // null)' .github/actions/run/run.sh
+grep -Fq 'executionId:$executionId' .github/actions/run/run.sh
+! grep -q 'nanoom-timing-sample-v2' .github/actions/run/run.sh
 grep -q 'planned item produced no matching execution' .github/actions/run/run.sh
 grep -q 'static assignment install requires at least one workspace' .github/actions/install/run.sh
 grep -q 'static assignment run requires a validated assignment-file' .github/actions/run/run.sh

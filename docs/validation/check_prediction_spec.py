@@ -133,12 +133,14 @@ def size_check():
     print('taskKeys,totalKeys,raw7RecordsJSON,raw7RecordsZIP,modelJSON,modelZIP,predictionJSON,predictionZIP')
     for count in (1000, 10000, 30000):
         selected = sorted(entries[:count] + entries[30000:], key=lambda e: e['keyId'])
-        model = {'version': 3, 'scope': scope, 'updatedAtMs': now, 'pruningDay': day - 29, 'batchAcceptanceAfterMs': now - 7 * 86400000, 'entries': selected, 'receipts': receipts}
+        state = {'version': 3, 'scope': scope, 'updatedAtMs': now, 'pruningDay': day - 29, 'batchAcceptanceAfterMs': now - 7 * 86400000, 'entries': selected, 'receipts': receipts}
+        model = {'version': 3, 'states': [state]}
         table = {'version': 3, 'scope': scope, 'modelUpdatedAtMs': now, 'rows': [[e['keyId'], *e['prediction']] for e in selected]}
-        artifact = {'table': table, 'modelArtifact': {'name': 'nanoom-model-v3-123456789-1', 'sha256': SHA(model)}}
+        artifact = {'version': 3, 'predictions': [{'table': table, 'modelArtifact': {'name': 'nanoom-model-v3-123456789-1', 'sha256': SHA(model)}}]}
         # Synthetic raw-record shape for size comparison, not a v0.6 serialization benchmark.
         raw = {'scope': scope, 'samples': [dict(keyId=e['keyId'], durationMs=b[2], observedAtMs=b[3], executionId=SHA([e['keyId'], b[0]]), source={'repositoryKey': scope['repositoryKey'], 'workflowPath': scope['workflowPath'], 'ref': scope['ref'], 'runId': str(123456789 + b[0]), 'runAttempt': 1, 'assignmentId': 'ci-0001', 'headSha': hashlib.sha256(str(b[0]).encode()).hexdigest()[:40]}) for e in selected for b in e['buckets']]}
-        check('ModelState', model)
+        check('ModelState', state)
+        check('ModelStateBundle', model)
         check('PredictionArtifact', artifact)
         raw_size, model_size, prediction_size = sizes(raw), sizes(model), sizes(artifact)
         assert model_size[0] <= API['x-runtime-limits']['modelBytes']

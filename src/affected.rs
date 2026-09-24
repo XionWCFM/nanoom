@@ -447,28 +447,73 @@ pub fn generate_matrix_with_history(
     runner: &str,
     environment: &str,
 ) -> serde_json::Value {
+    generate_matrix_using(output, |group_name, group_output, distribution| {
+        crate::scheduler::assign_with_config(
+            group_name,
+            &group_output.workspaces,
+            distribution.concurrency,
+            history,
+            runner,
+            environment,
+            (
+                distribution
+                    .runner_labels
+                    .clone()
+                    .or_else(|| group_output.runner_labels.clone()),
+                distribution
+                    .timing_environment
+                    .clone()
+                    .or_else(|| group_output.timing_environment.clone()),
+            ),
+        )
+    })
+}
+
+pub fn generate_matrix_with_prediction_index(
+    output: &AffectedOutput,
+    predictions: &crate::prediction::PredictionIndex,
+    context: Option<&crate::prediction::PredictionContext>,
+    runner: &str,
+    environment: &str,
+    now_ms: u64,
+) -> serde_json::Value {
+    generate_matrix_using(output, |group_name, group_output, distribution| {
+        crate::scheduler::assign_with_prediction_index(
+            group_name,
+            &group_output.workspaces,
+            distribution.concurrency,
+            predictions,
+            context,
+            runner,
+            environment,
+            (
+                distribution
+                    .runner_labels
+                    .clone()
+                    .or_else(|| group_output.runner_labels.clone()),
+                distribution
+                    .timing_environment
+                    .clone()
+                    .or_else(|| group_output.timing_environment.clone()),
+            ),
+            now_ms,
+        )
+    })
+}
+
+fn generate_matrix_using(
+    output: &AffectedOutput,
+    mut assign: impl FnMut(
+        &str,
+        &GroupOutput,
+        &crate::scheduler::SelectedTier,
+    ) -> Vec<crate::scheduler::Assignment>,
+) -> serde_json::Value {
     let mut matrix = serde_json::Map::new();
 
     for (group_name, group_output) in &output.group {
         if let Some(distribution) = &group_output.distribution {
-            let assignments = crate::scheduler::assign_with_config(
-                group_name,
-                &group_output.workspaces,
-                distribution.concurrency,
-                history,
-                runner,
-                environment,
-                (
-                    distribution
-                        .runner_labels
-                        .clone()
-                        .or_else(|| group_output.runner_labels.clone()),
-                    distribution
-                        .timing_environment
-                        .clone()
-                        .or_else(|| group_output.timing_environment.clone()),
-                ),
-            );
+            let assignments = assign(group_name, group_output, distribution);
             matrix.insert(
                 group_name.clone(),
                 serde_json::json!({ "include": assignments }),

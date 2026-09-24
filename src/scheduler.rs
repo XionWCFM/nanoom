@@ -1,5 +1,6 @@
 use crate::affected::WorkspaceEntry;
 use crate::config::DistributionConfig;
+use crate::prediction::{PredictionContext, PredictionIndex, PredictionKey};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -227,6 +228,110 @@ pub fn assign_with_config(
     environment: &str,
     runner_config: (Option<Vec<String>>, Option<String>),
 ) -> Vec<Assignment> {
+    assign_with_predictor(
+        group,
+        items,
+        concurrency,
+        runner,
+        environment,
+        runner_config,
+        |item, runner, environment| {
+            history.prediction(
+                item,
+                runner,
+                environment,
+                history.group_fallback(item, runner, environment),
+            )
+        },
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn assign_with_prediction_index(
+    group: &str,
+    items: &[WorkspaceEntry],
+    concurrency: usize,
+    predictions: &PredictionIndex,
+    context: Option<&PredictionContext>,
+    runner: &str,
+    environment: &str,
+    runner_config: (Option<Vec<String>>, Option<String>),
+    now_ms: u64,
+) -> Vec<Assignment> {
+    assign_with_predictor(
+        group,
+        items,
+        concurrency,
+        runner,
+        environment,
+        runner_config,
+        |item, runner, environment| {
+            let Some(context) = context else {
+                return cold_prediction();
+            };
+            let exact_id = PredictionKey::TaskExact {
+                group: item.group.clone(),
+                workspace: item.name.clone(),
+                task: item.task.clone(),
+                shard: item.shard.map(|value| value as u64),
+                total_shards: item.total_shards.map(|value| value as u64),
+                task_runner: runner.into(),
+                timing_environment: environment.into(),
+            }
+            .id();
+            if let Ok(key_id) = exact_id {
+                if let Some((duration_ms, sample_count)) =
+                    predictions.estimate(context, group, runner, environment, &key_id, now_ms)
+                {
+                    return Prediction {
+                        duration_ms,
+                        source: PredictionSource::Exact,
+                        sample_count: sample_count as usize,
+                    };
+                }
+            }
+            let fallback_id = PredictionKey::TaskFallback {
+                group: item.group.clone(),
+                task: item.task.clone(),
+                shard: item.shard.map(|value| value as u64),
+                total_shards: item.total_shards.map(|value| value as u64),
+                task_runner: runner.into(),
+                timing_environment: environment.into(),
+            }
+            .id();
+            if let Ok(key_id) = fallback_id {
+                if let Some((duration_ms, sample_count)) =
+                    predictions.estimate(context, group, runner, environment, &key_id, now_ms)
+                {
+                    return Prediction {
+                        duration_ms,
+                        source: PredictionSource::Group,
+                        sample_count: sample_count as usize,
+                    };
+                }
+            }
+            cold_prediction()
+        },
+    )
+}
+
+fn cold_prediction() -> Prediction {
+    Prediction {
+        duration_ms: 1,
+        source: PredictionSource::Cold,
+        sample_count: 0,
+    }
+}
+
+fn assign_with_predictor(
+    group: &str,
+    items: &[WorkspaceEntry],
+    concurrency: usize,
+    runner: &str,
+    environment: &str,
+    runner_config: (Option<Vec<String>>, Option<String>),
+    mut predict: impl FnMut(&WorkspaceEntry, &str, &str) -> Prediction,
+) -> Vec<Assignment> {
     if items.is_empty() {
         return vec![];
     }
@@ -236,12 +341,7 @@ pub fn assign_with_config(
         .iter()
         .cloned()
         .map(|item| {
-            let prediction = history.prediction(
-                &item,
-                runner,
-                environment,
-                history.group_fallback(&item, runner, environment),
-            );
+            let prediction = predict(&item, runner, environment);
             let id = work_item_id(&item);
             (item, prediction, id)
         })
@@ -398,6 +498,12 @@ fn work_item_id(item: &WorkspaceEntry) -> String {
 mod tests {
     use super::*;
     use crate::config::{DistributionConfig, DistributionTier};
+    use crate::prediction::{
+        ArtifactReference, PredictionArtifact, PredictionArtifactBundle, PredictionContext,
+        PredictionKey, PredictionRow, PredictionTable, Scope, ScopeRef, VERSION,
+    };
+
+    const NOW_MS: u64 = 10_000;
 
     fn item(name: &str) -> WorkspaceEntry {
         WorkspaceEntry {
@@ -422,6 +528,188 @@ mod tests {
             environment: "linux-x64".into(),
             duration_ms,
         }
+    }
+
+    fn prediction_scope(git_ref: ScopeRef) -> Scope {
+        Scope {
+            repository_key: "github-12345".into(),
+            workflow_path: ".github/workflows/ci.yml".into(),
+            git_ref,
+            group: "ci".into(),
+            task_runner: "yarn".into(),
+            timing_environment: "linux-x64".into(),
+        }
+    }
+
+    fn prediction_index(
+        scope: Scope,
+        rows: impl IntoIterator<Item = (String, u64, u64, u64)>,
+    ) -> PredictionIndex {
+        let mut rows: Vec<_> = rows
+            .into_iter()
+            .map(|(key_id, duration, count, valid_until)| {
+                PredictionRow(key_id, duration, count, 5, valid_until)
+            })
+            .collect();
+        rows.sort_by(|a, b| a.key_id().cmp(b.key_id()));
+        let bundle = PredictionArtifactBundle {
+            version: VERSION,
+            predictions: vec![PredictionArtifact {
+                table: PredictionTable {
+                    version: VERSION,
+                    scope,
+                    model_updated_at_ms: 5,
+                    rows,
+                },
+                model_artifact: ArtifactReference {
+                    name: "model-v3".into(),
+                    sha256: "0".repeat(64),
+                },
+            }],
+        };
+        bundle.validate().unwrap();
+        PredictionIndex::new([bundle]).unwrap()
+    }
+
+    fn task_keys(item: &WorkspaceEntry) -> (String, String) {
+        let exact = PredictionKey::TaskExact {
+            group: item.group.clone(),
+            workspace: item.name.clone(),
+            task: item.task.clone(),
+            shard: None,
+            total_shards: None,
+            task_runner: "yarn".into(),
+            timing_environment: "linux-x64".into(),
+        }
+        .id()
+        .unwrap();
+        let fallback = PredictionKey::TaskFallback {
+            group: item.group.clone(),
+            task: item.task.clone(),
+            shard: None,
+            total_shards: None,
+            task_runner: "yarn".into(),
+            timing_environment: "linux-x64".into(),
+        }
+        .id()
+        .unwrap();
+        (exact, fallback)
+    }
+
+    fn assign_with_index(
+        item: &WorkspaceEntry,
+        index: &PredictionIndex,
+        context: Option<&PredictionContext>,
+    ) -> Assignment {
+        assign_with_prediction_index(
+            "ci",
+            std::slice::from_ref(item),
+            1,
+            index,
+            context,
+            "yarn",
+            "linux-x64",
+            (None, None),
+            NOW_MS,
+        )
+        .remove(0)
+    }
+
+    #[test]
+    fn prediction_index_prefers_exact_then_uses_workspace_fallback() {
+        let item = item("a");
+        let (exact, fallback) = task_keys(&item);
+        let context = PredictionContext {
+            repository_key: "github-12345".into(),
+            workflow_path: ".github/workflows/ci.yml".into(),
+            git_ref: ScopeRef::Push {
+                git_ref: "refs/heads/main".into(),
+            },
+        };
+        let scope = prediction_scope(context.git_ref.clone());
+
+        let exact_index = prediction_index(
+            scope.clone(),
+            [
+                (exact.clone(), 250, 3, 100_000),
+                (fallback.clone(), 100, 9, 100_000),
+            ],
+        );
+        let assignment = assign_with_index(&item, &exact_index, Some(&context));
+        assert_eq!(assignment.predicted_duration_ms, 250);
+        assert_eq!(assignment.prediction_sources.exact, 1);
+        assert_eq!(assignment.prediction_sources.sample_count, 3);
+
+        let fallback_index = prediction_index(scope, [(fallback, 100, 9, 100_000)]);
+        let assignment = assign_with_index(&item, &fallback_index, Some(&context));
+        assert_eq!(assignment.predicted_duration_ms, 100);
+        assert_eq!(assignment.prediction_sources.group, 1);
+        assert_eq!(assignment.prediction_sources.sample_count, 9);
+    }
+
+    #[test]
+    fn prediction_index_isolates_pull_requests_and_allows_base_branch_fallback() {
+        let item = item("a");
+        let (_, fallback) = task_keys(&item);
+        let context = PredictionContext {
+            repository_key: "github-12345".into(),
+            workflow_path: ".github/workflows/ci.yml".into(),
+            git_ref: ScopeRef::PullRequest {
+                number: 42,
+                head_repository_id: "98765".into(),
+                head_ref: "refs/heads/feature".into(),
+                base_ref: "refs/heads/main".into(),
+            },
+        };
+        let other_pr = prediction_index(
+            prediction_scope(ScopeRef::PullRequest {
+                number: 43,
+                head_repository_id: "98765".into(),
+                head_ref: "refs/heads/other".into(),
+                base_ref: "refs/heads/main".into(),
+            }),
+            [(fallback.clone(), 500, 5, 100_000)],
+        );
+        let assignment = assign_with_index(&item, &other_pr, Some(&context));
+        assert_eq!(assignment.predicted_duration_ms, 1);
+        assert_eq!(assignment.prediction_sources.cold, 1);
+
+        let base = prediction_index(
+            prediction_scope(ScopeRef::Push {
+                git_ref: "refs/heads/main".into(),
+            }),
+            [(fallback, 200, 2, 100_000)],
+        );
+        let assignment = assign_with_index(&item, &base, Some(&context));
+        assert_eq!(assignment.predicted_duration_ms, 200);
+        assert_eq!(assignment.prediction_sources.group, 1);
+    }
+
+    #[test]
+    fn expired_prediction_and_missing_context_use_cold_schedule() {
+        let item = item("a");
+        let (exact, _) = task_keys(&item);
+        let context = PredictionContext {
+            repository_key: "github-12345".into(),
+            workflow_path: ".github/workflows/ci.yml".into(),
+            git_ref: ScopeRef::Push {
+                git_ref: "refs/heads/main".into(),
+            },
+        };
+        let mut index = prediction_index(
+            prediction_scope(context.git_ref.clone()),
+            [(exact, 250, 3, NOW_MS)],
+        );
+        assert!(!index.has_valid_rows(100_000));
+        let assignment = assign_with_index(&item, &index, Some(&context));
+        assert_eq!(assignment.prediction_sources.cold, 1);
+
+        index = prediction_index(
+            prediction_scope(context.git_ref.clone()),
+            [(task_keys(&item).0, 250, 3, 100_000)],
+        );
+        let assignment = assign_with_index(&item, &index, None);
+        assert_eq!(assignment.prediction_sources.cold, 1);
     }
 
     #[test]

@@ -2,7 +2,7 @@
 
 ## 기준 구현: v0.6.0
 
-아래 기존 계약은 source `539b2c08cc7e2543f3a0cdd10fbdba451b2502d5` 기준이다. 이 branch의 A1~A3 runtime은 로컬 검증과 parent review를 마쳤지만 PR/hosted validation/release되지 않았다. A4 이후 제안은 아직 구현되지 않았다. 공개 계약의 기준은 [README](README.md), 생성된 [JSON schema](nanoom.schema.json), [ADR-0011](docs/adr/0011-sparse-checkout-plan.md), [ADR-0012](docs/adr/0012-ghes-history-checkout-cost.md)입니다.
+아래 기존 계약은 source `539b2c08cc7e2543f3a0cdd10fbdba451b2502d5` 기준이다. 이 branch의 A1~A3 runtime은 로컬 검증과 parent review를 마쳤으며, A4 PredictionState v3 core/artifact path는 Rust/Action local gates를 통과했다. A4의 공식 OpenAPI 검증은 DNS로 미실시다. 모두 PR/hosted validation/release 전 후보 구현이다. A5~A7 및 서버는 미완료다. 공개 계약의 기준은 [README](README.md), 생성된 [JSON schema](nanoom.schema.json), [ADR-0011](docs/adr/0011-sparse-checkout-plan.md), [ADR-0012](docs/adr/0012-ghes-history-checkout-cost.md)입니다.
 
 ## Work item과 assignment
 
@@ -75,7 +75,7 @@ Artifact/history/coordinator는 aggregate status의 입력이 아니다. `status
 
 ## 제안 계약: artifact plan / PredictionState v3 / 선택적 서버
 
-전체 결정과 인수 기준은 [IMPLEMENTATION_PLAN](IMPLEMENTATION_PLAN.md)을 따른다. 아래 표는 **미구현 변경**이며 기존 출력과 호환된다고 가정하지 않는다.
+전체 결정과 인수 기준은 [IMPLEMENTATION_PLAN](IMPLEMENTATION_PLAN.md)을 따른다. 아래 표는 branch-local 구현과 남은 제안 계약을 함께 설명한다. 어느 것도 release됐다고 가정하지 않는다.
 
 | 경계 | 변경 |
 |---|---|
@@ -88,6 +88,8 @@ Artifact/history/coordinator는 aggregate status의 입력이 아니다. `status
 | 서버 | Rust 별도 binary, opt-in historyBackend:server, 기본 artifact 유지, /health와 /ready |
 
 현재 branch의 A2/A3 구현은 `affected --plan-output FILE --plan-context FILE`, `plan select --input FILE --reference FILE --group GROUP --assignment ID --output-dir DIR`, planned install의 `--filter-file`, 그리고 artifact-backed `affected→prepare→install→run` Action 경로다. 상세 plan은 파일에 저장하고 compact output은 group/assignmentId/runnerLabels/timingEnvironment만 matrix row로 전달한다. validator는 raw-file SHA-256, schema, repository/workflow/run/head provenance, 그리고 `producerAttempt <= current.attempt`를 확인한다. rerun consumer는 actual current run identity를 채운 reference를 제공한다. `install`과 `run`은 original reference를 받아 digest와 checkout HEAD를 매번 검증한다. GHES용 `affected-ghes`/`prepare-ghes`는 v3 artifact Actions를 쓴다. group별 256행 또는 UTF-16 출력 1 MiB 초과는 실패하고 zero-work Plan은 assignment 없이 유효하다. `--filter-file`은 non-empty JSON string array를 요구하고 malformed/non-array/non-string/empty/control-character entry 및 기존 `--filter`과의 동시 사용을 install 전에 거부한다. 필터 옵션 없는 standalone install은 root 설치를 유지한다.
+
+A4 local 구현은 v3 MeasurementArtifact/ModelStateBundle/PredictionArtifact, 공용 deterministic compile/apply/project, PR-aware exact/fallback prediction lookup, bounded artifact read와 updater publish marker를 추가한다. `affected`는 선택지가 있을 때만 prediction artifact를 읽고 model/measurement는 planner에 전달하지 않는다. PR ScopeRef의 Rust wire field는 OpenAPI 계약에 맞춰 camelCase를 사용한다. CLI/Action regressions와 자세한 local/external evidence는 [CHECKLIST](CHECKLIST.md)에 기록했다. Official OpenAPI validator와 actual hosted consumer는 아직 증명되지 않았다.
 
 서버 HTTP source of truth는 [OpenAPI 3.1.1](docs/api/history.openapi.yaml), 분산·S3·인증·운영 규칙은 [서버 명세](docs/history-server-spec.md)다. API /v1, Plan v1, PredictionTable/ModelState v3 버전은 각각 독립적이다. 기존 scheduler:http live coordinator와 새 History Server API를 혼합하지 않는다.
 

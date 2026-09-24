@@ -53,30 +53,7 @@ git -C "$CWD" merge-base --is-ancestor "$resolved_base" "$resolved_head" || {
   false
 }
 
-history_status=disabled; history_download_ms=0; history_source_run_id=''; history_path="$RUNNER_TEMP/nanoom-history.json"
-if [[ "$SCHEDULER" == artifact ]]; then
-  history_started=$(date +%s); history_status=bootstrap-fallback
-  ACTION_PHASE=history-resolution
-  history_source_run_id=$(nanoom_previous_successful_run "$WORKFLOW_REF" "$HISTORY_REF" "$RUN_ID")
-  if [[ -n "$history_source_run_id" ]]; then
-    artifacts=$(nanoom_run_artifacts "$history_source_run_id")
-    history_dir="$RUNNER_TEMP/nanoom-previous-history"
-    if nanoom_download_artifacts "$artifacts" exact "$HISTORY_ARTIFACT" "$history_dir" &&
-      [[ -f "$history_dir/history.json" ]] &&
-      jq -e '.samples | type == "array"' "$history_dir/history.json" >/dev/null; then
-      cp "$history_dir/history.json" "$history_path"
-      history_status=loaded
-    elif nanoom_artifact_exists "$artifacts" prefix "nanoom-timing-sample-v2-$history_source_run_id-"; then
-      echo "successful run $history_source_run_id uploaded timing samples but no merged '$HISTORY_ARTIFACT' history; add the standard nanoom history job" >&2
-      false
-    else
-      echo "no timing history exists in successful run $history_source_run_id; using deterministic cold-start scheduling" >&2
-    fi
-  else
-    echo 'no previous successful workflow run exists; using deterministic cold-start scheduling' >&2
-  fi
-  history_download_ms=$(( ($(date +%s) - history_started) * 1000 ))
-fi
+history_status=disabled; history_fetch_ms=0; history_source_run_id=''; history_path=''
 
 if [[ "$SCHEDULER" == http ]]; then
   args=(-C "$CWD" -c "$CONFIG" affected --json --base "$BASE" --head "$resolved_head" --timing-runner "$TIMING_RUNNER" --timing-environment "$TIMING_ENVIRONMENT")
@@ -86,7 +63,7 @@ if [[ "$SCHEDULER" == http ]]; then
   ACTION_PHASE=affected-calculation; report=$(nanoom "${args[@]}")
   ACTION_PHASE=revision-validation
   report=$(jq -c --arg source "$revision_source" --arg base "$resolved_base" --arg head "$resolved_head" --arg successful "$successful_run_id" '. + {revisionResolution:{baseSource:$source,baseCommit:$base,headCommit:$head,successfulRunId:(if $successful == "" then null else ($successful | tonumber) end)}}' <<<"$report")
-  report=$(jq -c --arg historyStatus "$history_status" --arg sourceRun "$history_source_run_id" --argjson downloadMs "$history_download_ms" '.scheduling.historyStatus=(if .scheduling.historyStatus == "fallback" then "corrupt" else $historyStatus end) | .scheduling.historySourceRunId=(if $sourceRun == "" then null else ($sourceRun | tonumber) end) | .scheduling.historyDownloadMs=$downloadMs | .scheduling.reason=(if .scheduling.historyStatus == "loaded" then "recent successful samples loaded from the same workflow and branch" elif .scheduling.historyStatus == "disabled" then "historical scheduling explicitly disabled; deterministic equal weights" else "no usable previous history; deterministic cold-start scheduling" end)' <<<"$report")
+  report=$(jq -c --arg historyStatus "$history_status" --arg sourceRun "$history_source_run_id" --argjson fetchMs "$history_fetch_ms" '.scheduling.historyStatus=(if .scheduling.historyStatus == "fallback" then "corrupt" else $historyStatus end) | .scheduling.historySourceRunId=(if $sourceRun == "" then null else ($sourceRun | tonumber) end) | .scheduling.historyFetchMs=$fetchMs | .scheduling.reason=(if .scheduling.historyStatus == "loaded" then "recent successful samples loaded from the same workflow and branch" elif .scheduling.historyStatus == "disabled" then "historical scheduling explicitly disabled; deterministic equal weights" else "no usable previous history; deterministic cold-start scheduling" end)' <<<"$report")
   history_status=$(jq -r .scheduling.historyStatus <<<"$report")
 fi
 
@@ -115,6 +92,15 @@ if [[ "$SCHEDULER" != http ]]; then
   mkdir -p "$plan_dir"
   plan_path="$plan_dir/plan-v1.json"
   context_path="$plan_dir/plan-context.json"
+  prediction_context_path="$plan_dir/prediction-context.json"
+  prediction_identity=''
+  if [[ "$SCHEDULER" == artifact ]]; then
+    prediction_identity=$(nanoom_prediction_identity "${GITHUB_EVENT_NAME:-$EVENT}" "$WORKFLOW_REF" "${GITHUB_REPOSITORY_ID:-}" "${GITHUB_SERVER_URL:-}" "${GITHUB_REF:-}" "${PR_NUMBER:-}" "${PR_HEAD_REPOSITORY_ID:-}" "${PR_HEAD_REF:-}" "${PR_BASE_REF:-}") || prediction_identity=''
+    if [[ -n "$prediction_identity" ]]; then
+      printf '%s\n' "$prediction_identity" > "$prediction_context_path"
+    fi
+    history_status=fallback
+  fi
   jq -n \
     --arg repository "$REPOSITORY" \
     --arg workflow "$WORKFLOW_REF" \
@@ -124,21 +110,93 @@ if [[ "$SCHEDULER" != http ]]; then
     --arg base "$resolved_base" \
     --arg head "$resolved_head" \
     --arg taskRunner "$task_runner" \
-    --arg reason "$(if [[ "$SCHEDULER" == artifact && "$history_status" == loaded ]]; then echo 'artifact history supplied; Nanoom validates it before using predictions'; elif [[ "$SCHEDULER" == artifact ]]; then echo 'no usable artifact history selected; deterministic cold-start scheduling'; else echo 'historical scheduling disabled; deterministic cold-start scheduling'; fi)" \
+    --arg reason "$(if [[ "$SCHEDULER" == artifact ]]; then echo 'PredictionArtifact v3 lookup is cold until affected confirms a scheduling choice exists'; else echo 'historical scheduling disabled; deterministic cold-start scheduling'; fi)" \
     '{repository:$repository,workflow:$workflow,runId:$run,producerAttempt:$attempt,planningJob:$job,base:$base,head:$head,taskRunner:$taskRunner,predictionReason:$reason}' > "$context_path"
 
   plan_args=(-C "$CWD" -c "$CONFIG" affected --base "$resolved_base" --head "$resolved_head" --timing-runner "$TIMING_RUNNER" --timing-environment "$TIMING_ENVIRONMENT" --plan-output "$plan_path" --plan-context "$context_path")
-  [[ -f "$history_path" ]] && plan_args+=(--history "$history_path")
+  plan_args+=(--history-status "$history_status")
   printf -v ACTION_COMMAND '%q ' nanoom "${plan_args[@]}"; ACTION_COMMAND=${ACTION_COMMAND% }
   printf '◆ nanoom affected plan\n  Command\n    %s\n' "$ACTION_COMMAND"
   ACTION_PHASE=affected-calculation
   compact=$(nanoom "${plan_args[@]}")
+  history_needed=$(jq -r '.result.historyNeeded // false' <<<"$compact")
+  if [[ "$SCHEDULER" == artifact && "$history_needed" == true ]]; then
+    history_started_ms=$(nanoom_now_ms)
+    ACTION_PHASE=history-resolution
+    nanoom_history_budget_start 3 8388608
+    nanoom_try_prediction_run() {
+      local candidate_run=$1 candidate_dir=$2 candidate_artifacts
+      [[ -n "$candidate_run" ]] || return 1
+      candidate_artifacts=$(nanoom_run_artifacts "$candidate_run") || return 1
+      nanoom_download_prediction_artifact "$candidate_artifacts" "$HISTORY_ARTIFACT" "$candidate_dir" || return 1
+      history_path=$(find "$candidate_dir" -maxdepth 1 -type f -name '*.json' -print | sort | head -n 1)
+      [[ -n "$history_path" ]]
+    }
+
+    if [[ -n "$prediction_identity" ]]; then
+      candidate_run=''
+      case "${GITHUB_EVENT_NAME:-$EVENT}" in
+        pull_request|pull_request_target)
+          candidate_run=$(nanoom_previous_successful_run_for_event "$WORKFLOW_REF" "$PR_HEAD_REF" "$RUN_ID" pull_request "$PR_NUMBER" "$PR_HEAD_REPOSITORY_ID")
+          if nanoom_try_prediction_run "$candidate_run" "$RUNNER_TEMP/nanoom-pr-prediction"; then
+            history_source_run_id=$candidate_run
+          else
+            candidate_run=$(nanoom_previous_successful_run_for_event "$WORKFLOW_REF" "$PR_BASE_REF" "$RUN_ID" push)
+            if nanoom_try_prediction_run "$candidate_run" "$RUNNER_TEMP/nanoom-base-prediction"; then
+              history_source_run_id=$candidate_run
+            fi
+          fi
+          ;;
+        *)
+          candidate_run=$(nanoom_previous_successful_run_for_event "$WORKFLOW_REF" "$HISTORY_REF" "$RUN_ID" push)
+          if nanoom_try_prediction_run "$candidate_run" "$RUNNER_TEMP/nanoom-push-prediction"; then
+            history_source_run_id=$candidate_run
+          fi
+          ;;
+      esac
+    else
+      echo 'history lookup skipped: event does not have a supported branch or pull-request scope' >&2
+    fi
+
+    if [[ -n "$history_path" ]]; then
+      prediction_sha=''; prediction_metadata=''; model_name=''; model_sha=''
+      if command -v sha256sum >/dev/null 2>&1; then
+        prediction_sha=$(nanoom_history_timeout sha256sum "$history_path" | awk '{print $1}') || history_path=''
+      else
+        prediction_sha=$(nanoom_history_timeout shasum -a 256 "$history_path" | awk '{print $1}') || history_path=''
+      fi
+      prediction_metadata=$(nanoom_history_timeout jq -cer '.predictions[0].modelArtifact | {name,sha256} | select(.name and .sha256)' "$history_path") || history_path=''
+      model_name=$(jq -r '.name' <<<"${prediction_metadata:-{}}")
+      model_sha=$(jq -r '.sha256' <<<"${prediction_metadata:-{}}")
+      if [[ -n "$history_path" && "$prediction_sha" =~ ^[0-9a-f]{64}$ ]]; then
+        if nanoom_history_timeout jq --arg predictionName "$HISTORY_ARTIFACT" --arg predictionSha "$prediction_sha" --arg modelName "$model_name" --arg modelSha "$model_sha" '.predictionReason="a bounded PredictionArtifact v3 was selected and validated by Nanoom" | .predictionArtifact={name:$predictionName,sha256:$predictionSha} | .modelArtifact={name:$modelName,sha256:$modelSha}' "$context_path" > "$context_path.tmp"; then
+          mv "$context_path.tmp" "$context_path"
+          plan_args+=(--prediction "$history_path" --prediction-context "$prediction_context_path")
+        else
+          history_path=''
+        fi
+      else
+        history_path=''
+      fi
+    fi
+    if [[ -n "$history_path" ]]; then
+      ACTION_PHASE=affected-calculation
+      if warm_compact=$(nanoom_history_timeout nanoom "${plan_args[@]}"); then
+        compact=$warm_compact
+      else
+        echo 'bounded prediction lookup or validation exceeded its shared history budget; using the already-computed cold plan' >&2
+        history_source_run_id=''
+      fi
+    fi
+    history_fetch_ms=$(($(nanoom_now_ms) - history_started_ms))
+  fi
   ACTION_PHASE=output-serialization
-  if [[ -f "$history_path" ]]; then history_status=$(jq -er '.result.historyStatus' <<<"$compact"); fi
+  history_status=$(jq -er '.result.historyStatus' <<<"$compact")
+  [[ "$history_status" == loaded ]] || history_source_run_id=''
   jq '.plan' <<<"$compact" > "$plan_dir/plan-reference.json"
   plan_ref=$(jq -c '.plan' <<<"$compact")
   groups=$(jq -c '.groups' <<<"$compact")
-  result=$(jq -c --arg source "$revision_source" --arg base "$resolved_base" --arg head "$resolved_head" --arg successful "$successful_run_id" --arg historyStatus "$history_status" --arg sourceRun "$history_source_run_id" --argjson downloadMs "$history_download_ms" '.result + {historyStatus:$historyStatus,revisionResolution:{baseSource:$source,baseCommit:$base,headCommit:$head,successfulRunId:(if $successful == "" then null else ($successful | tonumber) end)},scheduling:{historyStatus:$historyStatus,historySourceRunId:(if $sourceRun == "" then null else ($sourceRun | tonumber) end),historyDownloadMs:$downloadMs,reason:(if $historyStatus == "loaded" then "recent successful samples loaded from the same workflow and branch" elif $historyStatus == "disabled" then "historical scheduling explicitly disabled; deterministic equal weights" else "no usable previous history; deterministic cold-start scheduling" end)}}' <<<"$compact")
+  result=$(jq -c --arg source "$revision_source" --arg base "$resolved_base" --arg head "$resolved_head" --arg successful "$successful_run_id" --arg historyStatus "$history_status" --arg sourceRun "$history_source_run_id" --argjson fetchMs "$history_fetch_ms" '.result + {historyStatus:$historyStatus,revisionResolution:{baseSource:$source,baseCommit:$base,headCommit:$head,successfulRunId:(if $successful == "" then null else ($successful | tonumber) end)},scheduling:{historyStatus:$historyStatus,historySourceRunId:(if $sourceRun == "" then null else ($sourceRun | tonumber) end),historyFetchMs:$fetchMs,reason:(if $historyStatus == "loaded" then "bounded PredictionArtifact v3 loaded; ModelState and measurements were not downloaded" elif $historyStatus == "history_not_needed" then "no affected assignment choice could be changed by history; no history metadata request was made" elif $historyStatus == "disabled" then "historical scheduling explicitly disabled; deterministic cold scheduling" elif $historyStatus == "corrupt" then "prediction artifact was invalid; using deterministic cold scheduling" else "no usable PredictionArtifact v3; using deterministic cold scheduling" end)}}' <<<"$compact")
   has=$(jq -r '.has_change' <<<"$compact")
   output_bytes=$(printf 'has_change=%s\nplan=%s\ngroups=%s\nresult=%s\n' "$has" "$plan_ref" "$groups" "$result" | iconv -f UTF-8 -t UTF-16LE | wc -c | tr -d ' ')
   (( output_bytes <= 1048576 )) || { echo "Action outputs exceed GitHub's 1 MiB UTF-16 limit: $output_bytes bytes" >&2; false; }

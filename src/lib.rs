@@ -5,6 +5,7 @@ pub mod deps;
 pub mod error;
 pub mod git;
 pub mod plan;
+pub mod prediction;
 pub mod scheduler;
 pub mod schema;
 pub mod workspace;
