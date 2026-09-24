@@ -33,6 +33,7 @@ workspace를 현재 graph에서 놓치면 빠른 대신 잘못된 affected 결�
    이동하는 `latest` tag의 Action을 사용하고, setup은 GitHub 최신 Release의 실제 versioned
    asset을 내려받는다.
 9. Plan v1 상세는 file artifact로 두고 stdout에는 digest/provenance reference와 bounded assignment matrix만 전달한다. `affected` producer는 Plan file CLI로 생성하고 `plan select`는 raw-byte SHA-256, schema, repository/workflow/run/head를 검증한다. 재실행은 같은 run에서 `producerAttempt <= current.attempt`인 이전 계획만 허용하며 current identity는 consumer가 채운다. group당 256행 또는 UTF-16 output 1 MiB 초과는 실패하고 no-change의 0-assignment Plan은 유효하다. `affected --json` full report는 Plan output과 함께 요청하지 않는다. Artifact transport와 checkout/install/run 연결은 후속 단계다.
+10. Planned install은 assignment workspace union을 non-empty JSON string array로 `nanoom install --filter-file FILE`에 전달한다. malformed 또는 빈 범위가 전체 root install로 조용히 확대되는 일은 없으며, 기존 standalone no-filter install은 root install을 유지한다.
 
 ## 검토한 대안
 
