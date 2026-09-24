@@ -73,6 +73,9 @@ grep -q 'Optional newline-delimited job=result pairs' .github/actions/status/act
 bash scripts/status-action-test.sh
 bash scripts/coordinator-contract-test.sh
 bash scripts/assignment-action-test.sh
+grep -Fq 'totalShards:$item.totalShards' .github/actions/run/run.sh
+grep -q 'planned item produced no matching execution' .github/actions/run/run.sh
+grep -q 'static assignment install requires at least one workspace' .github/actions/install/run.sh
 bash scripts/history-artifact-test.sh
 bash scripts/revision-action-test.sh
 bash scripts/cleanup-checkout-test.sh

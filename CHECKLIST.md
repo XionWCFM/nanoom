@@ -98,7 +98,7 @@ Nanoom 작업 폴더에 계획/명세/OpenAPI/검증 스크립트 7개를 반영
 시작 HEAD: 0aa7e968db4cfb2418c38e11fdebff7440932384
 브랜치: codex/prediction-state-v3
 시작 상태: 추적 파일 변경 없음, 기존 사용자 파일 .opencode/ 미추적 1개. 보존함.
-결과: A1은 local gate 통과 후 이 단계 commit으로 기록함. PR/release/외부 hosted 실행 없음.
+결과: A1 구현은 local gate 통과 후 commit `3fe56ee`로 기록함. `scripts/action-contract.sh` 보강은 후속 commit에 포함. PR/release/외부 hosted 실행 없음.
 ```
 
 | 입력과 경계 | 시작 시 결과 | 수정 후 결과 / 확인 |
@@ -130,6 +130,7 @@ Nanoom 작업 폴더에 계획/명세/OpenAPI/검증 스크립트 7개를 반영
 - `cargo clippy --locked --all-targets --all-features -- -D warnings` — exit 0.
 - `cargo test --locked --all-targets --all-features` — exit 0, 186 tests passed. 첫 전체 실행에서 이전 group fallback을 가정하던 affected expectation이 실패해, unsharded `test` 표본이 sharded `build`에 섞이지 않는 기대값(79ms, exact 1/cold 2)으로 고친 뒤 전체 통과.
 - `bash scripts/action-contract.sh` — exit 0; status/coordinator/assignment/history/revision/checkout-cleanup/fixture-completion contracts 모두 통과.
+- `bash scripts/review-change.sh 0aa7e968db4cfb2418c38e11fdebff7440932384` — exit 0, committed diff 12 files, PASS.
 - `git diff --check` — exit 0.
 
 미실시 및 경계: 지시서의 OpenAPI/spec validator는 기본 uv cache 권한 오류(exit 2) 뒤 `/private/tmp` cache로 재시도했으나 PyPI DNS 차단(exit 2)으로 실행되지 않음. A1의 external producer/consumer hosted fixture 증거는 A7까지 미실시다. A2~A7, server, GHES, release/실사용 consumer 증거는 미완료이며 기존 체크를 변경하지 않음.
