@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 ACTION_NAME=install ACTION_CWD=$CWD ACTION_PHASE=input-validation ACTION_COMMAND=not-started
-source "$GITHUB_ACTION_PATH/../_setup/log.sh"; trap 'nanoom_fail "$?"' ERR
+source "$GITHUB_ACTION_PATH/../_setup/log.sh"
+trap 'code=$?; failed_command=$BASH_COMMAND; printf "Install action failed at: %s\n" "$failed_command" >&2; if [[ -n ${cli_result:-} ]]; then printf "Nanoom CLI result: %s\n" "$cli_result" >&2; fi; nanoom_fail "$code"' ERR
 started=$(date +%s)
 continuous=false
 if [[ -n ${ASSIGNMENT_FILE:-} ]]; then
@@ -45,10 +46,13 @@ else
   printf 'Nanoom CLI result: %s\n' "${cli_result:-<empty>}" >&2
   nanoom_fail "$cli_status"
 fi
+ACTION_PHASE=post-install-cli-result
 elapsed=$(( $(date +%s) - started ))
-resolved_pm=$(jq -r '.packageManager // empty' <<<"$cli_result")
+ACTION_PHASE=parse-cli-result
+if resolved_pm=$(jq -r '.packageManager // empty' <<<"$cli_result"); then :; else nanoom_fail "$?"; fi
 resolved_pm_version=''
 if [[ "$resolved_pm" =~ ^(pnpm|yarn|npm)$ ]]; then
+  ACTION_PHASE=package-manager-version
   set +e
   resolved_pm_version=$("$resolved_pm" --version 2>/dev/null)
   version_status=$?
@@ -60,7 +64,11 @@ if [[ "$resolved_pm" =~ ^(pnpm|yarn|npm)$ ]]; then
     resolved_pm_version=''
   fi
 fi
-result=$(jq -cn --argjson matrix "$matrix_json" --arg command "$ACTION_COMMAND" --arg cwd "$CWD" --argjson cli "$cli_result" --argjson elapsed "$elapsed" --argjson continuous "$continuous" --arg packageManager "$resolved_pm" --arg packageManagerVersion "$resolved_pm_version" '{status:"success",reason:(if $continuous then "installed the full workspace closure because future claims are unknown" else "installed the union of assignment workspace closures" end),assignment:$matrix,command:$command,cwd:$cwd,cli:$cli,elapsedSeconds:$elapsed} + (if $packageManager == "" then {} else {packageManager:$packageManager,installMode:(if $continuous then "full" else "focused" end)} + (if $packageManagerVersion == "" then {} else {packageManagerVersion:$packageManagerVersion} end) end)')
+ACTION_PHASE=post-install-result-json
+if result=$(jq -cn --argjson matrix "$matrix_json" --arg command "$ACTION_COMMAND" --arg cwd "$CWD" --argjson cli "$cli_result" --argjson elapsed "$elapsed" --argjson continuous "$continuous" --arg packageManager "$resolved_pm" --arg packageManagerVersion "$resolved_pm_version" '{status:"success",reason:(if $continuous then "installed the full workspace closure because future claims are unknown" else "installed the union of assignment workspace closures" end),assignment:$matrix,command:$command,cwd:$cwd,cli:$cli,elapsedSeconds:$elapsed} + (if $packageManager == "" then {} else {packageManager:$packageManager,installMode:(if $continuous then "full" else "focused" end)} + (if $packageManagerVersion == "" then {} else {packageManagerVersion:$packageManagerVersion} end) end)'); then :; else nanoom_fail "$?"; fi
+ACTION_PHASE=write-output
 echo "result=$result" >> "$GITHUB_OUTPUT"
+ACTION_PHASE=print-result
 printf '  Result\n    ✓ workspaces=%s; elapsed=%ss\n  Final JSON\n    %s\n' "$name_count" "$elapsed" "$result"
+ACTION_PHASE=write-summary
 { echo '### nanoom install'; echo; echo "**Result:** $name_count assignment workspaces installed in ${elapsed}s."; echo; echo "Command: \`$ACTION_COMMAND\`"; } >> "$GITHUB_STEP_SUMMARY"

@@ -49,6 +49,10 @@ if [[ "${3:-}" == install ]]; then
     printf '%s\n' '{"status":"failure","error":"expected package-manager failure"}'
     exit 1
   fi
+  if [[ "${FAKE_INSTALL_INVALID_JSON:-}" == 1 ]]; then
+    printf '%s\n' 'not json'
+    exit 0
+  fi
   while (($#)); do
     if [[ "$1" == --filter-file ]]; then cp "$2" "$FAKE_FILTER_FILE"; shift 2; else shift; fi
   done
@@ -154,6 +158,14 @@ grep -q -- '--filter-file' "$FAKE_INSTALL_CALLS"
 jq -e '. == ["pkg-a","pkg-b"]' "$FAKE_FILTER_FILE" >/dev/null
 install_result=$(sed -n 's/^result=//p' "$GITHUB_OUTPUT")
 jq -e '.assignment.itemCount == 2 and (.assignment | has("items") | not) and .packageManager == "pnpm" and .packageManagerVersion == "10.0.0" and .installMode == "focused"' <<<"$install_result" >/dev/null
+
+: > "$GITHUB_OUTPUT"
+if FAKE_INSTALL_INVALID_JSON=1 bash "$GITHUB_ACTION_PATH/run.sh" >"$tmp/install-postprocess-failure.log" 2>&1; then echo 'invalid Nanoom install result unexpectedly succeeded' >&2; exit 1; fi
+grep -q 'parse error' "$tmp/install-postprocess-failure.log"
+grep -q 'Install action failed at:' "$tmp/install-postprocess-failure.log"
+grep -q 'Nanoom CLI result: not json' "$tmp/install-postprocess-failure.log"
+install_failure_result=$(sed -n 's/^result=//p' "$GITHUB_OUTPUT")
+jq -e '.status == "failure" and .action == "install" and .phase == "parse-cli-result"' <<<"$install_failure_result" >/dev/null
 
 GITHUB_ACTION_PATH="$root/.github/actions/run"
 export GITHUB_ACTION_PATH SCHEDULER=artifact PREPARED_AT_MS="$(($(date +%s) * 1000 - 5000))" INSTALL_RESULT="$install_result" GITHUB_JOB=telemetry-run ARTIFACT_VERSION=v4
