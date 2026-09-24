@@ -26,7 +26,7 @@ chmod +x "$tmp/bin/yarn"
 mkdir -p "$tmp/runner" "$tmp/worker" "$tmp/workspace" "$tmp/measurements"
 (cd "$tmp" && bash "$root/.github/test-fixtures/setup-fixture.sh" --shards --distribution --change >/dev/null)
 fixture="$tmp/.fixture"
-if ! (cd "$fixture" && node .yarn/releases/yarn-4.11.0.cjs install) >"$tmp/fixture-install.log" 2>&1; then
+if ! (cd "$fixture" && node .yarn/releases/yarn-4.11.0.cjs install --no-immutable) >"$tmp/fixture-install.log" 2>&1; then
   cat "$tmp/fixture-install.log" >&2
   exit 1
 fi

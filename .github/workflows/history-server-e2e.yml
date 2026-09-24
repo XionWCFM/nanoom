@@ -37,7 +37,7 @@ jobs:
         run: |
           (cd "$RUNNER_TEMP" && bash "$GITHUB_WORKSPACE/.github/test-fixtures/setup-fixture.sh" --shards --distribution --change)
           fixture="$RUNNER_TEMP/.fixture"
-          (cd "$fixture" && node .yarn/releases/yarn-4.11.0.cjs install)
+          (cd "$fixture" && node .yarn/releases/yarn-4.11.0.cjs install --no-immutable)
           git -C "$fixture" add yarn.lock
           if ! git -C "$fixture" diff --cached --quiet; then git -C "$fixture" commit -q -m 'refresh fixture lockfile' --no-gpg-sign; fi
           rm -rf "$fixture/node_modules"
