@@ -78,7 +78,7 @@ SH
 chmod +x "$tmp/bin/nanoom"
 cat > "$tmp/bin/pnpm" <<'SH'
 #!/usr/bin/env bash
-printf '%s\n' '10.0.0'
+if [[ "$PWD" == "$FAKE_PACKAGE_MANAGER_CWD" ]]; then printf '%s\n' '10.0.0'; else printf '%s\n' '99.0.0'; fi
 SH
 chmod +x "$tmp/bin/pnpm"
 export PATH="$tmp/bin:$PATH" GITHUB_ACTION_PATH="$root/.github/actions/run" GITHUB_STEP_SUMMARY="$tmp/summary" RUNNER_TEMP="$tmp/runner"
@@ -87,6 +87,7 @@ export GITHUB_WORKSPACE="$workspace" GITHUB_SHA="$head" REPOSITORY=owner/repo
 export GITHUB_REPOSITORY_ID=12345 GITHUB_SERVER_URL=https://github.com GITHUB_REF=refs/heads/main GITHUB_EVENT_NAME=push
 export WORKFLOW_REF=owner/repo/.github/workflows/ci.yml@refs/heads/main RUN_ID=1 RUN_ATTEMPT=1 GITHUB_RUN_ID=1 GITHUB_RUN_ATTEMPT=1 GITHUB_JOB=run MATRIX_INDEX=0
 export PLAN="$reference" ASSIGNMENT_FILE="$assignment_file" FAKE_SELECTED_ASSIGNMENT="$tmp/selected-source.json"
+export FAKE_PACKAGE_MANAGER_CWD="$cwd"
 export GITHUB_OUTPUT="$tmp/output" FAKE_RUN_CALLS="$tmp/run-calls" FAKE_INSTALL_CALLS="$tmp/install-calls" FAKE_FILTER_FILE="$tmp/filter-file.json"
 export MATRIX='' GROUP= PM=pnpm TOOL=auto CWD="$cwd" SCHEDULER=off TIMING_ENVIRONMENT=linux-x64 COORDINATOR_URL='' COORDINATOR_TOKEN=''
 

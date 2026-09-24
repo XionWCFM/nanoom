@@ -54,7 +54,7 @@ resolved_pm_version=''
 if [[ "$resolved_pm" =~ ^(pnpm|yarn|npm)$ ]]; then
   ACTION_PHASE=package-manager-version
   set +e
-  resolved_pm_version=$("$resolved_pm" --version 2>/dev/null)
+  resolved_pm_version=$(cd "$CWD" && "$resolved_pm" --version 2>/dev/null)
   version_status=$?
   set -e
   if (( version_status == 0 )); then
