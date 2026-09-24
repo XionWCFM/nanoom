@@ -277,9 +277,9 @@ if [[ "$SCHEDULER" != http ]]; then
       else
         prediction_sha=$(nanoom_history_timeout shasum -a 256 "$history_path" | awk '{print $1}') || history_path=''
       fi
-      prediction_metadata=$(nanoom_history_timeout jq -cer '.predictions[0].modelArtifact | {name,sha256} | select(.name and .sha256)' "$history_path") || history_path=''
-      model_name=$(jq -r '.name' <<<"${prediction_metadata:-{}}")
-      model_sha=$(jq -r '.sha256' <<<"${prediction_metadata:-{}}")
+      prediction_metadata=$(nanoom_prediction_model_metadata "$history_path") || history_path=''
+      model_name=$(jq -r '.name // empty' <<<"$prediction_metadata")
+      model_sha=$(jq -r '.sha256 // empty' <<<"$prediction_metadata")
       if [[ -n "$history_path" && "$prediction_sha" =~ ^[0-9a-f]{64}$ ]]; then
         if nanoom_history_timeout jq --arg predictionName "$HISTORY_ARTIFACT" --arg predictionSha "$prediction_sha" --arg modelName "$model_name" --arg modelSha "$model_sha" '.predictionReason="a bounded PredictionArtifact v3 was selected and validated by Nanoom" | .predictionArtifact={name:$predictionName,sha256:$predictionSha} | .modelArtifact={name:$modelName,sha256:$modelSha}' "$context_path" > "$context_path.tmp"; then
           mv "$context_path.tmp" "$context_path"

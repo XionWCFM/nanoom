@@ -238,6 +238,10 @@ nanoom_download_prediction_artifact() {
   nanoom_download_artifact_bounded "$1" "$2" "$3" 4194304 8388608
 }
 
+nanoom_prediction_model_metadata() {
+  nanoom_history_timeout jq -cer '.predictions[0].modelArtifact | {name,sha256} | select(.name and .sha256)' "$1"
+}
+
 nanoom_artifact_exists() {
   local artifacts=$1 mode=$2 pattern=$3
   if [[ "$mode" == exact ]]; then

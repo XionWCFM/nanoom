@@ -45,6 +45,10 @@ export FAKE_REQUESTS="$tmp/requests" FAKE_ARTIFACTS="$tmp/artifacts.json"
 export FAKE_PREDICTION_ZIP="$tmp/prediction.zip" FAKE_MODEL_ZIP="$tmp/model.zip"
 source "$root/.github/actions/_setup/artifacts.sh"
 
+nanoom_history_budget_start 10 8388608
+prediction_metadata=$(nanoom_prediction_model_metadata "$tmp/prediction/prediction-v3.json")
+jq -e '.name == "nanoom-model-v3-88-1" and .sha256 == "ada20f873e74812b9e056d9134c73ae06102c808739d5fd1c73f0b40e800302b"' <<<"$prediction_metadata" >/dev/null
+
 identity=$(nanoom_prediction_identity push owner/repo/.github/workflows/ci.yml@refs/heads/main 12345 https://github.com refs/heads/main)
 jq -e '.repositoryKey == "github-12345" and .workflowPath == ".github/workflows/ci.yml" and .ref.ref == "refs/heads/main"' <<<"$identity" >/dev/null
 nanoom_history_budget_start 10 8388608
