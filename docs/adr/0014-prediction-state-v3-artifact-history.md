@@ -17,15 +17,20 @@ The previous timing history grows with retained samples and requires the planner
 - Expired or unusable history falls back to cold scheduling. If no affected assignment choice can change, the action makes no history metadata request.
 - Planning history I/O, bounded archive extraction, JSON inspection, and prediction loading share a three-second deadline. Per-file and total received-byte limits are checked before and after transfer; exceeding either limit keeps the previously computed cold plan.
 - GitHub artifact Actions remain the default transport. GHES keeps explicit v3 wrappers and shares the same artifact wire format and shell lookup logic. This decision does not add a server dependency or change `scheduler:http`.
+- The v3 measurement artifact may add `preparationObservations`; old task-only v3 artifacts remain valid. Preparation keys distinguish package manager/version, install mode, lockfile digest, and exact checkout/workspace-set digests, plus a fallback without the latter two digests.
+- Preparation duration spans the first prepare Action step to the first planned task subprocess start. `affected` reads the package-manager version declared in the root manifest and performs no package-manager invocation. A missing/mismatched manager declaration or lockfile makes preparation prediction unknown.
+- Warm task and preparation estimates compare LPT layouts for powers of two, configured tier concurrency values, and the tier cap. The objective is preparation-plus-task makespan, total runner time, checkout path count, assignment count, then stable order. Cold task history or any unknown candidate preparation estimate retains the tier cap.
+- Assignment and compact output include optional preparation estimate/source/sample count and `automatic` or `cold-cap` diagnostics. These fields do not change the Plan v1 version.
 
 ## Acceptance
 
 - Same input observations produce the same batch and projection bytes regardless of input ordering.
 - Duplicate batch submission does not increase aggregates; expired inputs, invalid rows, and PR/base scope mismatches are rejected or fall back cold.
 - The CLI consumes a v3 prediction row in `affected`, reports its source, and preserves cold estimates for unmatched work.
+- Preparation-only measurement compatibility, exact/fallback JCS key vectors, aggregate compilation, reversed-clock omission, cold-cap, and deterministic warm concurrency are covered locally.
 - Action contracts prove push/PR selection, no metadata lookup for no-change work, prediction-only planning downloads, updater model reads, combined byte bounds, and deadline cancellation.
 - OpenAPI schema/examples and RFC8785 digest vectors pass their standard validator. Hosted GitHub/GHES and released consumer evidence remain separate completion gates.
 
 ## Consequences
 
-Planning transfers a compact, bounded projection instead of model state and measurements. Model corruption can reset learned state without injecting stale estimates as observations. The system may run cold when lookup is slow or invalid. The three-second cap and compact payload are safety limits, not evidence of a workflow speed improvement; total CI time and prediction error still require measurement.
+Planning transfers a compact, bounded projection instead of model state and measurements. Model corruption can reset learned state without injecting stale estimates as observations. The system may run cold when lookup is slow or invalid. The three-second cap and compact payload are safety limits, not evidence of a workflow speed improvement; total CI time, real-trace prediction error versus the prior median, and actual artifact sizes still require hosted measurement.
