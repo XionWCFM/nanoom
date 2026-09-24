@@ -123,9 +123,11 @@ jobs:
 
 ## 실행시간 기반 정적 배치
 
-historical scheduler는 기본으로 켜져 있습니다. 같은 workflow와 branch의 마지막 성공 run에서 history를 읽고, exact key `group/workspace/task/shard/totalShards/runner/environment`의 최근 성공 7개 median을 사용합니다. exact sample이 없으면 workspace를 제외한 동일 group/task/shard layout/runner/environment의 median을 사용하고, 그것도 없으면 가중치 `1`로 시작합니다.
+artifact history는 기본으로 켜져 있습니다. static Plan을 쓰는 artifact `run` Action의 성공 결과는 v3 measurement artifact를 만들고, `history` job이 현재 measurements와 이전 model을 병합해 ModelState와 작은 PredictionArtifact를 게시합니다. PredictionArtifact는 마지막 publish marker입니다. `affected`는 같은 workflow의 해당 branch/pull request에서 이전 성공 run을 찾고 compact prediction만 받습니다. PR은 PR scope를 먼저 보고 base branch scope를 fallback으로 사용합니다. raw measurements와 ModelState는 planning에 내려받지 않습니다.
 
-배치는 예상 runtime makespan을 먼저 최소화합니다. runtime이 같은 후보에서는 모든 assignment의 sparse checkout path 수 합계가 가장 작은 bucket을 선택해 중복 checkout을 줄입니다. `result.scheduling`의 `historyStatus`, `historySourceRunId`, `predictionSources`, `totalCheckoutPathCount`, `uniqueCheckoutPathCount`, `duplicatedCheckoutPathCount`로 근거를 확인할 수 있습니다.
+task prediction은 `(group, workspace, task, shard, totalShards, runner, environment)` exact key를 먼저 보고, 없으면 workspace를 제외한 동일 task/layout/runner/environment fallback을 확인합니다. key별 최근 30 UTC일 안의 최대 7개 일별 count/duration 집계로 7일 half-life 가중 평균을 계산합니다. 유효한 값이 없거나 history가 만료·손상·지연되면 cold weight `1`로 배분합니다. history lookup은 요청과 parse를 합쳐 최대 3초, metadata와 archive 수신량 합계 8 MiB, prediction JSON 8 MiB, archive 4 MiB로 제한합니다. 제한이나 네트워크 오류는 affected/task 결과를 실패시키지 않고 cold 배분을 유지합니다.
+
+배치는 configured distribution tier의 concurrency 상한 안에서 예상 runtime makespan을 먼저 최소화합니다. runtime이 같은 후보에서는 모든 assignment의 sparse checkout path 수 합계가 가장 작은 bucket을 선택합니다. `result.scheduling`의 `historyStatus`, `historySourceRunId`, `historyFetchMs`, `predictionSources` (`exact`, `group`, `cold`), `totalCheckoutPathCount`, `uniqueCheckoutPathCount`, `duplicatedCheckoutPathCount`로 근거를 확인할 수 있습니다. 배치와 artifact 결정은 [ADR-0014](docs/adr/0014-prediction-state-v3-artifact-history.md), 상세 wire/한도는 [PredictionState v3 명세](docs/prediction-model-spec.md)를 참고하세요.
 
 group 또는 distribution tier의 `runnerLabels`로 matrix job의 runner를 정할 수 있습니다. 배열은 fallback 순서가 아니라 모든 라벨을 만족해야 하는 AND 조건입니다. tier 설정이 group 설정을 덮어쓰며, 생략하면 workflow의 `ubuntu-latest` fallback을 사용합니다.
 
@@ -159,7 +161,7 @@ runs-on: ${{ matrix.runnerLabels || 'ubuntu-latest' }}
 
 `timingEnvironment`을 생략하면 정렬된 runner label 배열로 안정적인 history identity를 만듭니다. 성능이 다른 runner가 같은 라벨 집합을 공유하는 autoscaled pool에서는 image/pool revision을 명시하세요. PR이 수정할 수 있는 config로 privileged self-hosted runner를 선택하면 신뢰되지 않은 코드를 그 runner에서 실행할 수 있으므로, fork PR은 고정 hosted runner 또는 격리된 pool만 사용하고 동적 label routing은 trusted push/`workflow_dispatch`에 제한하세요.
 
-첫 실행은 `bootstrap-fallback` cold scheduling으로 정상 실행됩니다. 성공한 `run`만 sample artifact를 올리고 표준 `history` job이 다음 실행용 artifact로 병합합니다. 이전 성공 run에 sample만 있고 merged history가 없으면 history job 누락으로 실패합니다. historical scheduling이 필요 없는 경우에만 affected/run/history 모두 `scheduler: off`를 명시합니다.
+첫 실행은 cold scheduling으로 정상 실행됩니다. history upload/merge가 실패하면 결과를 degraded로 표시하고 다음 실행은 cold로 진행합니다. 해당 affected group에 배분 선택지가 없으면 metadata를 조회하지 않고 `historyStatus: history_not_needed`로 기록합니다. 기능을 명시적으로 끄려면 affected/run/history에 `scheduler: off`를 설정하세요.
 
 ## Plan v1 파일 CLI
 

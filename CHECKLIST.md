@@ -238,7 +238,7 @@ run Action 회귀는 no execution 및 task failure가 assignment를 실패시키
 ```text
 단계: A4
 시작 HEAD: 9faa14024285e5ad5cc562d1e29e14b0bedd1389
-결과: PredictionState v3 Rust core, artifact-backed history Action 경로, CLI warm lookup regression. phase-local commit은 이 실행 기록을 포함한 구현 변경이다.
+결과 commit: `622e1fa feat: implement PredictionState v3 artifact history`; A4 문서/ADR 보강 commit은 이후 별도로 기록한다.
 시작 상태: tracked tree clean; 사용자 .opencode/ 미추적 1개 보존하고 stage하지 않음.
 ```
 

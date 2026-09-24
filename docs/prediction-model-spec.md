@@ -1,6 +1,6 @@
 # PredictionState v3 — 실행 이력 대신 예측 상태 저장
 
-상태: A4 local Rust/Action 구현 및 회귀가 통과한 branch 후보 계약. Official OpenAPI validator는 패키지 DNS 문제로 미실시다. Hosted GitHub, GHES, released consumer, 선택적 서버 증거는 별도다. 이전 원본 sample 7개/128 MiB snapshot 설계는 사용하지 않는다. [전체 계획](../IMPLEMENTATION_PLAN.md), [서버](history-server-spec.md), [OpenAPI](api/history.openapi.yaml)와 함께 적용한다.
+상태: A4 local Rust/Action 구현 및 회귀가 통과한 branch 후보 계약. Official OpenAPI validator는 패키지 DNS 문제로 미실시다. Hosted GitHub, GHES, released consumer, 선택적 서버 증거는 별도다. 이전 원본 sample 7개/128 MiB snapshot 설계는 사용하지 않는다. [ADR-0014](adr/0014-prediction-state-v3-artifact-history.md), [전체 계획](../IMPLEMENTATION_PLAN.md), [서버](history-server-spec.md), [OpenAPI](api/history.openapi.yaml)와 함께 적용한다.
 
 ## 1. 목적과 데이터 분리
 
