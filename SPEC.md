@@ -1,6 +1,8 @@
-# Nanoom v0.3 specification
+# Nanoom 공개 계약과 개선 명세
 
-공개 계약의 기준은 [README](README.md), 생성된 [JSON schema](nanoom.schema.json), [ADR-0009](docs/adr/0009-runtime-aware-distribution.md)입니다.
+## 현재 구현 기준: v0.6.0
+
+아래 기존 계약은 source `539b2c08cc7e2543f3a0cdd10fbdba451b2502d5` 기준이다. 다음 절의 제안은 아직 구현되지 않았다. 공개 계약의 기준은 [README](README.md), 생성된 [JSON schema](nanoom.schema.json), [ADR-0009](docs/adr/0009-runtime-aware-distribution.md)입니다.
 
 ## Work item과 assignment
 
@@ -53,4 +55,27 @@ Artifact/history/coordinator는 aggregate status의 입력이 아니다. `status
 
 ## 제거와 제외
 
-`isolate`는 v0.3.0에서 제거됐다. Task DAG, remote cache, flaky retry, Nx assignment rules, Nanoom server/SaaS는 범위 밖이다.
+`isolate`는 v0.3.0에서 제거됐다. Task DAG, remote cache, flaky retry, Nx assignment rules, Nanoom server/SaaS는 현재 배포 구현에 없다. 아래 선택적 History Server 제안과 구분한다.
+
+
+## 제안 계약: artifact plan / PredictionState v3 / 선택적 서버
+
+전체 결정과 인수 기준은 [IMPLEMENTATION_PLAN](IMPLEMENTATION_PLAN.md)을 따른다. 아래 표는 **미구현 변경**이며 기존 출력과 호환된다고 가정하지 않는다.
+
+| 경계 | 변경 |
+|---|---|
+| 실행 계획 | Plan v1 artifact, 작은 assignment matrix, digest/provenance 검증 |
+| checkout | prepare가 exact head를 격리 checkout하고 paths 파일을 sparse --stdin으로 적용 |
+| install/run | assignment-file 입력, empty/no-execution 성공 금지, 상세 결과 파일 |
+| 이력 | PredictionTable/ModelState v3, planner는 예측값만 조회, updater는 날짜 count/sum·bounded batch dedup |
+| 배분 | 관측 preparation+task 비용, tier cap 안에서 기본 자동 k, cold-cap |
+| 상태 | requiredJobs로 예상하지 않은 skipped run 거부 |
+| 서버 | Rust 별도 binary, opt-in historyBackend:server, 기본 artifact 유지, /health와 /ready |
+
+서버 HTTP source of truth는 [OpenAPI 3.1.1](docs/api/history.openapi.yaml), 분산·S3·인증·운영 규칙은 [서버 명세](docs/history-server-spec.md)다. API /v1, Plan v1, PredictionTable/ModelState v3 버전은 각각 독립적이다. 기존 scheduler:http live coordinator와 새 History Server API를 혼합하지 않는다.
+
+새 공개 계약은 다음 minor에서 workflow 예제/fixture/마이그레이션 문서와 함께 적용한다. 다음 중 하나라도 없으면 구현 완료가 아니다: 계약 회귀, docs, 실제 candidate consumer, positive 실행, 실패 전파. released 검증은 release 후 별도 증거다.
+
+데이터와 산식은 [예측 모델 명세](docs/prediction-model-spec.md)를 따른다. raw 실행 history 보존이 목표가 아니다. key당 최대 30 UTC일 내 최근 7개 날짜의 count/sum을 유지하며 가중 평균을 계산한다. 기존 median과 정확도 차이는 후속 구현의 비교 대상이다. 현재 attempt 측정 artifact는 1일, model/prediction 및 Plan artifact는 30일이다.
+
+planning 전체 이력 I/O·파싱의 공유 budget은 3초이며 크기/시간 초과는 cold fallback한다. planner는 model을 다운로드하지 않는다. 학습 state는 16 MiB/50,000 keys/4096 receipts 상한, 80% 경고다. 유효 예측 없는 GET은 404, S3 versioning 기본 off/opt-in noncurrent 1일, 비활성 current 객체 45일 lifecycle이다. 총 bucket quota나 정확한 물리 삭제 시각을 보장하지 않는다. artifact run별 사본 총량도 별도 측정한다. 이력 조회와 갱신을 포함한 전체 CI가 느려지면 성능 개선 완료로 인정하지 않는다.

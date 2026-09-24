@@ -1,0 +1,1094 @@
+openapi: 3.1.1
+info:
+  title: Nanoom Optional History Server
+  version: 1.0.0-design
+  summary: Artifact-first compact CI predictions; optional stateless Rust service backed by S3.
+  description: Design-only optional Rust prediction-state service. Artifact remains default. API /v1 is
+    independent from PredictionTable/ModelState v3. Store derived estimates and bounded daily sufficient
+    statistics, not raw execution history. See prediction-model-spec.md and history-server-spec.md.
+  license:
+    name: MIT OR Apache-2.0
+    identifier: MIT OR Apache-2.0
+servers:
+- url: https://history.example.com
+  description: Replace with an operator-controlled TLS endpoint; example only.
+tags:
+- name: Operations
+  description: Unprivileged probes with minimal responses.
+- name: History
+  description: Bearer authorization with exact operator-configured scope ACLs.
+security:
+- bearerAuth: []
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      tags:
+      - Operations
+      summary: Process liveness without storage I/O
+      security: []
+      responses:
+        '200':
+          description: Event loop responds; independent of S3 status.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+              example:
+                status: ok
+  /ready:
+    get:
+      operationId: getReadiness
+      tags:
+      - Operations
+      summary: Readiness from background S3 conditional-write probe
+      description: No request-time S3 calls. Initial probe must pass; then every 30s + 0..5s jitter. Failed
+        probe, success older than 60s, startup or drain returns 503. No bucket/key/credential information.
+      security: []
+      responses:
+        '200':
+          description: Initialized, fresh successful storage probe, not draining.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ready'
+              example:
+                status: ready
+        '503':
+          description: Not ready; liveness remains independent.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+            Retry-After:
+              $ref: '#/components/headers/RetryAfter'
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotReady'
+              example:
+                status: not_ready
+                reason: storage_unavailable
+                requestId: req-example-02
+  /v1/repositories/{repositoryKey}/scopes/{scopeId}/snapshot:
+    parameters:
+    - $ref: '#/components/parameters/RepositoryKey'
+    - $ref: '#/components/parameters/ScopeId'
+    get:
+      operationId: getPredictions
+      tags:
+      - History
+      summary: Read compact predictions, never the learning state
+      x-required-permission: history:read exact repositoryKey/scopeId
+      parameters:
+      - $ref: '#/components/parameters/IfNoneMatch'
+      responses:
+        '200':
+          description: Compact PredictionTable, at most 8 MiB JSON; no training data.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PredictionTable'
+              example:
+                version: 3
+                scope:
+                  repositoryKey: github-12345
+                  workflowPath: .github/workflows/ci.yml
+                  ref:
+                    kind: push
+                    ref: refs/heads/main
+                  group: ci
+                  taskRunner: yarn
+                  timingEnvironment: linux-x64-node24
+                modelUpdatedAtMs: 1790208000000
+                rows:
+                - - 8e3a060d9912f5f4230ab9f0a25df7fe50c4d9814cca14ec6f20f795a7e0fcda
+                  - 12000
+                  - 1
+                  - 1790208000000
+                  - 1792800000000
+        '304':
+          description: Valid prediction representation unchanged; no body. Client still observes per-row
+            validUntilMs.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/Overloaded'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+      description: Read internal model with a bounded request, project valid predictions, then compute
+        HTTP ETag. No raw samples, day buckets or receipts in response. Expired contributors are filtered
+        before If-None-Match. Empty projection returns 404. At most 8 MiB; read never refreshes S3 lifecycle.
+        Artifact planning has a separate 3-second end-to-end read budget.
+  /v1/repositories/{repositoryKey}/scopes/{scopeId}/observations:merge:
+    parameters:
+    - $ref: '#/components/parameters/RepositoryKey'
+    - $ref: '#/components/parameters/ScopeId'
+    post:
+      operationId: applyObservationBatch
+      tags:
+      - History
+      summary: Update bounded sufficient statistics and idempotency receipt atomically
+      description: Validate an immutable aggregate batch. Prune expiry, deduplicate batchId+body digest,
+        add integer day counts/sums, retain latest seven active UTC days per key, derive weighted estimates,
+        and commit state plus receipt with S3 CAS. Same batch is never added twice. No raw execution archive.
+        Current prediction equality does not mean a new batch is a no-op. 8 CAS attempts/20s maximum.
+      x-required-permission: history:write exact repositoryKey/scopeId
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ObservationBatch'
+            examples:
+              successfulAttempt:
+                summary: One finalized attempt, already compiled to sufficient statistics
+                value:
+                  version: 3
+                  scope:
+                    repositoryKey: github-12345
+                    workflowPath: .github/workflows/ci.yml
+                    ref:
+                      kind: push
+                      ref: refs/heads/main
+                    group: ci
+                    taskRunner: yarn
+                    timingEnvironment: linux-x64-node24
+                  batchId: 1368e6bbb03a78c15d423d23afac569f4f8bfd6e1b10a38b9f4c8e647177b9b5
+                  runId: '123456789'
+                  runAttempt: 1
+                  producedAtMs: 1790208000000
+                  aggregates:
+                  - keyId: 8e3a060d9912f5f4230ab9f0a25df7fe50c4d9814cca14ec6f20f795a7e0fcda
+                    utcEpochDay: 20720
+                    observationCount: 1
+                    totalDurationMs: 12000
+                    lastObservedAtMs: 1790208000000
+      responses:
+        '200':
+          description: Atomic model update or duplicate-batch receipt; no internal model returned.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MergeResult'
+              examples:
+                created:
+                  value:
+                    scopeId: b351ab1307a793d7499f196a59cab4707a1535ce6a8470285a8b9e3384a74a47
+                    modelVersion: 3
+                    outcome: created
+                    applied: true
+                    receivedAggregateCount: 1
+                    retainedKeyCount: 1
+                    prunedBucketCount: 0
+                    receiptCount: 1
+                    modelUpdatedAtMs: 1790208000000
+                duplicateRetry:
+                  value:
+                    scopeId: b351ab1307a793d7499f196a59cab4707a1535ce6a8470285a8b9e3384a74a47
+                    modelVersion: 3
+                    outcome: unchanged
+                    applied: false
+                    receivedAggregateCount: 1
+                    retainedKeyCount: 1
+                    prunedBucketCount: 0
+                    receiptCount: 1
+                    modelUpdatedAtMs: 1790208000000
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMedia'
+        '422':
+          $ref: '#/components/responses/InvalidHistory'
+        '429':
+          $ref: '#/components/responses/Overloaded'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Opaque scoped credential
+      description: Random 32-byte minimum secret, separate read/write scope ACL. This is not a GitHub
+        token or an OIDC JWT. No S3 credentials are sent by clients.
+  parameters:
+    RepositoryKey:
+      name: repositoryKey
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/RepositoryKey'
+      description: Operator registered alias bound to one GitHub API origin and numeric repository ID.
+    ScopeId:
+      name: scopeId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Digest'
+      description: SHA256 of RFC8785 JCS Scope. Exact read/write ACL match; no wildcard or raw ref in
+        storage paths.
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        $ref: '#/components/schemas/Digest'
+      description: Lowercase SHA256 of exact original request bytes. Same batchId+digest applies once
+        while receipt retained; conflicting digest is 409. Receipt lives 8 days; batch accepted for <7
+        days. Retry same bytes; no fixed response replay.
+    IfNoneMatch:
+      name: If-None-Match
+      in: header
+      required: false
+      schema:
+        type: string
+        maxLength: 4096
+      description: Standard weak GET comparison of prediction ETags. Reproject/filter expired rows before
+        comparison. An all-expired table returns 404 instead of 304.
+  headers:
+    RequestId:
+      description: Server-generated request correlation ID, never a secret.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: ^[^\u0000-\u001f\u007f]+$
+    ETag:
+      description: SHA256 of public prediction projection response bytes. Neither internal model digest
+        nor opaque S3 ETag.
+      schema:
+        type: string
+        pattern: ^"sha256:[a-f0-9]{64}"$
+    RetryAfter:
+      description: Suggested seconds until retry.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 60
+    CacheControl:
+      schema:
+        type: string
+      description: 'Snapshot: private, no-cache. Everything else: no-store.'
+    WWWAuthenticate:
+      schema:
+        type: string
+        const: Bearer
+  responses:
+    BadRequest:
+      description: Malformed JSON, duplicate JSON keys, header or path.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+        Cache-Control:
+          $ref: '#/components/headers/CacheControl'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: BadRequest
+            status: 400
+            code: invalid_request
+            detail: Malformed JSON, duplicate JSON keys, header or path.
+            requestId: req-example-01
+    Unauthorized:
+      description: Missing or invalid bearer credential.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+        Cache-Control:
+          $ref: '#/components/headers/CacheControl'
+        WWW-Authenticate:
+          $ref: '#/components/headers/WWWAuthenticate'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Unauthorized
+            status: 401
+            code: unauthenticated
+            detail: Missing or invalid bearer credential.
+            requestId: req-example-01
+    Forbidden:
+      description: Principal lacks exact scope permission, independent of object existence.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+        Cache-Control:
+          $ref: '#/components/headers/CacheControl'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Forbidden
+            status: 403
+            code: forbidden
+            detail: Principal lacks exact scope permission, independent of object existence.
+            requestId: req-example-01
+    NotFound:
+      description: No currently usable prediction rows exist. Client invalidates its cached table and
+        uses fallback/cold.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+        Cache-Control:
+          $ref: '#/components/headers/CacheControl'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: NotFound
+            status: 404
+            code: history_not_found
+            detail: No currently usable history exists for this scope.
+            requestId: req-example-01
+    Conflict:
+      description: Same retained batchId with a different body digest, or post-pruning model/receipt capacity
+        exceeded; no mutation.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+        Cache-Control:
+          $ref: '#/components/headers/CacheControl'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Conflict
+            status: 409
+            code: batch_conflict
+            detail: Batch identity already exists with different content.
+            requestId: req-example-01
+    TooLarge:
+      description: Request exceeds 16 MiB or 50000 aggregate rows; no mutation.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+        Cache-Control:
+          $ref: '#/components/headers/CacheControl'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: TooLarge
+            status: 413
+            code: payload_too_large
+            detail: Observation batch exceeds the request budget.
+            requestId: req-example-01
+    UnsupportedMedia:
+      description: Only uncompressed application/json UTF-8 is supported.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+        Cache-Control:
+          $ref: '#/components/headers/CacheControl'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: UnsupportedMedia
+            status: 415
+            code: unsupported_media_type
+            detail: Only uncompressed application/json UTF-8 is supported.
+            requestId: req-example-01
+    InvalidHistory:
+      description: Invalid aggregate, scope, identity, digest, timestamp or expired batch; no mutation.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+        Cache-Control:
+          $ref: '#/components/headers/CacheControl'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: InvalidHistory
+            status: 422
+            code: invalid_history
+            detail: Observation batch failed semantic validation.
+            requestId: req-example-01
+    Overloaded:
+      description: Replica data-plane concurrency limit reached; no queued write.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+        Cache-Control:
+          $ref: '#/components/headers/CacheControl'
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Overloaded
+            status: 429
+            code: overloaded
+            detail: Replica data-plane concurrency limit reached; no queued write.
+            requestId: req-example-01
+    Unavailable:
+      description: Storage unavailable/corrupt or bounded CAS retry exhaustion. Commit may be uncertain
+        after network failure; retry unchanged input.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+        Cache-Control:
+          $ref: '#/components/headers/CacheControl'
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Unavailable
+            status: 503
+            code: storage_unavailable
+            detail: Storage unavailable/corrupt or bounded CAS retry exhaustion. Commit may be uncertain
+              after network failure; retry unchanged input.
+            requestId: req-example-01
+  schemas:
+    Digest:
+      type: string
+      pattern: ^[a-f0-9]{64}$
+    Timestamp:
+      type: string
+      format: date-time
+      pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$
+    RepositoryKey:
+      type: string
+      pattern: ^[a-z0-9][a-z0-9._-]{0,63}$
+    GitSha:
+      type: string
+      pattern: ^([a-f0-9]{40}|[a-f0-9]{64})$
+    PushRef:
+      type: object
+      additionalProperties: false
+      required:
+      - kind
+      - ref
+      properties:
+        kind:
+          const: push
+        ref:
+          type: string
+          pattern: ^refs/heads/[^\u0000-\u0020\u007f]+$
+          maxLength: 512
+    PullRequestRef:
+      type: object
+      additionalProperties: false
+      required:
+      - kind
+      - number
+      - headRepositoryId
+      - headRef
+      - baseRef
+      properties:
+        kind:
+          const: pull_request
+        number:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        headRepositoryId:
+          type: string
+          pattern: ^[1-9][0-9]{0,19}$
+        headRef:
+          type: string
+          minLength: 1
+          maxLength: 512
+          pattern: ^[^\u0000-\u001f\u007f]+$
+        baseRef:
+          type: string
+          minLength: 1
+          maxLength: 512
+          pattern: ^[^\u0000-\u001f\u007f]+$
+    Scope:
+      type: object
+      additionalProperties: false
+      required:
+      - repositoryKey
+      - workflowPath
+      - ref
+      - group
+      - taskRunner
+      - timingEnvironment
+      properties:
+        repositoryKey:
+          $ref: '#/components/schemas/RepositoryKey'
+        workflowPath:
+          type: string
+          pattern: ^\.github/workflows/[^/\u0000-\u001f\u007f]+\.ya?ml$
+          maxLength: 512
+        ref:
+          oneOf:
+          - $ref: '#/components/schemas/PushRef'
+          - $ref: '#/components/schemas/PullRequestRef'
+        group:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[^\u0000-\u001f\u007f]+$
+        taskRunner:
+          type: string
+          enum:
+          - pnpm
+          - yarn
+          - npm
+          - nx
+          - turbo
+        timingEnvironment:
+          type: string
+          minLength: 1
+          maxLength: 256
+          pattern: ^[^\u0000-\u001f\u007f]+$
+      description: scopeId = lowercase SHA256(RFC8785 JCS(this object)); no Unicode normalization. The
+        URL repositoryKey must match. PR head/base refs are full refs/heads/... values. Schema-independent
+        semantic validation rejects dot path segments and invalid Git refs.
+    Health:
+      type: object
+      additionalProperties: false
+      required:
+      - status
+      properties:
+        status:
+          const: ok
+    Ready:
+      type: object
+      additionalProperties: false
+      required:
+      - status
+      properties:
+        status:
+          const: ready
+    NotReady:
+      type: object
+      additionalProperties: false
+      required:
+      - status
+      - reason
+      - requestId
+      properties:
+        status:
+          const: not_ready
+        reason:
+          type: string
+          enum:
+          - initializing
+          - storage_unavailable
+          - probe_stale
+          - draining
+        requestId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[^\u0000-\u001f\u007f]+$
+    Problem:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      - title
+      - status
+      - code
+      - detail
+      - requestId
+      properties:
+        type:
+          type: string
+          format: uri
+          const: about:blank
+        title:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[^\u0000-\u001f\u007f]+$
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        code:
+          type: string
+          enum:
+          - invalid_request
+          - unauthenticated
+          - forbidden
+          - history_not_found
+          - payload_too_large
+          - unsupported_media_type
+          - invalid_history
+          - idempotency_key_mismatch
+          - scope_mismatch
+          - overloaded
+          - storage_unavailable
+          - storage_corrupt
+          - cas_retries_exhausted
+          - batch_conflict
+          - model_capacity_exceeded
+          - receipt_capacity_exceeded
+          - batch_expired
+        detail:
+          type: string
+          minLength: 1
+          maxLength: 512
+          pattern: ^[^\u0000-\u001f\u007f]+$
+        requestId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[^\u0000-\u001f\u007f]+$
+      description: RFC9457 problem; no secrets/provider details. Corrupt state is not reset. Retry uncertain
+        network, 429 or 503 only. Expired batches cannot be retried as new observations.
+    EpochMs:
+      type: integer
+      minimum: 0
+      maximum: 9007199254740991
+    PredictionRow:
+      type: array
+      prefixItems:
+      - $ref: '#/components/schemas/Digest'
+      - type: integer
+        minimum: 0
+        maximum: 9007199254740991
+      - type: integer
+        minimum: 1
+        maximum: 9007199254740991
+      - $ref: '#/components/schemas/EpochMs'
+      - $ref: '#/components/schemas/EpochMs'
+      items: false
+      minItems: 5
+      maxItems: 5
+      description: 'Fixed columns: [keyId, estimatedMs, observationCount, lastObservedAtMs, validUntilMs].
+        Derived values only; no raw samples/source/log/command. Drop row at now >= validUntilMs.'
+    PredictionTable:
+      type: object
+      additionalProperties: false
+      required:
+      - version
+      - scope
+      - modelUpdatedAtMs
+      - rows
+      properties:
+        version:
+          const: 3
+        scope:
+          $ref: '#/components/schemas/Scope'
+        modelUpdatedAtMs:
+          $ref: '#/components/schemas/EpochMs'
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/PredictionRow'
+          maxItems: 50000
+      description: Public compact read projection. At most 8 MiB JSON. Planner downloads only this table.
+        No row may be used after validUntilMs. On server reads, expired contributors may be pruned and
+        predictions reprojected from remaining buckets without mutating S3. If no valid row exists return
+        404 before evaluating If-None-Match.
+    AggregateObservation:
+      type: object
+      additionalProperties: false
+      required:
+      - keyId
+      - utcEpochDay
+      - observationCount
+      - totalDurationMs
+      - lastObservedAtMs
+      properties:
+        keyId:
+          $ref: '#/components/schemas/Digest'
+        utcEpochDay:
+          type: integer
+          minimum: 0
+          maximum: 3652059
+        observationCount:
+          type: integer
+          minimum: 1
+          maximum: 50000
+        totalDurationMs:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+        lastObservedAtMs:
+          $ref: '#/components/schemas/EpochMs'
+      description: Sufficient statistics, not raw execution records. keyId is SHA256 JCS of the typed
+        task/preparation exact/fallback Key in prediction-model-spec.md. UTC day must match lastObservedAtMs.
+        Sum <= count * 604800000 ms; unique (keyId,utcEpochDay) rows required. Compiler deduplicates original
+        successful execution IDs before aggregating.
+    ObservationBatch:
+      type: object
+      additionalProperties: false
+      required:
+      - version
+      - scope
+      - batchId
+      - runId
+      - runAttempt
+      - producedAtMs
+      - aggregates
+      properties:
+        version:
+          const: 3
+        scope:
+          $ref: '#/components/schemas/Scope'
+        batchId:
+          $ref: '#/components/schemas/Digest'
+        runId:
+          type: string
+          pattern: ^[1-9][0-9]{0,19}$
+        runAttempt:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        producedAtMs:
+          $ref: '#/components/schemas/EpochMs'
+        aggregates:
+          type: array
+          items:
+            $ref: '#/components/schemas/AggregateObservation'
+          maxItems: 50000
+          minItems: 1
+      description: Immutable one-batch-per-scope/run/attempt. batchId=SHA256(JCS([scopeId,runId,runAttempt])).
+        Maximum 16 MiB / 50000 aggregate rows. Only observations actually executed in this attempt. Current-attempt
+        telemetry is finalized once; do not rebuild a retry with changed content/timestamp. Batch age
+        >= 7 days is rejected; future >5 minutes is rejected. Unknown/duplicate JSON keys rejected. No
+        compressed request body.
+    MergeResult:
+      type: object
+      additionalProperties: false
+      required:
+      - scopeId
+      - modelVersion
+      - outcome
+      - applied
+      - receivedAggregateCount
+      - retainedKeyCount
+      - prunedBucketCount
+      - receiptCount
+      - modelUpdatedAtMs
+      properties:
+        scopeId:
+          $ref: '#/components/schemas/Digest'
+        modelVersion:
+          const: 3
+        outcome:
+          type: string
+          enum:
+          - created
+          - updated
+          - unchanged
+        applied:
+          type: boolean
+        receivedAggregateCount:
+          type: integer
+          minimum: 1
+          maximum: 50000
+        retainedKeyCount:
+          type: integer
+          minimum: 0
+          maximum: 50000
+        prunedBucketCount:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+        receiptCount:
+          type: integer
+          minimum: 0
+          maximum: 4096
+        modelUpdatedAtMs:
+          $ref: '#/components/schemas/EpochMs'
+      description: Receipt, not a replay of a fixed response. Duplicate batchId+body digest returns applied=false;
+        changed digest for retained batchId is 409. S3 CAS commits model and receipt atomically. New batches
+        can add counts even if a rounded prediction remains unchanged. No whole model or observation archive
+        is returned.
+    DayBucket:
+      type: array
+      prefixItems:
+      - type: integer
+        minimum: 0
+        maximum: 3652059
+      - type: integer
+        minimum: 1
+        maximum: 9007199254740991
+      - type: integer
+        minimum: 0
+        maximum: 9007199254740991
+      - $ref: '#/components/schemas/EpochMs'
+      items: false
+      minItems: 4
+      maxItems: 4
+      description: '[utcEpochDay, count, sumDurationMs, lastObservedAtMs]; integer merge. Keep latest
+        7 observed UTC days in today and previous 29 days.'
+    ModelEntry:
+      type: object
+      additionalProperties: false
+      required:
+      - keyId
+      - buckets
+      - prediction
+      properties:
+        keyId:
+          $ref: '#/components/schemas/Digest'
+        buckets:
+          type: array
+          items:
+            $ref: '#/components/schemas/DayBucket'
+          maxItems: 7
+          minItems: 1
+        prediction:
+          type: array
+          prefixItems:
+          - type: integer
+            minimum: 0
+            maximum: 9007199254740991
+          - type: integer
+            minimum: 1
+            maximum: 9007199254740991
+          - $ref: '#/components/schemas/EpochMs'
+          - $ref: '#/components/schemas/EpochMs'
+          items: false
+          minItems: 4
+          maxItems: 4
+      description: 'Updater-only state. prediction columns omit keyId: [estimatedMs,count,lastSeenMs,validUntilMs].
+        Rounded recency-weighted mean of daily aggregates, half-life seven days. Raw observation arrays
+        and per-execution provenance prohibited.'
+    BatchReceipt:
+      type: array
+      prefixItems:
+      - $ref: '#/components/schemas/Digest'
+      - $ref: '#/components/schemas/Digest'
+      - $ref: '#/components/schemas/EpochMs'
+      items: false
+      minItems: 3
+      maxItems: 3
+      description: '[batchId,requestBodySha256,producedAtMs]. Keep 8 days; accept input batches younger
+        than 7 days. Bounded idempotency metadata, not raw execution history.'
+    ModelState:
+      type: object
+      additionalProperties: false
+      required:
+      - version
+      - scope
+      - updatedAtMs
+      - pruningDay
+      - batchAcceptanceAfterMs
+      - entries
+      - receipts
+      properties:
+        version:
+          const: 3
+        scope:
+          $ref: '#/components/schemas/Scope'
+        updatedAtMs:
+          $ref: '#/components/schemas/EpochMs'
+        pruningDay:
+          type: integer
+          minimum: 0
+          maximum: 3652059
+        batchAcceptanceAfterMs:
+          $ref: '#/components/schemas/EpochMs'
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModelEntry'
+          maxItems: 50000
+        receipts:
+          type: array
+          items:
+            $ref: '#/components/schemas/BatchReceipt'
+          maxItems: 4096
+      description: Internal/updater-only. Maximum 16 MiB JSON including entries and receipts. S3 stores
+        a single canonical object. Artifact backend publishes this separately before the prediction artifact.
+        Never returned from public GET snapshot; changing this state requires S3 conditional PUT. No implicit
+        eviction of live receipts to accept a duplicate-risk write.
+      examples:
+      - version: 3
+        scope:
+          repositoryKey: github-12345
+          workflowPath: .github/workflows/ci.yml
+          ref:
+            kind: push
+            ref: refs/heads/main
+          group: ci
+          taskRunner: yarn
+          timingEnvironment: linux-x64-node24
+        updatedAtMs: 1790208000000
+        pruningDay: 20691
+        batchAcceptanceAfterMs: 1789603200000
+        entries:
+        - keyId: 8e3a060d9912f5f4230ab9f0a25df7fe50c4d9814cca14ec6f20f795a7e0fcda
+          buckets:
+          - - 20720
+            - 1
+            - 12000
+            - 1790208000000
+          prediction:
+          - 12000
+          - 1
+          - 1790208000000
+          - 1792800000000
+        receipts:
+        - - 1368e6bbb03a78c15d423d23afac569f4f8bfd6e1b10a38b9f4c8e647177b9b5
+          - da6555f1a7f41374048173faaec4116a03740d83fd9114ba8880aa4dce8fe4c9
+          - 1790208000000
+    PredictionArtifact:
+      type: object
+      additionalProperties: false
+      required:
+      - table
+      - modelArtifact
+      properties:
+        table:
+          $ref: '#/components/schemas/PredictionTable'
+        modelArtifact:
+          type: object
+          additionalProperties: false
+          required:
+          - name
+          - sha256
+          properties:
+            name:
+              type: string
+              minLength: 1
+              maxLength: 256
+            sha256:
+              $ref: '#/components/schemas/Digest'
+      description: GitHub artifact envelope. Upload model first and this envelope last as publish marker.
+        Planner reads table only; updater alone follows modelArtifact. 8 MiB uncompressed JSON / 4 MiB
+        archive cap.
+      examples:
+      - table:
+          version: 3
+          scope:
+            repositoryKey: github-12345
+            workflowPath: .github/workflows/ci.yml
+            ref:
+              kind: push
+              ref: refs/heads/main
+            group: ci
+            taskRunner: yarn
+            timingEnvironment: linux-x64-node24
+          modelUpdatedAtMs: 1790208000000
+          rows:
+          - - 8e3a060d9912f5f4230ab9f0a25df7fe50c4d9814cca14ec6f20f795a7e0fcda
+            - 12000
+            - 1
+            - 1790208000000
+            - 1792800000000
+        modelArtifact:
+          name: nanoom-model-v3-123456789-1
+          sha256: ada20f873e74812b9e056d9134c73ae06102c808739d5fd1c73f0b40e800302b
+externalDocs:
+  description: Implementation and operational contract
+  url: ../history-server-spec.md
+x-contract-examples:
+  scopeId: b351ab1307a793d7499f196a59cab4707a1535ce6a8470285a8b9e3384a74a47
+  key:
+    kind: taskExact
+    group: ci
+    workspace: '@fixture/web'
+    task: test
+    shard: null
+    totalShards: null
+    taskRunner: yarn
+    timingEnvironment: linux-x64-node24
+  keyId: 8e3a060d9912f5f4230ab9f0a25df7fe50c4d9814cca14ec6f20f795a7e0fcda
+  batchId: 1368e6bbb03a78c15d423d23afac569f4f8bfd6e1b10a38b9f4c8e647177b9b5
+  idempotencyKeyForCanonicalBatch: da6555f1a7f41374048173faaec4116a03740d83fd9114ba8880aa4dce8fe4c9
+  predictionEtag: '"sha256:2e3b67ef98b6f9153a343838e9399ebfcdf3cdff0683363ed2e46cbbf8f5762f"'
+  modelDigest: ada20f873e74812b9e056d9134c73ae06102c808739d5fd1c73f0b40e800302b
+  clockMs: 1790208000000
+x-runtime-limits:
+  requestBytes: 16777216
+  aggregateRowsPerBatch: 50000
+  modelBytes: 16777216
+  modelKeys: 50000
+  bucketsPerKey: 7
+  batchReceipts: 4096
+  predictionJsonBytes: 8388608
+  predictionArchiveBytes: 4194304
+  plannerHistoryBudgetMs: 3000
+  plannerMaxArchiveBytesCombined: 8388608
+  dataPlaneConcurrencyPerReplica: 2
+  casAttempts: 8
+  writeDeadlineSeconds: 20
+  plannerMaxCandidateDownloadsPerScope: 2
+  plannerBudgetScope: One shared deadline and combined byte counter across all scopes, metadata, retries,
+    download and parse.
+x-history-retention:
+  modelVersion: 3
+  bucketHorizonUtcDays: 30
+  activeDayBucketsPerKey: 7
+  recencyWeightHalfLifeDays: 7
+  inputBatchMaxAgeDaysExclusive: 7
+  receiptRetentionDays: 8
+  measurementArtifactRetentionDays: 1
+  predictionAndModelArtifactRetentionDays: 30
+  capacityWarningPercent: 80
+  inactiveModelExpirationDays: 45
+  s3VersioningDefault: false
+  optInNoncurrentVersionExpirationDays: 1
+  physicalDeletion: Asynchronous S3 Lifecycle; not an exact deletion SLA.
