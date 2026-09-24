@@ -17,6 +17,12 @@ task subprocess 시간만으로 LPT를 수행하면 runtime은 균등해도 같�
 - checkout 비용은 assignment별 고유 closure path 수의 합이다. byte 추정을 위한 추가 Git object fetch나 사람이 관리하는 milliseconds weight는 사용하지 않는다.
 - GitHub-hosted timing key는 OS/architecture, self-hosted는 OS/architecture/runner name을 기본으로 하며 명시적 environment override를 지원한다.
 
+## A1 branch extension — unreleased
+
+- History identity adds `totalShards`; exact and fallback observations never mix shard layouts. A fallback excludes workspace and requires the same group, task, shard layout, runner, and environment.
+- Existing samples without `totalShards` remain readable. They do not match newly sharded work items.
+- A planned run with no matching workspace, an Action result with no execution for a planned item, and an empty static install fail. The standalone no-filter install and continuous scheduler's full install remain supported.
+
 ## Alternatives
 
 - checkout path를 milliseconds로 환산하면 근거 없는 weight가 빠르게 낡으므로 제외했다.

@@ -7,8 +7,9 @@ entry=$(jq -ce '(.include[0] // .)' <<<"$MATRIX")
 if [[ $(jq -r '.mode // empty' <<<"$entry") == continuous ]]; then items='[]'; else items=$(jq -c 'if .items then .items elif .name then [.] else error("matrix entry must contain items or name") end' <<<"$entry"); fi
 matrix_json=$(jq -c '{assignmentId,agentId,runId,mode,predictedDurationMs,items} | with_entries(select(.value != null))' <<<"$entry")
 names=(); while IFS= read -r name; do names+=("$name"); done < <(jq -r '[.[].name] | unique[]' <<<"$items")
+if [[ $(jq -r '.mode // empty' <<<"$entry") != continuous && ${#names[@]} -eq 0 ]]; then echo 'static assignment install requires at least one workspace' >&2; false; fi
 [[ "$PM" != npm || ${#names[@]} -eq 0 ]] || { echo 'npm cannot perform a focused workspace install; use Yarn Berry or pnpm' >&2; false; }
-args=(-C "$CWD" install --package-manager "$PM"); for name in "${names[@]}"; do args+=(--filter "$name"); done; args+=(--json)
+args=(-C "$CWD" install --package-manager "$PM"); if ((${#names[@]})); then for name in "${names[@]}"; do args+=(--filter "$name"); done; fi; args+=(--json)
 printf -v ACTION_COMMAND '%q ' nanoom "${args[@]}"; ACTION_COMMAND=${ACTION_COMMAND% }
 printf '◆ nanoom install\n  Inputs\n    normalized assignment: %s\n    package manager: %s\n    cwd: %s\n  Command\n    %s\n' "$matrix_json" "$PM" "$CWD" "$ACTION_COMMAND"
 ACTION_PHASE=focused-install; cli_result=$(nanoom "${args[@]}")

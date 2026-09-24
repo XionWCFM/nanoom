@@ -109,11 +109,11 @@ env:
 `cleanupCheckout`은 명시적으로 켠 경우에만 동작하며, `cwd`가 `.nanoom/` 아래의
 격리 경로가 아니면 삭제를 거부합니다.
 
-`run --json`은 성공 실행마다 `workspace`, 실제 `runner`, `durationMs`를 냅니다. 첫 실패 뒤에는 새 작업을 시작하지 않고 `completed`, `failed`, `pending`을 남깁니다. `install`은 assignment의 workspace union을 한 번에 focused install할 수 있습니다.
+`run --json`은 성공 실행마다 `workspace`, 실제 `runner`, `durationMs`를 냅니다. 명시한 `--all --filter`가 workspace를 찾지 못하면 실패하며, run Action도 계획된 workspace 실행이 없으면 assignment를 실패시키고 후속 item을 시작하지 않습니다. 첫 작업 실패 뒤에는 `completed`, `failed`, `pending`을 남깁니다. static assignment의 빈 install은 거부합니다. `install`은 assignment의 workspace union을 한 번에 focused install하며, standalone no-filter install과 continuous scheduler의 전체 install은 유지됩니다.
 
 ## 실행시간 기반 정적 배치
 
-historical scheduler는 기본으로 켜져 있습니다. 같은 workflow와 branch의 마지막 성공 run에서 history를 읽고, exact key `group/workspace/task/shard/runner/environment`의 최근 성공 7개 median을 사용합니다. exact sample이 없으면 같은 group median, 그것도 없으면 가중치 `1`입니다.
+historical scheduler는 기본으로 켜져 있습니다. 같은 workflow와 branch의 마지막 성공 run에서 history를 읽고, exact key `group/workspace/task/shard/totalShards/runner/environment`의 최근 성공 7개 median을 사용합니다. exact sample이 없으면 workspace를 제외한 동일 group/task/shard layout/runner/environment의 median을 사용하고, 그것도 없으면 가중치 `1`로 시작합니다.
 
 배치는 예상 runtime makespan을 먼저 최소화합니다. runtime이 같은 후보에서는 모든 assignment의 sparse checkout path 수 합계가 가장 작은 bucket을 선택해 중복 checkout을 줄입니다. `result.scheduling`의 `historyStatus`, `historySourceRunId`, `predictionSources`, `totalCheckoutPathCount`, `uniqueCheckoutPathCount`, `duplicatedCheckoutPathCount`로 근거를 확인할 수 있습니다.
 

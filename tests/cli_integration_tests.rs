@@ -192,6 +192,46 @@ fn test_history_merges_without_repository_config() {
 }
 
 #[test]
+fn history_keeps_samples_with_different_shard_layouts_separate() {
+    let dir = tempdir().unwrap();
+    let first = dir.path().join("shard-2.json");
+    let second = dir.path().join("shard-4.json");
+    let merged = dir.path().join("history.json");
+    fs::write(
+        &first,
+        r#"{"samples":[{"group":"ci","workspace":"a","task":"test","shard":1,"totalShards":2,"runner":"nx","environment":"linux","durationMs":10}]}"#,
+    )
+    .unwrap();
+    fs::write(
+        &second,
+        r#"{"samples":[{"group":"ci","workspace":"a","task":"test","shard":1,"totalShards":4,"runner":"nx","environment":"linux","durationMs":20}]}"#,
+    )
+    .unwrap();
+
+    let output = Command::new(binary_path())
+        .args(["history", "--input"])
+        .arg(&first)
+        .arg("--input")
+        .arg(&second)
+        .arg("--output")
+        .arg(&merged)
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let history: serde_json::Value = serde_json::from_slice(&fs::read(merged).unwrap()).unwrap();
+    let samples = history["samples"].as_array().unwrap();
+    assert_eq!(samples.len(), 2);
+    assert_eq!(samples[0]["totalShards"], 2);
+    assert_eq!(samples[1]["totalShards"], 4);
+}
+
+#[test]
 fn test_history_rejects_corrupt_input() {
     let dir = tempdir().unwrap();
     let corrupt = dir.path().join("corrupt.json");
@@ -857,6 +897,29 @@ fn run_resolves_local_nx_from_nested_relative_cwd() {
     let result: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
     assert_eq!(result["status"], "success");
     assert_eq!(result["executions"][0]["runner"], "nx");
+}
+
+#[test]
+fn explicit_planned_run_filter_fails_when_no_workspace_matches() {
+    let dir = tempdir().unwrap();
+    setup_monorepo(dir.path());
+
+    let (success, stdout, stderr) = run_cli_parts(
+        dir.path(),
+        &[
+            "run",
+            "ci",
+            "test",
+            "--all",
+            "--filter",
+            "missing-workspace",
+            "--json",
+        ],
+        &[],
+    );
+
+    assert!(!success, "an explicit planned item must not become a no-op");
+    assert!(format!("{stdout}{stderr}").contains("no workspace matched"));
 }
 
 #[test]

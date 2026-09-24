@@ -12,7 +12,7 @@
 
 ## artifact/CLI/Action 구현
 
-- [ ] A1 identity/fallback/empty/no-execution 회귀와 수정.
+- [x] A1 identity/fallback/empty/no-execution 회귀와 수정 — 아래 A1 실행 기록 참조.
 - [ ] A2 Plan v1 CLI·compact matrix·provenance/rerun 검증.
 - [ ] A3 prepare·sparse checkout·install/run·GHES contracts.
 - [ ] A4 PredictionState v3·compile/apply/project·작은 prediction artifact·bounded lookup.
@@ -89,4 +89,47 @@ Nanoom 작업 폴더에 계획/명세/OpenAPI/검증 스크립트 7개를 반영
 - [x] 현재 checkout에서 `codex/prediction-state-v3` 브랜치 생성, 사용자 `.opencode/` 보존.
 - [x] [실행 지시서](LUNA_HANDOFF.md)에 A1 재현·소스 위치·단계 순서·검증·재개 형식 작성.
 - [x] 다른 checkout에서도 읽을 수 있도록 계획·명세·검증 스크립트·지시서만 인계 commit에 포함.
-- [ ] Luna Max 실제 실행 및 A1 runtime 구현. 이번 인계 준비로 구현을 완료 처리하지 않음.
+- [x] A1 runtime을 이 세션에서 실행·검증함. A2~A7과 서버 단계는 위 체크처럼 미완료.
+
+## A1 실행 기록 — 2026-09-24
+
+```text
+단계: A1
+시작 HEAD: 0aa7e968db4cfb2418c38e11fdebff7440932384
+브랜치: codex/prediction-state-v3
+시작 상태: 추적 파일 변경 없음, 기존 사용자 파일 .opencode/ 미추적 1개. 보존함.
+결과: A1은 local gate 통과 후 이 단계 commit으로 기록함. PR/release/외부 hosted 실행 없음.
+```
+
+| 입력과 경계 | 시작 시 결과 | 수정 후 결과 / 확인 |
+|---|---|---|
+| 시간 100/1/1/1, concurrency 4 | 기존 LPT 구현에서 빈 assignment가 나오지 않았고 4개 모두 1회 배정됨. | scheduler 알고리즘은 바꾸지 않음. `skewed_four_item_plan_has_no_empty_assignments`에서 비어 있지 않은 배정, 각 항목 1회, 반복 실행 결정성을 유지 확인. |
+| shard 1/2 관측 → shard 1/4 요청 | `TimingSample`에 `totalShards`가 없어 병합 입력이 거부되고 배분 key에서도 구분할 수 없었음. | Action producer와 serde wire에 선택적 `totalShards` 추가. exact/fallback/merge identity 및 안정 정렬 key에 반영. 1/2 자료만 있는 1/4 요청은 cold, merge 후 1/2와 1/4 행 모두 보존됨. 기존 필드가 없는 raw sample도 계속 읽음. |
+| 같은 group의 build/test 및 다른 runner/environment/layout | group fallback이 group+runner+environment만 비교해 다른 task/layout을 섞음. 재현값은 기대 25ms, 실제 162ms. | workspace를 제외하고 group/task/shard/totalShards/runner/environment가 모두 같은 관측만 fallback으로 사용. build, runner, environment, layout이 다른 표본은 제외됨. |
+| 계획된 item no-match 또는 executions 0 | `nanoom run --all --filter missing` 성공 종료했고 Action도 빈 `executions`를 성공으로 셈. | 명시한 `--all --filter`에 대한 no-match는 CLI 오류. Action은 성공 JSON이어도 해당 workspace execution이 없으면 실패 처리하고 후속 pending item을 시작하지 않음. filter 없는 affected no-change 경로는 변경하지 않음. |
+| static assignment의 빈 install | Bash 3.2에서 빈 배열 반복이 `names[@]: unbound variable`로 비정상 종료했고, 코드 경로상 필터 없는 전체 설치 명령까지 도달할 수 있었음. | 빈 static assignment는 명시적 오류로 거부하고 CLI를 호출하지 않음. `mode=continuous`의 빈 item 목록은 기존대로 필터 없는 전체 설치를 수행. 일반 CLI `install`의 필터 없음도 root 설치로 유지. |
+
+수정 전 재현:
+
+- `cargo test --locked --lib scheduler::tests::skewed_four_item_plan_has_no_empty_assignments` — exit 0; 이 사례는 기존 구현의 결함으로 재현되지 않아 scheduler 변경을 하지 않음.
+- `cargo test --locked --lib scheduler::tests::group_fallback_only_uses_the_same_task_runner_and_environment` — exit 101; 기대 25, 실제 162.
+- `cargo test --locked --test cli_integration_tests history_keeps_samples_with_different_shard_layouts_separate` — exit 101; `totalShards`가 unknown field라며 history 병합 거부.
+- `cargo test --locked --test cli_integration_tests explicit_planned_run_filter_fails_when_no_workspace_matches` — exit 101; 명시한 계획 항목 no-match가 성공 no-op.
+- `bash scripts/assignment-action-test.sh` — exit 1; CLI 성공/`executions: []`가 assignment 성공으로 처리됨.
+- Bash 3.2에서 빈 static install Action 직접 실행 — exit 1, `names[@]: unbound variable`; CLI 미호출. 연속 install도 동일한 빈 배열 반복 경로라 별도 호환 회귀로 고침.
+
+수정 후 관련 검증:
+
+- `cargo fmt --all --check` — exit 0.
+- `cargo test --locked --lib scheduler::tests` — exit 0, 13 passed.
+- `cargo test --locked --test cli_integration_tests history_` — exit 0, 3 passed.
+- `cargo test --locked --test cli_integration_tests explicit_planned_run_filter_fails_when_no_workspace_matches` — exit 0, 1 passed.
+- `cargo test --locked --lib commands::install::tests::execute_runs_only_the_root_install_without_network` — exit 0, 1 passed.
+- `bash scripts/assignment-action-test.sh` — exit 0. 빈 execution은 failed item 처리, 후속 item 미실행; producer sample의 shard/totalShards 보존; static empty install은 CLI 미호출; continuous empty install은 no-filter install 유지.
+- `cargo fmt --all --check` — exit 0.
+- `cargo clippy --locked --all-targets --all-features -- -D warnings` — exit 0.
+- `cargo test --locked --all-targets --all-features` — exit 0, 186 tests passed. 첫 전체 실행에서 이전 group fallback을 가정하던 affected expectation이 실패해, unsharded `test` 표본이 sharded `build`에 섞이지 않는 기대값(79ms, exact 1/cold 2)으로 고친 뒤 전체 통과.
+- `bash scripts/action-contract.sh` — exit 0; status/coordinator/assignment/history/revision/checkout-cleanup/fixture-completion contracts 모두 통과.
+- `git diff --check` — exit 0.
+
+미실시 및 경계: 지시서의 OpenAPI/spec validator는 기본 uv cache 권한 오류(exit 2) 뒤 `/private/tmp` cache로 재시도했으나 PyPI DNS 차단(exit 2)으로 실행되지 않음. A1의 external producer/consumer hosted fixture 증거는 A7까지 미실시다. A2~A7, server, GHES, release/실사용 consumer 증거는 미완료이며 기존 체크를 변경하지 않음.

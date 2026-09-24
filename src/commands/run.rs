@@ -107,6 +107,12 @@ pub async fn execute(args: RunArgs, config: &Config, cwd: &std::path::Path) -> R
     };
 
     if projects.is_empty() {
+        if args.all && args.filter.is_some() {
+            return Err(Error::ConfigValidation(format!(
+                "no workspace matched explicit --all --filter for group '{}' and task '{}'",
+                args.group, args.task
+            )));
+        }
         if args.json {
             println!(
                 "{}",
@@ -601,7 +607,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn test_execute_no_matching_projects_prints_message() {
+    async fn test_execute_explicit_filter_fails_when_no_projects_match() {
         let dir = tempdir().unwrap();
         setup_workspace(dir.path());
         let config = make_config(vec!["packages/*".to_string()]);
@@ -622,7 +628,9 @@ mod tests {
         )
         .await;
 
-        result.unwrap();
+        assert!(
+            matches!(result, Err(Error::ConfigValidation(message)) if message.contains("no workspace matched explicit --all --filter"))
+        );
     }
 
     #[tokio::test]

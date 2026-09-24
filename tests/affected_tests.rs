@@ -146,6 +146,7 @@ async fn test_calculate_with_override_tip_reports_shards() {
                 workspace: "app".into(),
                 task: "test".into(),
                 shard: None,
+                total_shards: None,
                 runner: "yarn".into(),
                 environment: environment.into(),
                 duration_ms: 77,
@@ -155,9 +156,10 @@ async fn test_calculate_with_override_tip_reports_shards() {
         "yarn",
         "affected-runner",
     );
-    assert_eq!(matrix["ci"]["include"][0]["predictedDurationMs"], 231);
+    assert_eq!(matrix["ci"]["include"][0]["predictedDurationMs"], 79);
     assert_eq!(matrix["ci"]["include"][0]["predictionSources"]["exact"], 1);
-    assert_eq!(matrix["ci"]["include"][0]["predictionSources"]["group"], 2);
+    assert_eq!(matrix["ci"]["include"][0]["predictionSources"]["group"], 0);
+    assert_eq!(matrix["ci"]["include"][0]["predictionSources"]["cold"], 2);
     assert_eq!(
         matrix["ci"]["include"][0]["runnerLabels"],
         serde_json::json!(["self-hosted", "linux", "large"])

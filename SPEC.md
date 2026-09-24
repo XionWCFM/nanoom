@@ -1,8 +1,8 @@
 # Nanoom 공개 계약과 개선 명세
 
-## 현재 구현 기준: v0.6.0
+## 기준 구현: v0.6.0
 
-아래 기존 계약은 source `539b2c08cc7e2543f3a0cdd10fbdba451b2502d5` 기준이다. 다음 절의 제안은 아직 구현되지 않았다. 공개 계약의 기준은 [README](README.md), 생성된 [JSON schema](nanoom.schema.json), [ADR-0009](docs/adr/0009-runtime-aware-distribution.md)입니다.
+아래 기존 계약은 source `539b2c08cc7e2543f3a0cdd10fbdba451b2502d5` 기준이다. 이 branch의 A1 변경은 아직 release되지 않았다. A2 이후 제안은 아직 구현되지 않았다. 공개 계약의 기준은 [README](README.md), 생성된 [JSON schema](nanoom.schema.json), [ADR-0012](docs/adr/0012-ghes-history-checkout-cost.md)입니다.
 
 ## Work item과 assignment
 
@@ -56,6 +56,14 @@ Artifact/history/coordinator는 aggregate status의 입력이 아니다. `status
 ## 제거와 제외
 
 `isolate`는 v0.3.0에서 제거됐다. Task DAG, remote cache, flaky retry, Nx assignment rules, Nanoom server/SaaS는 현재 배포 구현에 없다. 아래 선택적 History Server 제안과 구분한다.
+
+## 이 branch의 A1 변경 — 미출시
+
+- work item과 history identity는 `(group, workspace, task, shard, totalShards)`다. 샘플에서 `totalShards`가 빠진 기존 자료는 읽을 수 있지만, 분할 실행의 새 key와 섞지 않는다.
+- exact sample이 없으면 workspace를 제외한 동일 group/task/shard layout/runner/environment의 median을 사용하고, 없으면 cold weight `1`을 쓴다.
+- 명시한 `nanoom run --all --filter`가 workspace를 찾지 못하면 오류다. run Action은 성공 JSON이어도 계획된 workspace 실행이 없으면 assignment를 실패시키고 뒤의 item을 시작하지 않는다.
+- static assignment의 빈 install은 오류다. continuous assignment는 미래 item을 알 수 없어 기존 전체 install 경로를 유지하며, standalone `nanoom install`도 필터 없이 root install을 유지한다.
+- 100/1/1/1 시간 입력은 기존 scheduler에서 이미 빈 assignment 없이 결정적으로 처리되므로 배분 알고리즘을 변경하지 않았다.
 
 
 ## 제안 계약: artifact plan / PredictionState v3 / 선택적 서버

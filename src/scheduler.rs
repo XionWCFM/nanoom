@@ -4,7 +4,15 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
-type TimingKey = (String, String, String, Option<usize>, String, String);
+type TimingKey = (
+    String,
+    String,
+    String,
+    Option<usize>,
+    Option<usize>,
+    String,
+    String,
+);
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -31,6 +39,8 @@ pub struct TimingSample {
     pub task: String,
     #[serde(default)]
     pub shard: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total_shards: Option<usize>,
     pub runner: String,
     pub environment: String,
     pub duration_ms: u64,
@@ -109,6 +119,7 @@ impl TimingHistory {
                     && sample.workspace == item.name
                     && sample.task == item.task
                     && sample.shard == item.shard
+                    && sample.total_shards == item.total_shards
                     && sample.runner == runner
                     && sample.environment == environment
                     && sample.duration_ms > 0
@@ -127,12 +138,15 @@ impl TimingHistory {
         }
     }
 
-    fn group_fallback(&self, group: &str, runner: &str, environment: &str) -> Prediction {
+    fn group_fallback(&self, item: &WorkspaceEntry, runner: &str, environment: &str) -> Prediction {
         let mut values: Vec<u64> = self
             .samples
             .iter()
             .filter(|sample| {
-                sample.group == group
+                sample.group == item.group
+                    && sample.task == item.task
+                    && sample.shard == item.shard
+                    && sample.total_shards == item.total_shards
                     && sample.runner == runner
                     && sample.environment == environment
                     && sample.duration_ms > 0
@@ -218,12 +232,16 @@ pub fn assign_with_config(
     }
     let (runner_labels, timing_environment) = runner_config;
     let environment = timing_environment.as_deref().unwrap_or(environment);
-    let fallback = history.group_fallback(group, runner, environment);
     let mut weighted: Vec<(WorkspaceEntry, Prediction, String)> = items
         .iter()
         .cloned()
         .map(|item| {
-            let prediction = history.prediction(&item, runner, environment, fallback);
+            let prediction = history.prediction(
+                &item,
+                runner,
+                environment,
+                history.group_fallback(&item, runner, environment),
+            );
             let id = work_item_id(&item);
             (item, prediction, id)
         })
@@ -328,6 +346,7 @@ pub fn merge_histories(histories: impl IntoIterator<Item = TimingHistory>) -> Ti
             sample.workspace.clone(),
             sample.task.clone(),
             sample.shard,
+            sample.total_shards,
             sample.runner.clone(),
             sample.environment.clone(),
         );
@@ -344,6 +363,7 @@ pub fn merge_histories(histories: impl IntoIterator<Item = TimingHistory>) -> Ti
             &a.workspace,
             &a.task,
             a.shard,
+            a.total_shards,
             &a.runner,
             &a.environment,
         )
@@ -352,6 +372,7 @@ pub fn merge_histories(histories: impl IntoIterator<Item = TimingHistory>) -> Ti
                 &b.workspace,
                 &b.task,
                 b.shard,
+                b.total_shards,
                 &b.runner,
                 &b.environment,
             ))
@@ -364,11 +385,12 @@ pub fn merge_histories(histories: impl IntoIterator<Item = TimingHistory>) -> Ti
 
 fn work_item_id(item: &WorkspaceEntry) -> String {
     format!(
-        "{}:{}:{}:{}",
+        "{}:{}:{}:{}:{}",
         item.group,
         item.name,
         item.task,
-        item.shard.unwrap_or(0)
+        item.shard.unwrap_or(0),
+        item.total_shards.unwrap_or(0)
     )
 }
 
@@ -395,6 +417,7 @@ mod tests {
             workspace: name.into(),
             task: "test".into(),
             shard: None,
+            total_shards: None,
             runner: "yarn".into(),
             environment: "linux-x64".into(),
             duration_ms,
@@ -441,6 +464,7 @@ mod tests {
                     workspace: "a".into(),
                     task: "test".into(),
                     shard: None,
+                    total_shards: None,
                     runner: "yarn".into(),
                     environment: "linux-x64".into(),
                     duration_ms,
@@ -470,6 +494,131 @@ mod tests {
                 "linux-x64"
             )
         );
+    }
+
+    #[test]
+    fn skewed_four_item_plan_has_no_empty_assignments() {
+        let history = TimingHistory {
+            samples: [
+                sample("a", 100),
+                sample("b", 1),
+                sample("c", 1),
+                sample("d", 1),
+            ]
+            .into(),
+            batch: None,
+        };
+        let items = [item("a"), item("b"), item("c"), item("d")];
+
+        let result = assign("ci", &items, 4, &history, "yarn", "linux-x64");
+        let item_names: Vec<_> = result
+            .iter()
+            .flat_map(|assignment| assignment.items.iter().map(|item| item.name.as_str()))
+            .collect();
+
+        assert!(result.iter().all(|assignment| !assignment.items.is_empty()));
+        assert_eq!(item_names.len(), 4);
+        assert_eq!(
+            item_names.into_iter().collect::<HashSet<_>>(),
+            ["a", "b", "c", "d"].into()
+        );
+        assert_eq!(
+            result,
+            assign("ci", &items, 4, &history, "yarn", "linux-x64")
+        );
+    }
+
+    #[test]
+    fn group_fallback_only_uses_the_same_task_runner_and_environment() {
+        let mut valid = sample("other", 25);
+        let mut other_task = sample("build", 300);
+        other_task.task = "build".into();
+        let mut other_runner = sample("nx", 400);
+        other_runner.runner = "nx".into();
+        let mut other_environment = sample("mac", 500);
+        other_environment.environment = "macos-arm64".into();
+        let mut requested = item("target");
+        requested.shard = Some(1);
+        requested.total_shards = Some(4);
+        valid.shard = Some(1);
+        valid.total_shards = Some(4);
+        other_task.shard = Some(1);
+        other_task.total_shards = Some(4);
+        other_runner.shard = Some(1);
+        other_runner.total_shards = Some(4);
+        other_environment.shard = Some(1);
+        other_environment.total_shards = Some(4);
+        let mut other_layout = sample("layout-2", 600);
+        other_layout.shard = Some(1);
+        other_layout.total_shards = Some(2);
+        let mut exact_other_layout = sample("target", 700);
+        exact_other_layout.shard = Some(1);
+        exact_other_layout.total_shards = Some(2);
+        let history = TimingHistory {
+            samples: vec![
+                valid,
+                other_task,
+                other_runner,
+                other_environment,
+                other_layout,
+                exact_other_layout,
+            ],
+            batch: None,
+        };
+
+        let result = assign("ci", &[requested], 1, &history, "yarn", "linux-x64");
+
+        assert_eq!(result[0].predicted_duration_ms, 25);
+        assert_eq!(result[0].prediction_sources.group, 1);
+    }
+
+    #[test]
+    fn different_total_shards_are_neither_exact_nor_fallback_matches() {
+        let mut requested = item("a");
+        requested.shard = Some(1);
+        requested.total_shards = Some(4);
+        let mut observed = sample("a", 70);
+        observed.shard = Some(1);
+        observed.total_shards = Some(2);
+        let result = assign(
+            "ci",
+            &[requested],
+            1,
+            &TimingHistory {
+                samples: vec![observed],
+                batch: None,
+            },
+            "yarn",
+            "linux-x64",
+        );
+
+        assert_eq!(result[0].predicted_duration_ms, 1);
+        assert_eq!(result[0].prediction_sources.cold, 1);
+    }
+
+    #[test]
+    fn merge_keeps_shard_layouts_as_distinct_keys() {
+        let mut two = sample("a", 10);
+        two.shard = Some(1);
+        two.total_shards = Some(2);
+        let mut four = sample("a", 20);
+        four.shard = Some(1);
+        four.total_shards = Some(4);
+
+        let history = merge_histories([
+            TimingHistory {
+                samples: vec![two],
+                batch: None,
+            },
+            TimingHistory {
+                samples: vec![four],
+                batch: None,
+            },
+        ]);
+
+        assert_eq!(history.samples.len(), 2);
+        assert_eq!(history.samples[0].total_shards, Some(2));
+        assert_eq!(history.samples[1].total_shards, Some(4));
     }
 
     #[test]
@@ -683,6 +832,7 @@ mod tests {
                 workspace: "a".into(),
                 task: "test".into(),
                 shard: None,
+                total_shards: None,
                 runner: "nx".into(),
                 environment: "linux-x64".into(),
                 duration_ms,
