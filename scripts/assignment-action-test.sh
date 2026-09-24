@@ -45,6 +45,10 @@ fi
 if [[ "${3:-}" == run ]]; then printf '%s\n' "$*" >> "$FAKE_RUN_CALLS"; fi
 if [[ "${3:-}" == install ]]; then
   printf '%s\n' "$*" >> "$FAKE_INSTALL_CALLS"
+  if [[ "${FAKE_INSTALL_FAIL:-}" == 1 ]]; then
+    printf '%s\n' '{"status":"failure","error":"expected package-manager failure"}'
+    exit 1
+  fi
   while (($#)); do
     if [[ "$1" == --filter-file ]]; then cp "$2" "$FAKE_FILTER_FILE"; shift 2; else shift; fi
   done
@@ -139,6 +143,11 @@ if bash "$GITHUB_ACTION_PATH/run.sh" >/dev/null 2>&1; then echo 'empty static in
 test ! -s "$FAKE_INSTALL_CALLS"
 
 write_assignment '[{"group":"ci","name":"pkg-a","path":"packages/pkg-a","task":"test"},{"group":"ci","name":"pkg-b","path":"packages/pkg-b","task":"test"}]'
+: > "$GITHUB_OUTPUT"; : > "$FAKE_INSTALL_CALLS"
+if FAKE_INSTALL_FAIL=1 bash "$GITHUB_ACTION_PATH/run.sh" >"$tmp/install-failure.log" 2>&1; then echo 'failed focused install unexpectedly succeeded' >&2; exit 1; fi
+grep -q 'expected package-manager failure' "$tmp/install-failure.log"
+install_failure_result=$(sed -n 's/^result=//p' "$GITHUB_OUTPUT")
+jq -e '.status == "failure" and .action == "install" and .phase == "focused-install"' <<<"$install_failure_result" >/dev/null
 : > "$GITHUB_OUTPUT"; : > "$FAKE_INSTALL_CALLS"
 bash "$GITHUB_ACTION_PATH/run.sh" >/dev/null
 grep -q -- '--filter-file' "$FAKE_INSTALL_CALLS"

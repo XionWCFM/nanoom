@@ -37,7 +37,14 @@ fi
 [[ "$PM" != npm || "$name_count" -eq 0 ]] || { echo 'npm cannot perform a focused workspace install; use Yarn Berry or pnpm' >&2; false; }
 printf -v ACTION_COMMAND '%q ' nanoom "${args[@]}"; ACTION_COMMAND=${ACTION_COMMAND% }
 printf '◆ nanoom install\n  Inputs\n    normalized assignment: %s\n    package manager: %s\n    cwd: %s\n  Command\n    %s\n' "$matrix_json" "$PM" "$CWD" "$ACTION_COMMAND"
-ACTION_PHASE=focused-install; cli_result=$(nanoom "${args[@]}")
+ACTION_PHASE=focused-install
+if cli_result=$(nanoom "${args[@]}"); then
+  :
+else
+  cli_status=$?
+  printf 'Nanoom CLI result: %s\n' "${cli_result:-<empty>}" >&2
+  nanoom_fail "$cli_status"
+fi
 elapsed=$(( $(date +%s) - started ))
 resolved_pm=$(jq -r '.packageManager // empty' <<<"$cli_result")
 resolved_pm_version=''
