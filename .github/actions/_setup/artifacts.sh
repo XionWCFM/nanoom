@@ -121,7 +121,7 @@ nanoom_previous_successful_run_for_event() {
     -H 'Accept: application/vnd.github+json' \
     "$API/repos/$REPOSITORY/actions/workflows/$encoded_workflow/runs?branch=$encoded_branch&event=$event&status=success&per_page=20") || return 0
   nanoom_history_charge_bytes "$(LC_ALL=C printf '%s' "$response" | wc -c | tr -d ' ')" || return 0
-  jq -r --arg current "$current_run" --arg event "$event" --arg branch "$branch" \
+  nanoom_history_timeout jq -r --arg current "$current_run" --arg event "$event" --arg branch "$branch" \
     --arg pr "$pr_number" --arg headRepository "$head_repository_id" \
     '[.workflow_runs[]? | select(.status == "completed" and .conclusion == "success") | select((.id | tostring) != $current) | select((.created_at | fromdateiso8601) >= (now - 2592000)) | select(if $event == "pull_request" then .head_branch == $branch and ((.head_repository.id // "") | tostring) == $headRepository and any(.pull_requests[]?; (.number | tostring) == $pr) else true end)] | sort_by(.created_at, .id) | .[-1].id // empty' \
     <<<"$response" || return 0
@@ -142,12 +142,13 @@ nanoom_run_artifacts() {
       -H 'Accept: application/vnd.github+json' \
       "$API/repos/$REPOSITORY/actions/runs/$run_id/artifacts?per_page=100&page=$page")
     nanoom_history_charge_bytes "$(LC_ALL=C printf '%s' "$response" | wc -c | tr -d ' ')" || return 1
-    all=$(jq -cn --argjson all "$all" --argjson page "$(jq -c '.artifacts // []' <<<"$response")" '$all + $page')
-    count=$(jq '.artifacts // [] | length' <<<"$response")
+    page_artifacts=$(nanoom_history_timeout jq -c '.artifacts // []' <<<"$response") || return 1
+    all=$(nanoom_history_timeout jq -cn --argjson all "$all" --argjson page "$page_artifacts" '$all + $page') || return 1
+    count=$(nanoom_history_timeout jq '.artifacts // [] | length' <<<"$response") || return 1
     (( count == 100 )) || break
     page=$((page + 1))
   done
-  jq -cn --argjson artifacts "$all" '{artifacts:$artifacts}'
+  nanoom_history_timeout jq -cn --argjson artifacts "$all" '{artifacts:$artifacts}'
 }
 
 nanoom_download_artifacts() {
@@ -183,11 +184,11 @@ nanoom_download_artifacts() {
 nanoom_download_artifact_bounded() {
   local artifacts=$1 name=$2 destination=$3 archive_limit=$4 json_limit=$5
   local artifact size artifact_id archive actual entry output remaining
-  artifact=$(jq -ce --arg name "$name" '.artifacts[]? | select((.expired | not) and .name == $name)' <<<"$artifacts") || return 1
-  size=$(jq -er '.size_in_bytes | select(type == "number" and . >= 0)' <<<"$artifact") || return 1
+  artifact=$(nanoom_history_timeout jq -ce --arg name "$name" '.artifacts[]? | select((.expired | not) and .name == $name)' <<<"$artifacts") || return 1
+  size=$(nanoom_history_timeout jq -er '.size_in_bytes | select(type == "number" and . >= 0)' <<<"$artifact") || return 1
   (( size <= archive_limit && NANOOM_HISTORY_BYTES + size <= NANOOM_HISTORY_MAX_BYTES )) || return 1
   remaining=$(nanoom_history_remaining) || return 1
-  artifact_id=$(jq -er '.id | select(type == "number" or type == "string")' <<<"$artifact") || return 1
+  artifact_id=$(nanoom_history_timeout jq -er '.id | select(type == "number" or type == "string")' <<<"$artifact") || return 1
   mkdir -p "$destination"
   archive="$RUNNER_TEMP/nanoom-prediction-$artifact_id.zip"
   curl --fail --silent --show-error -L --max-time "$remaining" --max-filesize "$archive_limit" \
@@ -197,7 +198,7 @@ nanoom_download_artifact_bounded() {
   actual=$(wc -c < "$archive" | tr -d ' ')
   (( actual <= archive_limit && NANOOM_HISTORY_BYTES + actual <= NANOOM_HISTORY_MAX_BYTES )) || return 1
   NANOOM_HISTORY_BYTES=$((NANOOM_HISTORY_BYTES + actual))
-  entry=$(unzip -Z1 "$archive") || return 1
+  entry=$(nanoom_history_timeout unzip -Z1 "$archive") || return 1
   [[ "$entry" =~ ^[A-Za-z0-9._-]+\.json$ ]] || return 1
   output="$destination/$(basename "$entry")"
   set +e

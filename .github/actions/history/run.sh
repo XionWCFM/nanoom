@@ -37,8 +37,8 @@ else
     nanoom_download_artifact_bounded "$candidate_artifacts" "$HISTORY_ARTIFACT" "$candidate_dir/prediction" 8388608 8388608 || return 1
     previous_prediction_path=$(find "$candidate_dir/prediction" -maxdepth 1 -type f -name '*.json' -print | sort | head -n 1)
     [[ -n "$previous_prediction_path" ]] || return 1
-    pointer=$(jq -er '.predictions[0].modelArtifact | select(.name and .sha256)' "$previous_prediction_path" 2>/dev/null) || return 1
-    previous_model_name=$(jq -er .name <<<"$pointer") || return 1
+    pointer=$(nanoom_history_timeout jq -er '.predictions[0].modelArtifact | select(.name and .sha256)' "$previous_prediction_path" 2>/dev/null) || return 1
+    previous_model_name=$(nanoom_history_timeout jq -er .name <<<"$pointer") || return 1
     nanoom_download_artifact_bounded "$candidate_artifacts" "$previous_model_name" "$candidate_dir/model" 16777216 16777216 || {
       previous_model_unavailable=true
       return 1
