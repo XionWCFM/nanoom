@@ -424,11 +424,15 @@ fn resolve_timing_runner(cwd: &std::path::Path, requested: &str) -> Result<Strin
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_timing_runner;
+    use super::{
+        load_prediction_context, load_preparation_context, resolve_timing_runner,
+        scheduling_diagnostics, MAX_PREDICTION_CONTEXT_BYTES, MAX_PREPARATION_CONTEXT_BYTES,
+    };
 
     use crate::affected::{AffectedOutput, GroupOutput, WorkspaceEntry};
 
     use std::collections::HashMap;
+    use std::path::Path;
     use tempfile::tempdir;
 
     fn mock_output() -> AffectedOutput {
@@ -503,5 +507,81 @@ mod tests {
         std::fs::write(ambiguous.path().join("turbo.json"), "{}").unwrap();
         std::fs::write(ambiguous.path().join("nx.json"), "{}").unwrap();
         assert!(resolve_timing_runner(ambiguous.path(), "auto").is_err());
+    }
+
+    #[test]
+    fn scheduling_diagnostics_count_each_mode_and_preparation_source() {
+        let matrix = serde_json::json!({"ci":{"include":[
+            {"schedulingMode":"automatic","preparationPredictionSource":"exact"},
+            {"schedulingMode":"cold-cap","preparationPredictionSource":"group"},
+            {"schedulingMode":"cold-cap"},
+            {}
+        ]}});
+        assert_eq!(
+            scheduling_diagnostics(&matrix),
+            serde_json::json!({
+                "automaticAssignmentCount":1,
+                "coldCapAssignmentCount":2,
+                "preparationPredictionSources":{"exact":1,"group":1,"unknown":1}
+            })
+        );
+        assert_eq!(
+            scheduling_diagnostics(&serde_json::json!([]))["automaticAssignmentCount"],
+            0
+        );
+        assert_eq!(
+            scheduling_diagnostics(&serde_json::json!({"ci":{"include":"invalid"}}))
+                ["coldCapAssignmentCount"],
+            0
+        );
+    }
+
+    #[test]
+    fn bounded_context_loaders_accept_valid_contexts_and_cold_fallback_on_invalid_files() {
+        let dir = tempdir().unwrap();
+        let prediction_path = dir.path().join("prediction.json");
+        std::fs::write(
+            &prediction_path,
+            serde_json::to_vec(&serde_json::json!({
+                "repositoryKey":"repo",
+                "workflowPath":".github/workflows/ci.yml",
+                "ref":{"kind":"push","ref":"refs/heads/main"}
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        assert!(load_prediction_context(dir.path(), Path::new("prediction.json")).is_some());
+
+        let preparation_path = dir.path().join("preparation.json");
+        std::fs::write(
+            &preparation_path,
+            serde_json::to_vec(&serde_json::json!({
+                "packageManager":"pnpm",
+                "packageManagerVersion":"9.0.0",
+                "installMode":"focused",
+                "lockfileDigest":"a".repeat(64)
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        assert!(load_preparation_context(dir.path(), Path::new("preparation.json")).is_some());
+
+        std::fs::write(&prediction_path, "{").unwrap();
+        assert!(load_prediction_context(dir.path(), Path::new("prediction.json")).is_none());
+        std::fs::write(
+            &prediction_path,
+            "x".repeat(MAX_PREDICTION_CONTEXT_BYTES + 1),
+        )
+        .unwrap();
+        assert!(load_prediction_context(dir.path(), Path::new("prediction.json")).is_none());
+        assert!(load_prediction_context(dir.path(), Path::new("missing.json")).is_none());
+        std::fs::write(
+            &preparation_path,
+            "x".repeat(MAX_PREPARATION_CONTEXT_BYTES + 1),
+        )
+        .unwrap();
+        assert!(load_preparation_context(dir.path(), Path::new("preparation.json")).is_none());
+        std::fs::write(&preparation_path, r#"{"packageManager":"unknown"}"#).unwrap();
+        assert!(load_preparation_context(dir.path(), Path::new("preparation.json")).is_none());
     }
 }

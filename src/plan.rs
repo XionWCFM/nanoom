@@ -1045,4 +1045,316 @@ mod tests {
         plan.groups.get_mut("ci").unwrap().assignments[0].checkout_paths = vec!["../escape".into()];
         assert!(plan.validate().is_err());
     }
+
+    #[test]
+    fn plan_validation_rejects_invalid_provenance_predictions_and_counts() {
+        let mut value = provenance();
+        value.repository.clear();
+        assert!(validate_provenance(&value).is_err());
+        let mut value = provenance();
+        value.workflow.push('\n');
+        assert!(validate_provenance(&value).is_err());
+        let mut value = provenance();
+        value.run_id = "12x".into();
+        assert!(validate_provenance(&value).is_err());
+        let mut value = provenance();
+        value.producer_attempt = 0;
+        assert!(validate_provenance(&value).is_err());
+        let mut value = provenance();
+        value.planning_job = "job/name".into();
+        assert!(validate_provenance(&value).is_err());
+        let mut value = provenance();
+        value.head = "short".into();
+        assert!(validate_provenance(&value).is_err());
+
+        let mut plan = plan_with_items(1, 1);
+        plan.version += 1;
+        assert!(plan
+            .validate()
+            .unwrap_err()
+            .to_string()
+            .contains("unsupported Plan version"));
+        let mut plan = plan_with_items(1, 1);
+        plan.task_runner.clear();
+        assert!(plan
+            .validate()
+            .unwrap_err()
+            .to_string()
+            .contains("taskRunner"));
+        let mut plan = plan_with_items(1, 1);
+        plan.prediction_artifact = Some(ArtifactDigest {
+            name: "prediction".into(),
+            sha256: "bad".into(),
+        });
+        assert!(plan.validate().unwrap_err().to_string().contains("SHA-256"));
+        let mut plan = plan_with_items(1, 1);
+        plan.groups.insert(" ".into(), plan.groups["ci"].clone());
+        assert!(plan
+            .validate()
+            .unwrap_err()
+            .to_string()
+            .contains("group names"));
+        let mut plan = plan_with_items(1, 1);
+        plan.groups.get_mut("ci").unwrap().assignments[0]
+            .assignment_id
+            .clear();
+        assert!(plan
+            .validate()
+            .unwrap_err()
+            .to_string()
+            .contains("assignmentId"));
+        let mut plan = plan_with_items(2, 2);
+        let duplicate_id = plan.groups["ci"].assignments[0].assignment_id.clone();
+        plan.groups.get_mut("ci").unwrap().assignments[1].assignment_id = duplicate_id;
+        assert!(plan
+            .validate()
+            .unwrap_err()
+            .to_string()
+            .contains("assignmentId"));
+        let mut plan = plan_with_items(1, 1);
+        plan.groups.get_mut("ci").unwrap().assignments[0].predicted_preparation_ms = Some(1);
+        assert!(plan
+            .validate()
+            .unwrap_err()
+            .to_string()
+            .contains("preparation prediction"));
+        let mut plan = plan_with_items(1, 1);
+        plan.groups.get_mut("ci").unwrap().assignments[0].scheduling_mode = Some("guess".into());
+        assert!(plan
+            .validate()
+            .unwrap_err()
+            .to_string()
+            .contains("schedulingMode"));
+        let mut plan = plan_with_items(1, 1);
+        plan.assignment_count += 1;
+        assert!(plan.validate().unwrap_err().to_string().contains("counts"));
+        let mut plan = plan_with_items(1, 1);
+        plan.has_change = false;
+        assert!(plan
+            .validate()
+            .unwrap_err()
+            .to_string()
+            .contains("hasChange"));
+    }
+
+    #[test]
+    fn plan_validation_rejects_invalid_items_shards_and_checkout_paths() {
+        let mut plan = plan_with_items(1, 1);
+        plan.groups.get_mut("ci").unwrap().assignments[0]
+            .checkout_paths
+            .clear();
+        assert!(plan
+            .validate()
+            .unwrap_err()
+            .to_string()
+            .contains("no checkout paths"));
+
+        let mutate_item: [fn(&mut PlanItem); 4] = [
+            |item: &mut PlanItem| item.group = "other".into(),
+            |item: &mut PlanItem| item.name.clear(),
+            |item: &mut PlanItem| item.task.clear(),
+            |item: &mut PlanItem| item.path = "../escape".into(),
+        ];
+        for mutate in mutate_item {
+            let mut plan = plan_with_items(1, 1);
+            mutate(&mut plan.groups.get_mut("ci").unwrap().assignments[0].items[0]);
+            assert!(plan.validate().is_err());
+        }
+
+        let mut plan = plan_with_items(1, 1);
+        plan.groups.get_mut("ci").unwrap().assignments[0].items[0].path = "packages/other".into();
+        assert!(plan
+            .validate()
+            .unwrap_err()
+            .to_string()
+            .contains("not in checkout paths"));
+        let mut plan = plan_with_items(1, 1);
+        plan.groups.get_mut("ci").unwrap().assignments[0].items[0].shard = Some(1);
+        assert!(plan
+            .validate()
+            .unwrap_err()
+            .to_string()
+            .contains("shard layout"));
+        let mut plan = plan_with_items(2, 2);
+        let duplicate = plan.groups["ci"].assignments[0].items[0].clone();
+        plan.groups.get_mut("ci").unwrap().assignments[1].items[0] = duplicate;
+        plan.groups.get_mut("ci").unwrap().assignments[1].checkout_paths =
+            vec!["packages/pkg-00000".into()];
+        assert!(plan
+            .validate()
+            .unwrap_err()
+            .to_string()
+            .contains("assigned more than once"));
+
+        for paths in [
+            vec!["packages/pkg-00000".into(), "packages/pkg-00000".into()],
+            vec!["packages/z".into(), "packages/a".into()],
+        ] {
+            let mut plan = plan_with_items(1, 1);
+            plan.groups.get_mut("ci").unwrap().assignments[0].checkout_paths = paths;
+            assert!(plan
+                .validate()
+                .unwrap_err()
+                .to_string()
+                .contains("unsorted checkout paths"));
+        }
+    }
+
+    #[test]
+    fn reference_validation_rejects_digest_artifact_current_run_and_provenance_mismatches() {
+        let plan = plan_with_items(1, 1);
+        let bytes = serde_json::to_vec_pretty(&plan).unwrap();
+        let base = PlanReference::for_plan(&plan, &bytes).unwrap();
+
+        let mut reference = base.clone();
+        reference.version += 1;
+        assert!(reference
+            .validate(&plan, &bytes)
+            .unwrap_err()
+            .to_string()
+            .contains("reference version"));
+        let mut reference = base.clone();
+        reference.sha256 = "0".repeat(64);
+        assert!(reference
+            .validate(&plan, &bytes)
+            .unwrap_err()
+            .to_string()
+            .contains("SHA-256"));
+        let mut reference = base.clone();
+        reference.artifact_name.push_str("-other");
+        assert!(reference
+            .validate(&plan, &bytes)
+            .unwrap_err()
+            .to_string()
+            .contains("artifact name"));
+        let mut reference = base.clone();
+        reference.current.workflow.push_str("-other");
+        assert!(reference
+            .validate(&plan, &bytes)
+            .unwrap_err()
+            .to_string()
+            .contains("different repository"));
+        let mut reference = base.clone();
+        reference.current.attempt = 0;
+        assert!(reference
+            .validate(&plan, &bytes)
+            .unwrap_err()
+            .to_string()
+            .contains("newer"));
+        let mut reference = base;
+        reference.provenance.run_id = "54321".into();
+        reference.current.run_id = "54321".into();
+        reference.artifact_name = artifact_name(&reference.provenance).unwrap();
+        assert!(reference
+            .validate(&plan, &bytes)
+            .unwrap_err()
+            .to_string()
+            .contains("provenance"));
+    }
+
+    #[test]
+    fn matrix_assignment_parser_validates_fields_paths_and_optional_numbers() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let row = serde_json::json!({
+            "assignmentId": "ci-1",
+            "items": [{"name":"pkg","path":"packages/pkg","task":"test","shard":1,"totalShards":2}],
+            "checkout": {"sparseCheckout":"packages/pkg"},
+            "predictedDurationMs": 42,
+            "predictedPreparationMs": 10,
+            "preparationPredictionSource": "exact",
+            "preparationSampleCount": 3,
+            "schedulingMode": "automatic",
+            "reason": "warm",
+            "runnerLabels": ["ubuntu-latest"],
+            "timingEnvironment": "linux-x64"
+        });
+        let assignment = assignment_from_matrix("ci", 0, &row, dir.path(), &root).unwrap();
+        assert_eq!(assignment.assignment_id, "ci-1");
+        assert_eq!(assignment.items[0].total_shards, Some(2));
+        assert_eq!(assignment.predicted_preparation_ms, Some(10));
+
+        let legacy = serde_json::json!({
+            "name":"pkg","path":dir.path().join("packages/pkg"),"task":"test",
+            "checkout":{"sparseCheckout":dir.path().join("packages/pkg").to_string_lossy()}
+        });
+        let legacy = assignment_from_matrix("ci", 1, &legacy, dir.path(), &root).unwrap();
+        assert_eq!(legacy.assignment_id, "ci-0002");
+        assert_eq!(legacy.checkout_paths, ["packages/pkg"]);
+
+        let invalid_rows = [
+            serde_json::json!({"items":[],"checkout":{"sparseCheckout":"packages/pkg"}}),
+            serde_json::json!({"assignmentId":"ci-1","items":[{"path":"packages/pkg","task":"test"}],"checkout":{"sparseCheckout":"packages/pkg"}}),
+            serde_json::json!({"assignmentId":"ci-1","items":[{"name":"pkg","path":"../escape","task":"test"}],"checkout":{"sparseCheckout":"packages/pkg"}}),
+            serde_json::json!({"assignmentId":"ci-1","items":[{"name":"pkg","path":"packages/pkg","task":"test","shard":"one"}],"checkout":{"sparseCheckout":"packages/pkg"}}),
+            serde_json::json!({"assignmentId":"ci-1","items":[{"name":"pkg","path":"packages/pkg","task":"test"}],"checkout":{}}),
+            serde_json::json!({"assignmentId":"ci-1","items":[{"name":"pkg","path":"packages/pkg","task":"test"}],"checkout":{"sparseCheckout":"../escape"}}),
+            serde_json::json!({"assignmentId":"ci-1","items":[{"name":"pkg","path":"packages/pkg","task":"test"}],"checkout":{"sparseCheckout":"packages/pkg"},"runnerLabels":"ubuntu-latest"}),
+        ];
+        for row in invalid_rows {
+            assert!(
+                assignment_from_matrix("ci", 0, &row, dir.path(), &root).is_err(),
+                "{row}"
+            );
+        }
+        let outside = serde_json::json!({
+            "assignmentId":"ci-1",
+            "items":[{"name":"pkg","path":"/tmp/outside","task":"test"}],
+            "checkout":{"sparseCheckout":"packages/pkg"}
+        });
+        assert!(assignment_from_matrix("ci", 0, &outside, dir.path(), &root).is_err());
+    }
+
+    #[test]
+    fn context_and_path_helpers_reject_untrusted_values() {
+        let base_context = PlanContext {
+            repository: "owner/repo".into(),
+            workflow: ".github/workflows/ci.yml@refs/heads/main".into(),
+            run_id: "123".into(),
+            producer_attempt: 1,
+            planning_job: "affected".into(),
+            base: "a".repeat(40),
+            head: "b".repeat(40),
+            task_runner: "pnpm".into(),
+            prediction_reason: "cold".into(),
+            prediction_artifact: None,
+            model_artifact: None,
+        };
+        base_context.validate().unwrap();
+        let mut context = base_context.clone();
+        context.task_runner.clear();
+        assert!(context.validate().is_err());
+        let mut context = base_context.clone();
+        context.model_artifact = Some(ArtifactDigest {
+            name: "model".into(),
+            sha256: "bad".into(),
+        });
+        assert!(context.validate().is_err());
+
+        for value in [
+            "/outside",
+            "../escape",
+            "packages/../escape",
+            "packages\\escape",
+        ] {
+            assert!(
+                workspace_relative_path(value, Path::new("/repo"), Path::new("/repo")).is_err()
+            );
+        }
+        assert_eq!(
+            workspace_relative_path(".", Path::new("/repo"), Path::new("/repo")).unwrap(),
+            "."
+        );
+        assert_eq!(
+            workspace_relative_path("/repo/packages/pkg", Path::new("/repo"), Path::new("/repo"))
+                .unwrap(),
+            "packages/pkg"
+        );
+        assert!(optional_usize(&serde_json::json!({"shard":"one"}), "shard").is_err());
+        assert_eq!(
+            optional_usize(&serde_json::json!({"shard":2}), "shard").unwrap(),
+            Some(2)
+        );
+        assert!(validate_sorted_paths("ci", &[]).is_err());
+    }
 }

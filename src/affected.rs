@@ -595,3 +595,85 @@ pub fn generate_matrix_for_group(output: &AffectedOutput, group_name: &str) -> s
         .cloned()
         .unwrap_or_else(|| serde_json::json!({ "include": [] }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::explain_affected;
+    use crate::config::Config;
+    use crate::workspace::Workspace;
+
+    #[test]
+    fn affected_reasons_cover_direct_global_structural_and_transitive_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        for (name, dependencies) in [
+            (
+                "app",
+                serde_json::json!({"@repo/mid":"workspace:*","external":"^1.0.0"}),
+            ),
+            (
+                "mid",
+                serde_json::json!({"@repo/core":"workspace:*","@repo/app":"workspace:*"}),
+            ),
+            ("core", serde_json::json!({"@repo/mid":"workspace:*"})),
+            ("unrelated", serde_json::json!({})),
+        ] {
+            let path = dir.path().join("packages").join(name);
+            std::fs::create_dir_all(&path).unwrap();
+            std::fs::write(
+                path.join("package.json"),
+                serde_json::to_vec(&serde_json::json!({
+                    "name": format!("@repo/{name}"),
+                    "version":"1.0.0",
+                    "dependencies":dependencies
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+        }
+        let config: Config = serde_json::from_value(serde_json::json!({
+            "group":{"ci":{"tasks":["test"]}},
+            "workspace":{"include":["packages/*"]}
+        }))
+        .unwrap();
+        let workspace = Workspace::discover(&config, dir.path()).unwrap();
+        let direct_file = dir.path().join("packages/core/src/index.ts");
+
+        let reasons = explain_affected(&workspace, &[direct_file], &[], &[], dir.path());
+        assert_eq!(reasons["@repo/core"].kind, "direct");
+        assert_eq!(reasons["@repo/mid"].kind, "transitiveDependent");
+        assert_eq!(
+            reasons["@repo/app"].dependency_path,
+            ["@repo/app", "@repo/mid", "@repo/core"]
+        );
+        assert!(!reasons.contains_key("@repo/unrelated"));
+
+        let global = explain_affected(
+            &workspace,
+            &[dir.path().join("pnpm-lock.yaml")],
+            &[],
+            &["pnpm-lock.yaml".into()],
+            dir.path(),
+        );
+        assert_eq!(global.len(), 4);
+        assert!(global
+            .values()
+            .all(|reason| reason.kind == "globalDependency"));
+
+        let structural = explain_affected(
+            &workspace,
+            &[],
+            &[dir.path().join("packages/core/package.json")],
+            &[],
+            dir.path(),
+        );
+        assert_eq!(structural.len(), 4);
+        assert!(structural
+            .values()
+            .all(|reason| reason.kind == "workspaceManifestStructure"));
+        assert_eq!(
+            structural["@repo/core"].changed_files,
+            ["packages/core/package.json"]
+        );
+        assert!(explain_affected(&workspace, &[], &[], &[], dir.path()).is_empty());
+    }
+}

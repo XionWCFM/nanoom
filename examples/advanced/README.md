@@ -66,9 +66,11 @@ jobs:
         uses: XionWCFM/nanoom/.github/actions/affected@main
         with:
           packageManager: pnpm
+          timingRunner: turbo
 
   test:
     needs: matrix
+    if: needs.matrix.outputs.groups != '' && fromJSON(needs.matrix.outputs.groups).ci.hasChange
     strategy:
       matrix: ${{ fromJSON(needs.matrix.outputs.groups).ci.include }}
     runs-on: ${{ matrix.runnerLabels || 'ubuntu-latest' }}
@@ -93,5 +95,21 @@ jobs:
           cwd: ${{ steps.prepare.outputs.cwd }}
           preparedAtMs: ${{ steps.prepare.outputs.prepared-at-ms }}
           installResult: ${{ steps.install.outputs.result }}
+          packageManager: pnpm
+          monorepoTool: turbo
           cleanupCheckout: true
+
+  status:
+    if: always()
+    needs: [matrix, test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: XionWCFM/nanoom/.github/actions/status@latest
+        with:
+          results: |
+            matrix=${{ needs.matrix.result }}
+            test=${{ needs.test.result }}
+          requiredJobs: ${{ needs.matrix.outputs.groups != '' && fromJSON(needs.matrix.outputs.groups).ci.hasChange && '["test"]' || '[]' }}
 ```
+
+이 workflow는 `ci` group을 하나의 Turbo matrix job으로 실행합니다. Nx consumer도 같은 Plan/prepare/install 흐름을 쓰고 `timingRunner: nx`, `monorepoTool: nx`로 실행기를 맞춥니다. package manager가 pnpm이면 `packageManager: pnpm`은 그대로 둡니다. Nx/Turbo task graph 설정은 각 도구의 설정 파일에서 관리합니다.

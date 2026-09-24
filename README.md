@@ -90,6 +90,7 @@ root-only non-cone checkout하고, 그 assignment의 paths 파일로 cone checko
 jobs:
   run:
     needs: affected
+    if: needs.affected.outputs.has_change == 'true'
     strategy:
       matrix: ${{ fromJSON(needs.affected.outputs.groups).ci.include }}
     runs-on: ${{ matrix.runnerLabels || 'ubuntu-latest' }}
@@ -251,6 +252,26 @@ history job은 run 성공 뒤 실행하고 aggregate `status`의 dependency에 �
 - uses: XionWCFM/nanoom/.github/actions/history-ghes@latest
 ```
 
+조건부 matrix의 `skipped`는 no-change일 때만 정상입니다. positive plan에서 `run` job이 누락되거나 skip되어도 aggregate가 실패하도록 단일 `ci` group 예제에 `requiredJobs`를 설정합니다. no-change면 빈 배열을 전달해 의도한 skip을 허용합니다.
+
+```yaml
+jobs:
+  status:
+    if: always()
+    needs: [affected, run, history]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: XionWCFM/nanoom/.github/actions/status@latest
+        with:
+          results: |
+            affected=${{ needs.affected.result }}
+            run=${{ needs.run.result }}
+            history=${{ needs.history.result }}
+          requiredJobs: ${{ needs.affected.outputs.has_change == 'true' && '["run"]' || '[]' }}
+```
+
+여러 group을 별도 job으로 실행하면 각 group의 `groups.<name>.hasChange`가 참일 때만 대응 job ID를 `requiredJobs`에 넣으세요. 한 group만 변경됐는데 다른 group job까지 요구하는 정적 배열을 전달하면 정상 no-change group도 실패합니다.
+
 ## HTTP continuous assignment
 
 `scheduler: http`는 Nanoom 서버를 배포하지 않고 HTTPS `/v1` client contract만 제공합니다. 인증은 로그나 config가 아니라 `NANOOM_COORDINATOR_TOKEN` bearer token으로만 전달합니다.
@@ -264,7 +285,7 @@ history job은 run 성공 뒤 실행하고 aggregate `status`의 dependency에 �
 
 ## 경계와 검증
 
-`affected` Action이 GitHub event를 explicit `--base`/`--head`로 변환하고 CLI는 플랫폼 독립적으로 계산합니다. `status`는 timing/history/coordinator를 해석하지 않고 `needs`만 집계합니다. Task DAG, remote task cache, flaky retry, agent type routing, Nx assignment rules와 공식 SaaS/server는 v0.3.0 범위가 아닙니다.
+`affected` Action이 GitHub event를 explicit `--base`/`--head`로 변환하고 CLI는 플랫폼 독립적으로 계산합니다. `status`는 timing/history/coordinator를 해석하지 않고 `needs` 결과를 집계하며, caller가 지정한 `requiredJobs`만 추가로 성공을 요구합니다. Task DAG, remote task cache, flaky retry, agent type routing, Nx assignment rules와 공식 SaaS/server는 v0.3.0 범위가 아닙니다.
 
 설정 schema는 `nanoom schema --output nanoom.schema.json`으로 생성합니다. v0.5.0의 GHES history와 checkout-cost 결정은 [ADR-0012](docs/adr/0012-ghes-history-checkout-cost.md)에 기록되어 있습니다.
 

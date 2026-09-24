@@ -153,6 +153,7 @@ jobs:
   fixture-run:
     name: Fixture ${{ matrix.assignmentId }}
     needs: fixture-affected
+    if: needs.fixture-affected.outputs.has_change == 'true'
     runs-on: ${{ matrix.runnerLabels || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
@@ -238,6 +239,7 @@ jobs:
             fixture-affected=${{ needs.fixture-affected.result }}
             fixture-run=${{ needs.fixture-run.result }}
             fixture-history=${{ needs.fixture-history.result }}
+          requiredJobs: ${{ needs.fixture-affected.outputs.has_change == 'true' && '["fixture-run"]' || '[]' }}
       - name: Verify status result
         env:
           RESULT: ${{ steps.aggregate.outputs.result }}

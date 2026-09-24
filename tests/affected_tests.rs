@@ -1,9 +1,10 @@
 use nanoom::{
     affected::{
         calculate, generate_matrix, generate_matrix_for_group, generate_matrix_with_history,
-        AffectedOutput, GroupOutput, WorkspaceEntry,
+        generate_matrix_with_prediction_index, AffectedOutput, GroupOutput, WorkspaceEntry,
     },
     config::Config,
+    prediction::PredictionIndex,
     scheduler::{TimingHistory, TimingSample},
 };
 use std::fs;
@@ -156,6 +157,19 @@ async fn test_calculate_with_override_tip_reports_shards() {
         "yarn",
         "affected-runner",
     );
+    let empty_predictions = PredictionIndex::new([]).unwrap();
+    let cold_matrix = generate_matrix_with_prediction_index(
+        &output,
+        &empty_predictions,
+        None,
+        "yarn",
+        environment,
+        1,
+    );
+    assert!(cold_matrix["ci"]["include"][0]["reason"]
+        .as_str()
+        .unwrap()
+        .contains("task history is cold"));
     assert_eq!(matrix["ci"]["include"][0]["predictedDurationMs"], 79);
     assert_eq!(matrix["ci"]["include"][0]["predictionSources"]["exact"], 1);
     assert_eq!(matrix["ci"]["include"][0]["predictionSources"]["group"], 0);
@@ -228,6 +242,62 @@ async fn deleted_workspace_manifest_conservatively_affects_every_remaining_works
         .reasons
         .values()
         .all(|reason| reason.kind == "workspaceManifestStructure"));
+}
+
+#[tokio::test]
+async fn sparse_affected_rejects_missing_manifests_and_bounds_the_error_list() {
+    for missing_count in [1, 21] {
+        let dir = tempdir().unwrap();
+        let git = |args: &[&str]| {
+            let output = Command::new("git")
+                .args(args)
+                .current_dir(dir.path())
+                .env("GIT_AUTHOR_NAME", "test")
+                .env("GIT_AUTHOR_EMAIL", "test@example.com")
+                .env("GIT_COMMITTER_NAME", "test")
+                .env("GIT_COMMITTER_EMAIL", "test@example.com")
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "git {args:?} failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        };
+        git(&["init", "-q"]);
+        fs::write(
+            dir.path().join("nanoom.config.json"),
+            r#"{"group":{"ci":{"tasks":["test"]}},"workspace":{"include":["packages/*"]}}"#,
+        )
+        .unwrap();
+        for index in 0..missing_count {
+            let path = dir.path().join(format!("packages/pkg-{index:02}"));
+            fs::create_dir_all(&path).unwrap();
+            create_package_json(&path, &format!("pkg-{index:02}"), &[]);
+        }
+        git(&["add", "."]);
+        git(&["commit", "-qm", "base"]);
+        let config = Config::load(std::path::Path::new("nanoom.config.json"), dir.path()).unwrap();
+        for index in 0..missing_count {
+            fs::remove_file(
+                dir.path()
+                    .join(format!("packages/pkg-{index:02}/package.json")),
+            )
+            .unwrap();
+        }
+
+        let error = nanoom::affected::calculate_with_override(
+            &config,
+            dir.path(),
+            Some("HEAD"),
+            Some("HEAD"),
+        )
+        .await
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains(&format!("missing {missing_count} workspace package.json")));
+        assert_eq!(error.contains(", ..."), missing_count > 20);
+    }
 }
 
 #[test]

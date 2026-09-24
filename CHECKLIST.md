@@ -18,13 +18,36 @@
 - [x] A4 PredictionState v3·compile/apply/project·분리된 artifact·bounded lookup의 local Rust/Action 구현과 회귀.
 - [x] A5 preparation telemetry·automatic k·cold fallback·결정성·384-item synthetic warm scheduler benchmark — 아래 A5 기록.
 - [ ] A5 real CI traces의 전체 wall time·prediction error vs median·실제 artifact 크기 측정 — hosted consumer 경로 필요.
-- [ ] A6 examples·requiredJobs·계획 기반 completion gate·96% coverage 기준.
-- [x] Local fmt/lint/tests/Action/실제 Git 및 focused-install 회귀 — A4 공통 로컬 gates 포함.
+- [x] A6 examples·requiredJobs·계획 기반 completion gate·96% coverage 기준 — 아래 A6 실행 기록.
+- [x] Local fmt/lint/tests/Action/실제 Git 및 focused-install 회귀 — A4/A6 공통 로컬 gates 포함.
 - [ ] 현재 A4 OpenAPI 변경의 공식 schema/examples/digest 검증 — uv 설치는 PyPI DNS로 미실시.
 - [ ] Producer hosted PR CI: exact candidate SHA 기록.
 - [ ] Consumer Yarn+Turbo / pnpm+Nx: cold→warm, positive/non-skipped, selected closure.
 - [ ] Consumer no-change / task failure / unexpected skip / rerun aggregate 검증.
 - [ ] A7 producer PR + fixture PR + run URL / SHA / 결과 표 첨부.
+
+## A6 실행 기록 — 2026-09-24
+
+```text
+단계: A6 local implementation
+시작 HEAD: 3256597 (A5 validation evidence)
+브랜치: codex/prediction-state-v3
+시작 상태: A5 tracked tree clean; 사용자 .opencode/ 미추적 상태 보존.
+```
+
+basic/advanced 예제에 positive, no-change, required status job wiring을 보이고 Nx/Turbo 입력도 명시했다. status Action의 `requiredJobs`는 지정 job의 존재와 success를 요구하며, 그 밖의 dependency는 기존처럼 success/skipped를 허용한다. fixture completion gate는 고정 job 개수 대신 실제 Plan artifact의 assignment/item 수와 run 결과를 대조하고 no-change의 skip을 허용한다. hosted completion 검증도 대상 run attempt의 Plan artifact를 받아 같은 계약을 검사한다.
+
+회귀는 required job 누락/skip/입력 오류, positive Plan의 실행 누락·unexpected skip, no-change, Plan count 변조, 외부 Plan/reference/matrix 검증, affected 사유 및 context 제한을 다룬다. 로컬 공통 완료 스크립트와 coverage 기준을 96%로 올려 통과시켰다. 실제 GitHub/GHES hosted artifact 전송, 외부 candidate SHA PR/run, released binary 증거는 이 로컬 결과로 승계하지 않는다.
+
+검증:
+
+- `bash scripts/verify-completion.sh --local` — exit 0, local completion gate passed; full Rust tests, fmt/clippy, coverage, Action/completion contracts, smoke/install/platform gates 포함.
+- 공통 `cargo llvm-cov --locked --workspace --all-features --fail-under-lines 96 --summary-only` — exit 0, line coverage **96.03%** (7,865 lines, 312 missed).
+- `git diff --check`, `cargo fmt --all --check` — exit 0.
+- `gh auth status` — exit 1; `github.com` 기본 계정 `XionWCFM` token invalid. Producer/fixture hosted PR 및 run을 만들거나 hosted evidence를 수집하지 않았다.
+- `.opencode/`는 계속 미추적이며 stage하지 않았다.
+
+미실시 및 다음 단계: A7 producer/fixture PR 및 hosted cold→warm/positive/no-change/failure/rerun 증거, GitHub/GHES artifact transport, released binary, A5 real trace/정확도/실제 artifact bytes, 공식 OpenAPI validator, S0~S6 server runtime. invalid GitHub token을 다시 인증한 뒤 A7 candidate SHA hosted evidence부터 진행한다.
 
 ## 선택적 서버 구현
 
