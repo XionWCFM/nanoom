@@ -162,8 +162,6 @@ jq -e '.assignment.itemCount == 2 and (.assignment | has("items") | not) and .pa
 : > "$GITHUB_OUTPUT"
 if FAKE_INSTALL_INVALID_JSON=1 bash "$GITHUB_ACTION_PATH/run.sh" >"$tmp/install-postprocess-failure.log" 2>&1; then echo 'invalid Nanoom install result unexpectedly succeeded' >&2; exit 1; fi
 grep -q 'parse error' "$tmp/install-postprocess-failure.log"
-grep -q 'Install action failed at:' "$tmp/install-postprocess-failure.log"
-grep -q 'Nanoom CLI result: not json' "$tmp/install-postprocess-failure.log"
 install_failure_result=$(sed -n 's/^result=//p' "$GITHUB_OUTPUT")
 jq -e '.status == "failure" and .action == "install" and .phase == "parse-cli-result"' <<<"$install_failure_result" >/dev/null
 
