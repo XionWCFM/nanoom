@@ -55,20 +55,26 @@ else
     previous_model_path=$(find "$candidate_dir/model" -maxdepth 1 -type f -name '*.json' -print | sort | head -n 1)
     [[ -n "$previous_model_path" ]]
   }
+  nanoom_try_previous_model_for_event() {
+    local branch=$1 event=$2 pr_number=$3 head_repository_id=$4 candidate_run
+    while IFS= read -r candidate_run; do
+      [[ -n "$candidate_run" ]] || continue
+      if nanoom_try_previous_model "$candidate_run" "$RUNNER_TEMP/nanoom-prev-$candidate_run"; then
+        source_run_id=$candidate_run
+        return 0
+      fi
+    done < <(nanoom_previous_successful_runs_for_event "$WORKFLOW_REF" "$branch" "$RUN_ID" "$event" "$pr_number" "$head_repository_id")
+    return 1
+  }
 
   case "${GITHUB_EVENT_NAME:-}" in
     pull_request|pull_request_target)
-      candidate_run=$(nanoom_previous_successful_run_for_event "$WORKFLOW_REF" "$PR_HEAD_REF" "$RUN_ID" pull_request "$PR_NUMBER" "$PR_HEAD_REPOSITORY_ID")
-      if nanoom_try_previous_model "$candidate_run" "$RUNNER_TEMP/nanoom-prev-pr"; then
-        source_run_id=$candidate_run
-      else
-        candidate_run=$(nanoom_previous_successful_run_for_event "$WORKFLOW_REF" "$PR_BASE_REF" "$RUN_ID" push)
-        if nanoom_try_previous_model "$candidate_run" "$RUNNER_TEMP/nanoom-prev-base"; then source_run_id=$candidate_run; fi
+      if ! nanoom_try_previous_model_for_event "$PR_HEAD_REF" pull_request "$PR_NUMBER" "$PR_HEAD_REPOSITORY_ID"; then
+        nanoom_try_previous_model_for_event "$PR_BASE_REF" push '' '' || true
       fi
       ;;
     *)
-      candidate_run=$(nanoom_previous_successful_run_for_event "$WORKFLOW_REF" "$HISTORY_REF" "$RUN_ID" push)
-      if nanoom_try_previous_model "$candidate_run" "$RUNNER_TEMP/nanoom-prev-push"; then source_run_id=$candidate_run; fi
+      nanoom_try_previous_model_for_event "$HISTORY_REF" push '' '' || true
       ;;
   esac
   fi

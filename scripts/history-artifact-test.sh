@@ -28,11 +28,14 @@ done
 printf '%s\n' "$url" >> "$FAKE_REQUESTS"
 case "$url" in
   *'/workflows/'*'event=pull_request'*)
-    printf '%s\n' '{"workflow_runs":[{"id":79,"status":"completed","conclusion":"success","created_at":"2026-09-23T01:00:00Z","head_branch":"other","head_repository":{"id":222},"pull_requests":[{"number":42}]},{"id":77,"status":"completed","conclusion":"success","created_at":"2026-09-23T02:00:00Z","head_branch":"feature","head_repository":{"id":222},"pull_requests":[{"number":42}]},{"id":76,"status":"completed","conclusion":"success","created_at":"2026-09-23T03:00:00Z","head_branch":"feature","head_repository":{"id":222},"pull_requests":[{"number":43}]}]}'
+    printf '%s\n' '{"workflow_runs":[{"id":79,"status":"completed","conclusion":"success","created_at":"2026-09-23T01:00:00Z","head_branch":"other","head_repository":{"id":222},"pull_requests":[{"number":42}]},{"id":77,"status":"completed","conclusion":"success","created_at":"2026-09-23T02:00:00Z","head_branch":"feature","head_repository":{"id":222},"pull_requests":[{"number":42}]},{"id":76,"status":"completed","conclusion":"success","created_at":"2026-09-23T03:00:00Z","head_branch":"feature","head_repository":{"id":222},"pull_requests":[{"number":43}]},{"id":78,"status":"completed","conclusion":"success","created_at":"2026-09-24T00:00:00Z","head_branch":"feature","head_repository":{"id":222},"pull_requests":[{"number":42}]}]}'
     ;;
   *'/workflows/'*'event=push'*)
-    printf '%s\n' '{"workflow_runs":[{"id":80,"status":"completed","conclusion":"success","created_at":"2026-08-01T00:00:00Z"},{"id":87,"status":"completed","conclusion":"failure","created_at":"2026-09-23T01:00:00Z"},{"id":88,"status":"completed","conclusion":"success","created_at":"2026-09-23T02:00:00Z"},{"id":99,"status":"completed","conclusion":"success","created_at":"2026-09-24T00:00:00Z"}]}'
+    printf '%s\n' '{"workflow_runs":[{"id":80,"status":"completed","conclusion":"success","created_at":"2026-08-01T00:00:00Z"},{"id":87,"status":"completed","conclusion":"failure","created_at":"2026-09-23T01:00:00Z"},{"id":88,"status":"completed","conclusion":"success","created_at":"2026-09-23T02:00:00Z"},{"id":99,"status":"completed","conclusion":"success","created_at":"2026-09-24T00:00:00Z"},{"id":90,"status":"completed","conclusion":"success","created_at":"2026-09-24T01:00:00Z"}]}'
     ;;
+  *'/actions/runs/78/artifacts'*) printf '%s\n' '{"artifacts":[]}' ;;
+  *'/actions/runs/77/artifacts'*) cat "$FAKE_ARTIFACTS" ;;
+  *'/actions/runs/90/artifacts'*) printf '%s\n' '{"artifacts":[]}' ;;
   *'/actions/runs/88/artifacts'*) cat "$FAKE_ARTIFACTS" ;;
   *'/actions/artifacts/101/zip'*) cp "$FAKE_PREDICTION_ZIP" "$output" ;;
   *'/actions/artifacts/102/zip'*) cp "$FAKE_MODEL_ZIP" "$output" ;;
@@ -52,11 +55,22 @@ jq -e '.name == "nanoom-model-v3-88-1" and .sha256 == "ada20f873e74812b9e056d913
 identity=$(nanoom_prediction_identity push owner/repo/.github/workflows/ci.yml@refs/heads/main 12345 https://github.com refs/heads/main)
 jq -e '.repositoryKey == "github-12345" and .workflowPath == ".github/workflows/ci.yml" and .ref.ref == "refs/heads/main"' <<<"$identity" >/dev/null
 nanoom_history_budget_start 10 8388608
-push_run=$(nanoom_previous_successful_run_for_event owner/repo/.github/workflows/ci.yml@refs/heads/main main 99 push)
-test "$push_run" = 88
-pr_run=$(nanoom_previous_successful_run_for_event owner/repo/.github/workflows/ci.yml@refs/heads/feature feature 99 pull_request 42 222)
-test "$pr_run" = 77
-test -z "$(nanoom_previous_successful_run_for_event owner/repo/.github/workflows/ci.yml@refs/heads/feature feature 99 pull_request 44 222)"
+push_runs=$(nanoom_previous_successful_runs_for_event owner/repo/.github/workflows/ci.yml@refs/heads/main main 99 push)
+test "$push_runs" = $'90\n88'
+pr_runs=$(nanoom_previous_successful_runs_for_event owner/repo/.github/workflows/ci.yml@refs/heads/feature feature 99 pull_request 42 222)
+test "$pr_runs" = $'78\n77'
+test -z "$(nanoom_previous_successful_runs_for_event owner/repo/.github/workflows/ci.yml@refs/heads/feature feature 99 pull_request 44 222)"
+
+# A successful no-change run has no marker; continue to the latest earlier run that has one.
+selected_run=''
+while IFS= read -r candidate_run; do
+  candidate_artifacts=$(nanoom_run_artifacts "$candidate_run")
+  if nanoom_artifact_exists "$candidate_artifacts" exact nanoom-prediction-v3; then
+    selected_run=$candidate_run
+    break
+  fi
+done <<<"$pr_runs"
+test "$selected_run" = 77
 
 # Planning reads the compact prediction marker only.
 : > "$FAKE_REQUESTS"

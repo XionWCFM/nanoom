@@ -131,7 +131,7 @@ nanoom_history_server_trusted_event() {
   esac
 }
 
-nanoom_previous_successful_run_for_event() {
+nanoom_previous_successful_runs_for_event() {
   local workflow_ref=$1 branch=$2 current_run=$3 event=$4 pr_number=${5:-} head_repository_id=${6:-}
   local workflow encoded_workflow encoded_branch response remaining
   workflow=$(nanoom_workflow_file "$workflow_ref")
@@ -146,7 +146,7 @@ nanoom_previous_successful_run_for_event() {
   nanoom_history_charge_bytes "$(LC_ALL=C printf '%s' "$response" | wc -c | tr -d ' ')" || return 0
   nanoom_history_timeout jq -r --arg current "$current_run" --arg event "$event" --arg branch "$branch" \
     --arg pr "$pr_number" --arg headRepository "$head_repository_id" \
-    '[.workflow_runs[]? | select(.status == "completed" and .conclusion == "success") | select((.id | tostring) != $current) | select((.created_at | fromdateiso8601) >= (now - 2592000)) | select(if $event == "pull_request" then .head_branch == $branch and ((.head_repository.id // "") | tostring) == $headRepository and any(.pull_requests[]?; (.number | tostring) == $pr) else true end)] | sort_by(.created_at, .id) | .[-1].id // empty' \
+    '[.workflow_runs[]? | select(.status == "completed" and .conclusion == "success") | select((.id | tostring) != $current) | select((.created_at | fromdateiso8601) >= (now - 2592000)) | select(if $event == "pull_request" then .head_branch == $branch and ((.head_repository.id // "") | tostring) == $headRepository and any(.pull_requests[]?; (.number | tostring) == $pr) else true end)] | sort_by(.created_at, .id) | reverse | .[] | .id' \
     <<<"$response" || return 0
 }
 
