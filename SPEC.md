@@ -2,7 +2,7 @@
 
 ## 기준 구현: v0.6.0
 
-아래 기존 계약은 source `539b2c08cc7e2543f3a0cdd10fbdba451b2502d5` 기준이다. 이 branch의 A1/A2 runtime은 로컬 검증됐고, A3 Action 경로는 구현되어 local gates를 통과했으며 아직 semantic review·PR·release되지 않았다. A4 이후 제안은 아직 구현되지 않았다. 공개 계약의 기준은 [README](README.md), 생성된 [JSON schema](nanoom.schema.json), [ADR-0011](docs/adr/0011-sparse-checkout-plan.md), [ADR-0012](docs/adr/0012-ghes-history-checkout-cost.md)입니다.
+아래 기존 계약은 source `539b2c08cc7e2543f3a0cdd10fbdba451b2502d5` 기준이다. 이 branch의 A1~A3 runtime은 로컬 검증과 parent review를 마쳤지만 PR/hosted validation/release되지 않았다. A4 이후 제안은 아직 구현되지 않았다. 공개 계약의 기준은 [README](README.md), 생성된 [JSON schema](nanoom.schema.json), [ADR-0011](docs/adr/0011-sparse-checkout-plan.md), [ADR-0012](docs/adr/0012-ghes-history-checkout-cost.md)입니다.
 
 ## Work item과 assignment
 

@@ -14,7 +14,7 @@
 
 - [x] A1 identity/fallback/empty/no-execution 회귀와 수정 — 아래 A1 실행 기록 참조.
 - [x] A2 Plan v1 CLI·compact matrix·provenance/rerun·planned install filter-file 검증 — 아래 A2 실행 및 follow-up 기록 참조.
-- [ ] A3 prepare·sparse checkout·install/run·GHES contracts.
+- [x] A3 prepare·sparse checkout·install/run·GHES local contracts — 아래 A3 실행 기록 참조. Hosted GitHub/GHES transport는 별도 미실시.
 - [ ] A4 PredictionState v3·compile/apply/project·작은 prediction artifact·bounded lookup.
 - [ ] A5 preparation telemetry·automatic k·determinism·대규모 benchmark.
 - [ ] A6 examples·requiredJobs·계획 기반 completion gate·96% coverage 기준.
@@ -199,3 +199,35 @@ Plan producer는 `--plan-output`과 `--plan-context`를 함께 요구하고 raw 
 - bash scripts/action-contract.sh — exit 0.
 - git diff --check — exit 0.
 - bash scripts/review-change.sh 1f4796977af1de7326949c7f7f48df2a5f066f51 — exit 0, 6 changed files, parent semantic review PASS.
+
+## A3 실행 기록 — 2026-09-24
+
+```text
+단계: A3
+시작 HEAD: 6d3f221
+결과 commit: c372891 feat: wire artifact-backed assignment actions
+브랜치: codex/prediction-state-v3
+시작 상태: A2 tracked tree clean; 기존 사용자 .opencode/ 미추적 1개 보존.
+결과: Plan artifact producer→prepare→exact-head sparse checkout→focused install→planned run의 Action 경계를 구현했다. GitHub.com v4와 GHES v3 artifact wrappers 및 shared assignment validator를 추가했다.
+```
+
+로컬 Git fixture에서 실제 `affected --plan-output`으로 Plan/reference를 만들고 rerun attempt에서 선택했다. digest 변조를 거부하고 exact head를 shallow clone해 root-only non-cone에서 계획된 cone으로 전환했다. 내부 dependency와 `checkout.always` 경로가 존재하고 unrelated workspace/tool은 없는 것을 확인했다. static install은 실제 Nanoom CLI와 fake pnpm shim으로 filter-file argument를 확인했고, run은 fake pnpm을 거쳐 fixture의 실제 npm test script를 실행했다. 이는 local shell/Git 검증이며 GitHub Actions hosted transport 증거가 아니다.
+
+run Action 회귀는 no execution 및 task failure가 assignment를 실패시키고 후속 item을 실행하지 않는 것, pending item을 로컬 상세 JSONL에 보존하는 것, static output에서 전체 item 배열을 내보내지 않는 것, 계획된 taskRunner override를 거부하는 것, artifact sample v3/v4와 continuous full-install 동작을 확인했다.
+
+검증:
+
+- `cargo fmt --all --check` — exit 0.
+- `cargo clippy --locked --all-targets --all-features -- -D warnings` — exit 0.
+- `cargo test --locked --all-targets --all-features` — exit 0, 202 passed.
+- `bash scripts/action-contract.sh` — exit 0. status/coordinator/assignment/history/Plan/revision/cleanup/fixture-completion contracts 포함.
+- `bash scripts/plan-action-test.sh` — exit 0; producer, rerun, digest, exact-head shallow sparse checkout, focused install, real fixture task script.
+- `bash scripts/assignment-action-test.sh` — exit 0; execution failure/empty execution/runner switch/compact outputs/pending detail/static install/continuous install.
+- `bash scripts/revision-action-test.sh` — exit 0.
+- 변경한 Action/test shell `bash -n` — exit 0; Action YAML Ruby parse/input descriptions는 `action-contract.sh`에서 통과.
+- `git diff --check` — exit 0.
+- `bash scripts/review-change.sh 6d3f221` — exit 0, 25 committed files; heuristic PASS. Parent semantic review PASS.
+
+미실시 및 경계: 실제 GitHub.com `upload-artifact`/`download-artifact`, GHES v3 transport, released binary/Action, hosted producer/consumer fixture, PR/run URL은 없다. `.opencode/`는 commit에 포함하지 않았다. A7에서 candidate SHA를 기록한 실제 hosted producer/fixture 경로를 확인해야 한다.
+
+다음 단계: A4의 PredictionState v3 compile/apply/project 및 prediction/model artifact separation. Plan v1/Action contract를 유지하고 shared pure aggregation부터 구현한다.
