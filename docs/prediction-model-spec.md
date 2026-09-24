@@ -1,6 +1,6 @@
 # PredictionState v3 — 실행 이력 대신 예측 상태 저장
 
-상태: A4/A5 local Rust/Action 구현 및 회귀가 통과한 branch 후보 계약. A5 real trace의 전체 CI 시간·prediction error·실제 artifact 크기는 미측정이며 Official OpenAPI validator도 패키지 DNS 문제로 미실시다. Hosted GitHub, GHES, released consumer, 선택적 서버 증거는 별도다. 이전 원본 sample 7개/128 MiB snapshot 설계는 사용하지 않는다. [ADR-0014](adr/0014-prediction-state-v3-artifact-history.md), [전체 계획](../IMPLEMENTATION_PLAN.md), [서버](history-server-spec.md), [OpenAPI](api/history.openapi.yaml)와 함께 적용한다.
+상태: A4/A5 local Rust/Action 구현 및 회귀가 통과한 branch 후보 계약. Current OpenAPI schema/examples/digest validation도 통과했다. A5 real trace의 전체 CI 시간·prediction error·실제 artifact 크기는 미측정이다. Hosted GitHub, GHES, released consumer, 선택적 서버 증거는 별도다. 이전 원본 sample 7개/128 MiB snapshot 설계는 사용하지 않는다. [ADR-0014](adr/0014-prediction-state-v3-artifact-history.md), [전체 계획](../IMPLEMENTATION_PLAN.md), [서버](history-server-spec.md), [OpenAPI](api/history.openapi.yaml)와 함께 적용한다.
 
 ## 1. 목적과 데이터 분리
 
@@ -9,7 +9,7 @@ Nanoom이 보존할 것은 다음 CI의 배분에 필요한 예측값과 이를 
 | 데이터 | 소비자 | 포함 | 기본 보관 |
 |---|---|---|---|
 | PredictionTable v3 | affected/planner | key ID, 예상 ms, 관측 수, 마지막 관측, 유효 기한 | artifact 30일, 자체 만료 검증 |
-| ModelState v3 | history updater / 선택적 Rust server | key별 날짜 집계, 계산된 예측값, 작은 batch receipt | artifact 30일 / S3 현재 scope 객체 |
+| ModelState v3 | history updater / 선택적 Rust server | key별 날짜 집계, 계산된 예측값, 작은 batch receipt | artifact 30일 / D1 scope row |
 | 현재 attempt 측정 | history job | 실행 ID, 실제 duration, 시각, provenance | 임시 sample artifact 1일, 학습 후 장기 이력에 복사하지 않음 |
 | Plan v1 | prepare/install/run | 실제 실행할 작업과 checkout 계획 | 기존 30일, 변경 없음 |
 
@@ -54,10 +54,10 @@ bucket을 날짜 순서로 정렬한 뒤 공용 Rust 함수에서 계산한다. 
 
 - scope/runId/runAttempt마다 history compiler가 batch 하나를 확정한다. batchId = SHA256(JCS([scopeId,runId,runAttempt])). 모든 aggregate row는 현재 실제 실행 attempt의 관측만 포함한다. 같은 (keyId, UTC day)는 compiler가 미리 하나로 합치고, 서버 입력에 중복 row가 있으면 거부한다.
 - 같은 attempt의 telemetry가 일부 누락되면 그 사실을 기록하고 사용 가능한 성공 관측으로 한 번 확정한다. 나중에 다른 내용으로 같은 batch를 재발행하지 않는다. 다음 실제 실행 attempt는 별도 batch다. task 정확성은 telemetry 완전성과 분리한다.
-- HTTP Idempotency-Key는 원래 전송 body bytes digest다. retry는 같은 bytes를 사용한다. 같은 batchId/digest면 200 unchanged, 같은 batchId/다른 digest면 409다.
+- HTTP Idempotency-Key는 typed ObservationBatch의 RFC8785 canonical JSON SHA-256이다. 공백과 object key 순서가 달라도 같은 batch digest를 만든다. 같은 batchId/digest면 200 unchanged, 같은 batchId/다른 digest면 409다.
 - model에는 `[batchId,bodyDigest,producedAtMs]` receipt만 보관한다. 원본 batch나 sample은 저장하지 않는다. receipt는 producedAt 이후 8일, 입력 batch는 최초 producedAt 이후 7일 미만만 허용한다. 7일 지난 동일 body는 다시 학습되지 않는다. 새 producedAt으로 오래된 batch를 재생성하는 것은 client 계약 위반이다.
 - scope당 receipt 최대 4096개. 살아 있는 receipt를 몰래 제거하지 않는다. 한도를 넘으면 기존 상태를 보존한 409이며 telemetry degraded다. 4096개/8일은 이 v1의 명시적 수용 한도다.
-- S3 CAS의 단일 객체에 모델과 receipt를 **같이 저장**한다. stats 반영 후 receipt 저장 전에 crash하는 두 단계 commit을 만들지 않는다. 충돌 시 최신 state로 다시 dedup/merge한다.
+- D1의 한 row에 모델과 receipt를 **같이 저장**하고 digest 조건부 UPDATE/INSERT로 갱신한다. stats 반영 후 receipt 저장 전에 crash하는 두 단계 commit을 만들지 않는다. 충돌 시 최신 state로 다시 dedup/merge한다.
 - 동일 날짜 count/sum은 정수 덧셈, lastObservedAt은 max, 오래된 bucket 제거는 공통 clock cutoff로 결정한다. key별 최신 7개 날짜 이후의 오래된 bucket은 재전송으로 부활하지 않는다. overflow는 전체 batch 오류다.
 
 중복 방지용 짧은 receipt가 있을 뿐 실행 기록 보존 API나 영구 exactly-once 감사 ledger는 없다. clock 기준은 UTC, 허용 미래 편차는 5분. ModelState에 pruning day/batch acceptance watermark를 저장하고 CAS에서 기존 값보다 뒤로 돌리지 않는다.
@@ -89,11 +89,11 @@ GHES의 같은 run sample 다운로드는 기존 v3 transport 제약을 따른�
 
 ## 5. 서버와 유효 기간
 
-서버는 ModelState 한 객체를 S3에 저장한다. 공개 GET /snapshot은 그 객체 자체가 아니라 **PredictionTable projection**만 반환한다. GET 시 날짜 만료를 적용해 projection을 계산하되 S3를 쓰지 않는다. HTTP ETag는 prediction response bytes의 SHA-256, S3 ETag는 모델 CAS token으로 분리한다. 비교 cutoff가 바뀌어 projection이 달라지면 HTTP ETag도 바뀐다.
+서버는 scope별 ModelState를 D1의 한 row에 저장한다. 공개 GET /snapshot은 그 row 자체가 아니라 **PredictionTable projection**만 반환한다. GET 시 날짜 만료를 적용해 projection을 계산하되 D1을 쓰지 않는다. HTTP ETag는 prediction response bytes의 SHA-256이며 내부 state digest와 분리한다. 비교 cutoff가 바뀌어 projection이 달라지면 HTTP ETag도 바뀐다.
 
 artifact는 생성 시의 prediction을 받으므로 validUntil이 지난 row는 버린다. 서버는 남은 유효 bucket으로 즉시 projection을 계산할 수 있다. 이 차이는 저장소 접근 시점의 차이이며 두 경로가 같은 관측 상태·같은 기준 날짜를 사용하면 같은 예측을 만든다. 유효 row가 없으면 404/cold다. GET으로 model lifecycle을 연장하지 않는다.
 
-S3 versioning off 기본, noncurrent opt-in 1일, 비활성 current 객체 45일은 유지한다. raw measurement artifact는 1일 후 만료되므로 오래 지난 history job 재실행에서 수집 자료가 없을 수 있다. 이때 degraded로 끝내며 task rerun용 Plan artifact 30일은 유지한다. 분석용 원본 영구 보관은 이번 범위에 없다.
+D1 state는 마지막 갱신 45일 뒤 daily Worker cron에서 최대 10,000개씩 삭제한다. 더 큰 backlog는 여러 날에 걸쳐 정리된다. D1 free tier의 row cap을 지키기 위한 보존 정책이며, raw measurement artifact는 1일 후 만료된다. 오래 지난 history job 재실행에서 수집 자료가 없으면 degraded로 끝내며 task rerun용 Plan artifact 30일은 유지한다. 분석용 원본 영구 보관은 이번 범위에 없다.
 
 ## 6. 구현과 인수 조건
 

@@ -25,7 +25,14 @@ pub struct AffectedArgs {
     )]
     pub predictions: Vec<PathBuf>,
 
-    #[arg(long, requires = "predictions", help = "Prediction scope context JSON")]
+    #[arg(
+        long = "prediction-table",
+        value_name = "FILE",
+        help = "Compact PredictionTable v3 JSON from a History Server (repeatable)"
+    )]
+    pub prediction_tables: Vec<PathBuf>,
+
+    #[arg(long, help = "Prediction scope context JSON")]
     pub prediction_context: Option<PathBuf>,
 
     #[arg(
@@ -84,6 +91,13 @@ pub async fn execute(
             "--json full reports cannot be combined with bounded Plan outputs".into(),
         ));
     }
+    if (!args.predictions.is_empty() || !args.prediction_tables.is_empty())
+        && args.prediction_context.is_none()
+    {
+        return Err(crate::error::Error::ConfigValidation(
+            "--prediction-context is required with --prediction or --prediction-table".into(),
+        ));
+    }
     let timing_runner = resolve_timing_runner(cwd, &args.timing_runner)?;
     let result =
         calculate_with_override(config, cwd, args.base.as_deref(), args.head.as_deref()).await?;
@@ -104,37 +118,82 @@ pub async fn execute(
         .unwrap_or_else(|| "disabled".into());
     let mut prediction_index =
         crate::prediction::PredictionIndex::new([]).map_err(crate::error::Error::InvalidConfig)?;
-    let mut prediction_context = None;
+    let prediction_context = if history_needed {
+        args.prediction_context
+            .as_deref()
+            .and_then(|path| load_prediction_context(cwd, path))
+    } else {
+        None
+    };
     if history_needed {
-        if args.legacy_history.is_some() && args.predictions.is_empty() {
+        if args.legacy_history.is_some()
+            && args.predictions.is_empty()
+            && args.prediction_tables.is_empty()
+        {
             eprintln!("legacy raw timing history is ignored; using cold scheduling");
             history_status = args
                 .history_status
                 .clone()
                 .unwrap_or_else(|| "fallback".into());
         }
-        if !args.predictions.is_empty() && history_status != "corrupt" {
-            let bundles = args
-                .predictions
-                .iter()
-                .map(|path| {
-                    crate::prediction::PredictionArtifactBundle::load(&crate::plan::resolve_path(
-                        cwd, path,
-                    ))
-                })
-                .collect::<std::result::Result<Vec<_>, _>>();
-            match bundles.and_then(crate::prediction::PredictionIndex::new) {
-                Ok(index) if index.has_valid_rows(now_ms) => {
-                    prediction_index = index;
-                    history_status = "loaded".into();
-                    if let Some(path) = args.prediction_context.as_deref() {
-                        prediction_context = load_prediction_context(cwd, path);
+        let has_predictions = !args.predictions.is_empty() || !args.prediction_tables.is_empty();
+        if has_predictions && history_status != "corrupt" {
+            let loaded = (|| {
+                let bundles = args
+                    .predictions
+                    .iter()
+                    .map(|path| {
+                        crate::prediction::PredictionArtifactBundle::load(
+                            &crate::plan::resolve_path(cwd, path),
+                        )
+                    })
+                    .collect::<std::result::Result<Vec<_>, _>>()?;
+                let tables = args
+                    .prediction_tables
+                    .iter()
+                    .map(|path| {
+                        crate::prediction::PredictionTable::load(&crate::plan::resolve_path(
+                            cwd, path,
+                        ))
+                    })
+                    .collect::<std::result::Result<Vec<_>, _>>()?;
+                let context = prediction_context
+                    .as_ref()
+                    .ok_or("PredictionContext is unavailable")?;
+                let mut allowed_scope_ids = HashSet::new();
+                for (group_name, group) in &result.group {
+                    let group_needs_history = group.workspaces.len() > 1
+                        && group
+                            .distribution
+                            .as_ref()
+                            .is_some_and(|tier| tier.concurrency > 1);
+                    if group_needs_history {
+                        for scope in
+                            context.candidates(group_name, &timing_runner, &args.timing_environment)
+                        {
+                            allowed_scope_ids.insert(scope.id()?);
+                        }
                     }
+                }
+                for table in &tables {
+                    if !allowed_scope_ids.contains(&table.scope.id()?) {
+                        return Err(
+                            "server PredictionTable scope does not match the request".into()
+                        );
+                    }
+                }
+                crate::prediction::PredictionIndex::new_with_tables(bundles, tables)
+            })();
+            match loaded {
+                Ok(index) if index.has_valid_rows(now_ms) => {
                     if prediction_context.is_none() {
                         eprintln!("PredictionContext is unavailable; using cold scheduling");
                         prediction_index = crate::prediction::PredictionIndex::new([])
                             .map_err(crate::error::Error::InvalidConfig)?;
                         history_status = "fallback".into();
+                    } else {
+                        prediction_index = index;
+                        history_status = "loaded".into();
                     }
                 }
                 Ok(_) => history_status = "fallback".into(),
@@ -146,6 +205,30 @@ pub async fn execute(
         }
     } else {
         history_status = "history_not_needed".into();
+    }
+    let mut history_scopes = Vec::new();
+    if history_needed {
+        if let Some(context) = prediction_context.as_ref() {
+            for (group_name, group) in &result.group {
+                let group_needs_history = group.workspaces.len() > 1
+                    && group
+                        .distribution
+                        .as_ref()
+                        .is_some_and(|tier| tier.concurrency > 1);
+                if group_needs_history {
+                    for scope in
+                        context.candidates(group_name, &timing_runner, &args.timing_environment)
+                    {
+                        let scope_id = scope.id().map_err(crate::error::Error::InvalidConfig)?;
+                        history_scopes.push(serde_json::json!({
+                            "repositoryKey": scope.repository_key,
+                            "group": group_name,
+                            "scopeId": scope_id
+                        }));
+                    }
+                }
+            }
+        }
     }
     let preparation_context = args
         .preparation_context
@@ -228,6 +311,7 @@ pub async fn execute(
                 "scheduling": {
                     "historyStatus": history_status,
                     "historyNeeded": history_needed,
+                    "historyScopes": history_scopes,
                     "timingRunner": timing_runner,
                     "timingEnvironment": args.timing_environment,
                     "objective": ["predictedPreparationPlusTaskMakespanMs", "totalRunnerMs", "totalCheckoutPathCount", "assignmentCount", "stableAssignmentOrder"],
@@ -253,6 +337,7 @@ pub async fn execute(
         compact["result"]["timingEnvironment"] = serde_json::Value::String(args.timing_environment);
         compact["result"]["historyStatus"] = serde_json::Value::String(history_status);
         compact["result"]["historyNeeded"] = serde_json::Value::Bool(history_needed);
+        compact["result"]["historyScopes"] = serde_json::json!(history_scopes);
         compact["result"]["concurrency"] = concurrency_diagnostics;
         println!("{}", serde_json::to_string(&compact)?);
         return Ok(());

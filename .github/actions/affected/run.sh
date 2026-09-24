@@ -6,6 +6,14 @@ source "$GITHUB_ACTION_PATH/../_setup/artifacts.sh"
 started=$(date +%s)
 planning_job=${GITHUB_JOB:-affected}
 [[ "$SCHEDULER" =~ ^(off|artifact|http)$ ]] || { echo "scheduler must be off, artifact, or http" >&2; false; }
+HISTORY_BACKEND=${HISTORY_BACKEND:-artifact}
+HISTORY_SERVER_URL=${HISTORY_SERVER_URL:-}
+HISTORY_SERVER_TOKEN=${HISTORY_SERVER_TOKEN:-}
+[[ "$HISTORY_BACKEND" =~ ^(artifact|server)$ ]] || { echo "historyBackend must be artifact or server" >&2; false; }
+if [[ "$HISTORY_BACKEND" == server && "$SCHEDULER" != artifact ]]; then
+  echo 'historyBackend=server requires scheduler=artifact so successful task measurements are produced' >&2
+  false
+fi
 revision_source=explicit; successful_run_id=''
 [[ -n "$HEAD" ]] || HEAD=$EVENT_HEAD
 if [[ -z "$BASE" ]]; then
@@ -94,7 +102,7 @@ if [[ "$SCHEDULER" != http ]]; then
   context_path="$plan_dir/plan-context.json"
   prediction_context_path="$plan_dir/prediction-context.json"
   preparation_context_args=()
-  if [[ "$SCHEDULER" == artifact ]]; then
+  if [[ "$SCHEDULER" == artifact || "$HISTORY_BACKEND" == server ]]; then
     preparation_declaration=$(jq -r '.packageManager // empty' "$CWD/package.json" 2>/dev/null || true)
     declared_pm=${preparation_declaration%%@*}
     declared_pm_version=''
@@ -160,6 +168,9 @@ if [[ "$SCHEDULER" != http ]]; then
     '{repository:$repository,workflow:$workflow,runId:$run,producerAttempt:$attempt,planningJob:$job,base:$base,head:$head,taskRunner:$taskRunner,predictionReason:$reason}' > "$context_path"
 
   plan_args=(-C "$CWD" -c "$CONFIG" affected --base "$resolved_base" --head "$resolved_head" --timing-runner "$TIMING_RUNNER" --timing-environment "$TIMING_ENVIRONMENT" --plan-output "$plan_path" --plan-context "$context_path")
+  if [[ -n "$prediction_identity" ]]; then
+    plan_args+=(--prediction-context "$prediction_context_path")
+  fi
   if ((${#preparation_context_args[@]})); then
     plan_args+=("${preparation_context_args[@]}")
   fi
@@ -169,7 +180,59 @@ if [[ "$SCHEDULER" != http ]]; then
   ACTION_PHASE=affected-calculation
   compact=$(nanoom "${plan_args[@]}")
   history_needed=$(jq -r '.result.historyNeeded // false' <<<"$compact")
-  if [[ "$SCHEDULER" == artifact && "$history_needed" == true ]]; then
+  if [[ "$HISTORY_BACKEND" == server && "$history_needed" == true ]]; then
+    history_started_ms=$(nanoom_now_ms)
+    ACTION_PHASE=history-server-read
+    history_source_run_id=''
+    table_dir="$plan_dir/server-predictions"
+    mkdir -p "$table_dir"
+    table_args=()
+    server_read_failed=false
+    if ! nanoom_history_server_trusted_event; then
+      echo 'History Server read skipped for an event that may run untrusted code; using the cold plan' >&2
+    elif [[ -z "$HISTORY_SERVER_TOKEN" ]] || ! nanoom_history_server_url_valid "$HISTORY_SERVER_URL"; then
+      echo 'History Server URL or credential is unavailable; using the cold plan' >&2
+    elif [[ -z "$prediction_identity" ]]; then
+      echo 'History Server read skipped because the prediction scope is unavailable' >&2
+    else
+      nanoom_history_budget_start 3 8388608
+      history_server_base=${HISTORY_SERVER_URL%/}
+      while IFS= read -r scope; do
+        scope_id=$(jq -er '.scopeId | select(test("^[a-f0-9]{64}$"))' <<<"$scope") || { server_read_failed=true; break; }
+        repository_key=$(jq -er '.repositoryKey | select(test("^[a-z0-9][a-z0-9._-]{0,63}$"))' <<<"$scope") || { server_read_failed=true; break; }
+        snapshot_path="$table_dir/$scope_id.json"
+        remaining=$(nanoom_history_remaining) || { server_read_failed=true; break; }
+        status_code=$(curl --silent --show-error --max-time "$remaining" --max-filesize 8388608 \
+          -H "Authorization: Bearer $HISTORY_SERVER_TOKEN" \
+          -H 'Accept: application/json' \
+          -o "$snapshot_path" -w '%{http_code}' \
+          "$history_server_base/v1/repositories/$repository_key/scopes/$scope_id/snapshot") || {
+            server_read_failed=true
+            break
+          }
+        response_bytes=$(wc -c < "$snapshot_path" | tr -d ' ')
+        nanoom_history_charge_bytes "$response_bytes" || { server_read_failed=true; break; }
+        case "$status_code" in
+          200) table_args+=(--prediction-table "$snapshot_path") ;;
+          404) rm -f "$snapshot_path" ;;
+          *) server_read_failed=true; break ;;
+        esac
+      done < <(jq -c '.result.historyScopes[]?' <<<"$compact")
+      if [[ "$server_read_failed" == false ]] && ((${#table_args[@]})); then
+        ACTION_PHASE=affected-server-calculation
+        if warm_compact=$(nanoom_history_timeout nanoom "${plan_args[@]}" "${table_args[@]}"); then
+          compact=$warm_compact
+        else
+          echo 'History Server table validation exceeded the shared history budget; using the cold plan' >&2
+        fi
+      elif [[ "$server_read_failed" == true ]]; then
+        echo 'History Server read failed or exceeded its shared budget; using the cold plan' >&2
+      fi
+    fi
+    history_fetch_ms=$(($(nanoom_now_ms) - history_started_ms))
+  fi
+
+  if [[ "$HISTORY_BACKEND" == artifact && "$SCHEDULER" == artifact && "$history_needed" == true ]]; then
     history_started_ms=$(nanoom_now_ms)
     ACTION_PHASE=history-resolution
     nanoom_history_budget_start 3 8388608
@@ -220,7 +283,7 @@ if [[ "$SCHEDULER" != http ]]; then
       if [[ -n "$history_path" && "$prediction_sha" =~ ^[0-9a-f]{64}$ ]]; then
         if nanoom_history_timeout jq --arg predictionName "$HISTORY_ARTIFACT" --arg predictionSha "$prediction_sha" --arg modelName "$model_name" --arg modelSha "$model_sha" '.predictionReason="a bounded PredictionArtifact v3 was selected and validated by Nanoom" | .predictionArtifact={name:$predictionName,sha256:$predictionSha} | .modelArtifact={name:$modelName,sha256:$modelSha}' "$context_path" > "$context_path.tmp"; then
           mv "$context_path.tmp" "$context_path"
-          plan_args+=(--prediction "$history_path" --prediction-context "$prediction_context_path")
+          plan_args+=(--prediction "$history_path")
         else
           history_path=''
         fi
@@ -245,7 +308,7 @@ if [[ "$SCHEDULER" != http ]]; then
   jq '.plan' <<<"$compact" > "$plan_dir/plan-reference.json"
   plan_ref=$(jq -c '.plan' <<<"$compact")
   groups=$(jq -c '.groups' <<<"$compact")
-  result=$(jq -c --arg source "$revision_source" --arg base "$resolved_base" --arg head "$resolved_head" --arg successful "$successful_run_id" --arg historyStatus "$history_status" --arg sourceRun "$history_source_run_id" --argjson fetchMs "$history_fetch_ms" '.result + {historyStatus:$historyStatus,revisionResolution:{baseSource:$source,baseCommit:$base,headCommit:$head,successfulRunId:(if $successful == "" then null else ($successful | tonumber) end)},scheduling:{historyStatus:$historyStatus,historySourceRunId:(if $sourceRun == "" then null else ($sourceRun | tonumber) end),historyFetchMs:$fetchMs,reason:(if $historyStatus == "loaded" then "bounded PredictionArtifact v3 loaded; ModelState and measurements were not downloaded" elif $historyStatus == "history_not_needed" then "no affected assignment choice could be changed by history; no history metadata request was made" elif $historyStatus == "disabled" then "historical scheduling explicitly disabled; deterministic cold scheduling" elif $historyStatus == "corrupt" then "prediction artifact was invalid; using deterministic cold scheduling" else "no usable PredictionArtifact v3; using deterministic cold scheduling" end)}}' <<<"$compact")
+  result=$(jq -c --arg source "$revision_source" --arg base "$resolved_base" --arg head "$resolved_head" --arg successful "$successful_run_id" --arg historyStatus "$history_status" --arg sourceRun "$history_source_run_id" --arg historyBackend "$HISTORY_BACKEND" --argjson fetchMs "$history_fetch_ms" '.result + {historyStatus:$historyStatus,revisionResolution:{baseSource:$source,baseCommit:$base,headCommit:$head,successfulRunId:(if $successful == "" then null else ($successful | tonumber) end)},scheduling:{historyBackend:$historyBackend,historyStatus:$historyStatus,historySourceRunId:(if $sourceRun == "" then null else ($sourceRun | tonumber) end),historyFetchMs:$fetchMs,reason:(if $historyStatus == "loaded" and $historyBackend == "server" then "bounded PredictionTable v3 snapshots loaded from the History Server" elif $historyStatus == "loaded" then "bounded PredictionArtifact v3 loaded; ModelState and measurements were not downloaded" elif $historyStatus == "history_not_needed" then "no affected assignment choice could be changed by history; no history metadata request was made" elif $historyStatus == "disabled" then "historical scheduling explicitly disabled; deterministic cold scheduling" elif $historyStatus == "corrupt" then "prediction history was invalid; using deterministic cold scheduling" else "no usable history; using deterministic cold scheduling" end)}}' <<<"$compact")
   has=$(jq -r '.has_change' <<<"$compact")
   output_bytes=$(printf 'has_change=%s\nplan=%s\ngroups=%s\nresult=%s\n' "$has" "$plan_ref" "$groups" "$result" | iconv -f UTF-8 -t UTF-16LE | wc -c | tr -d ' ')
   (( output_bytes <= 1048576 )) || { echo "Action outputs exceed GitHub's 1 MiB UTF-16 limit: $output_bytes bytes" >&2; false; }

@@ -2,6 +2,9 @@ name: nanoom history
 description: Compile successful v3 measurements into model and prediction artifacts
 inputs:
   scheduler: {description: "Timing backend: artifact (default), off, or http", default: artifact}
+  historyBackend: {description: "History storage backend: artifact (default) or server", default: artifact}
+  historyServerUrl: {description: "HTTPS Nanoom History Server origin; loopback HTTP is allowed for local tests", default: ''}
+  historyServerToken: {description: "Bearer token for the Nanoom History Server; never logged", default: ''}
   runIds: {description: "JSON array of HTTP coordinator run IDs", default: '[]'}
   coordinatorUrl: {description: "HTTPS coordinator base URL for scheduler=http", default: ''}
   historyArtifactName: {description: "PredictionArtifact v3 publish-marker artifact name", default: nanoom-prediction-v3}
@@ -14,7 +17,7 @@ runs:
   using: composite
   steps:
     - name: Set up nanoom
-      if: inputs.scheduler == 'artifact'
+      if: inputs.scheduler == 'artifact' || inputs.historyBackend == 'server'
       shell: bash
       env:
         REQUESTED: ${{ inputs.version }}
@@ -27,7 +30,7 @@ runs:
       run: bash "$GITHUB_ACTION_PATH/../_setup/setup.sh"
     - name: Download current attempt measurements
       id: measurements
-      if: inputs.scheduler == 'artifact'
+      if: inputs.scheduler == 'artifact' || inputs.historyBackend == 'server'
       continue-on-error: true
       uses: actions/download-artifact@v4.3.0
       with:
@@ -40,6 +43,9 @@ runs:
       shell: bash
       env:
         SCHEDULER: ${{ inputs.scheduler }}
+        HISTORY_BACKEND: ${{ inputs.historyBackend }}
+        HISTORY_SERVER_URL: ${{ inputs.historyServerUrl }}
+        HISTORY_SERVER_TOKEN: ${{ inputs.historyServerToken }}
         ARTIFACT_VERSION: v4
         RUN_IDS: ${{ inputs.runIds }}
         COORDINATOR_URL: ${{ inputs.coordinatorUrl }}
@@ -64,7 +70,7 @@ runs:
       run: bash "$GITHUB_ACTION_PATH/run.sh"
     - name: Upload PredictionState model
       id: model-upload
-      if: inputs.scheduler == 'artifact' && steps.history.outputs.publish == 'true'
+      if: inputs.scheduler == 'artifact' && inputs.historyBackend == 'artifact' && steps.history.outputs.publish == 'true'
       continue-on-error: true
       uses: actions/upload-artifact@v4.6.2
       with:
@@ -74,7 +80,7 @@ runs:
         if-no-files-found: error
     - name: Publish PredictionArtifact v3 marker
       id: prediction-upload
-      if: inputs.scheduler == 'artifact' && steps.history.outputs.publish == 'true' && steps.model-upload.outcome == 'success'
+      if: inputs.scheduler == 'artifact' && inputs.historyBackend == 'artifact' && steps.history.outputs.publish == 'true' && steps.model-upload.outcome == 'success'
       continue-on-error: true
       uses: actions/upload-artifact@v4.6.2
       with:
@@ -84,7 +90,7 @@ runs:
         if-no-files-found: error
     - name: Record history upload cost
       id: final
-      if: always() && inputs.scheduler == 'artifact' && steps.history.outputs.publish == 'true'
+      if: always() && inputs.scheduler == 'artifact' && inputs.historyBackend == 'artifact' && steps.history.outputs.publish == 'true'
       shell: bash
       env:
         BASE_RESULT: ${{ steps.history.outputs.result }}

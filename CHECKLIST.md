@@ -20,7 +20,7 @@
 - [ ] A5 real CI traces의 전체 wall time·prediction error vs median·실제 artifact 크기 측정 — hosted consumer 경로 필요.
 - [x] A6 examples·requiredJobs·계획 기반 completion gate·96% coverage 기준 — 아래 A6 실행 기록.
 - [x] Local fmt/lint/tests/Action/실제 Git 및 focused-install 회귀 — A4/A6 공통 로컬 gates 포함.
-- [ ] 현재 A4 OpenAPI 변경의 공식 schema/examples/digest 검증 — uv 설치는 PyPI DNS로 미실시.
+- [x] 현재 OpenAPI 변경의 공식 schema/examples/digest 검증 — 아래 2026-09-24 재실행 결과.
 - [ ] Producer hosted PR CI: exact candidate SHA 기록.
 - [ ] Consumer Yarn+Turbo / pnpm+Nx: cold→warm, positive/non-skipped, selected closure.
 - [ ] Consumer no-change / task failure / unexpected skip / rerun aggregate 검증.
@@ -44,28 +44,51 @@ basic/advanced 예제에 positive, no-change, required status job wiring을 보�
 - `bash scripts/verify-completion.sh --local` — exit 0, local completion gate passed; full Rust tests, fmt/clippy, coverage, Action/completion contracts, smoke/install/platform gates 포함.
 - 공통 `cargo llvm-cov --locked --workspace --all-features --fail-under-lines 96 --summary-only` — exit 0, line coverage **96.03%** (7,865 lines, 312 missed).
 - `git diff --check`, `cargo fmt --all --check` — exit 0.
-- `gh auth status` — exit 1; `github.com` 기본 계정 `XionWCFM` token invalid. Producer/fixture hosted PR 및 run을 만들거나 hosted evidence를 수집하지 않았다.
+- 기본 sandbox의 `gh auth status`는 GitHub API 연결 실패로 token invalid를 보고했다. 네트워크 접근이 허용된 실행 경로에서 `gh auth status`와 `gh api user`는 exit 0, `XionWCFM`, `repo`/`workflow` scope로 확인했다. 인증 자체는 유효하다.
 - `.opencode/`는 계속 미추적이며 stage하지 않았다.
 
-미실시 및 다음 단계: A7 producer/fixture PR 및 hosted cold→warm/positive/no-change/failure/rerun 증거, GitHub/GHES artifact transport, released binary, A5 real trace/정확도/실제 artifact bytes, 공식 OpenAPI validator, S0~S6 server runtime. invalid GitHub token을 다시 인증한 뒤 A7 candidate SHA hosted evidence부터 진행한다.
+미실시: A7 producer/fixture PR 및 hosted cold→warm/positive/no-change/failure/rerun 증거, GitHub/GHES artifact transport, released binary, A5 real trace/정확도/실제 artifact bytes, hosted protected API/CPU/usage evidence. Cloudflare server는 S2의 응답 유실/손상 row/용량 경계, S4 opt-in client, protected route secret/merge, hosted CPU/usage 측정이 남아 있다. GitHub 인증 복구 후 A7은 별도 이어서 진행한다.
 
-## 선택적 서버 구현
+## 선택적 Cloudflare 서버 구현
 
-- [ ] S0 공유 PredictionState v3 / RFC8785 vectors / batch 원자 병합 회귀.
-- [ ] S1 별도 server crate / OpenAPI boundary / exact auth ACL.
-- [ ] S2 2-process S3 conditional write / lost response / corruption / capacity.
-- [ ] S3 /health·/ready/probe/drain/OCI 실행 검증.
-- [ ] S4 artifact 기본값 유지 / server opt-in / 오류 fallback / token 비노출.
-- [ ] S5 실제 AWS S3 + 2 replicas + hosted consumer warm reuse.
-- [ ] S6 서버 PR / 운영 runbook / 자원·성능 측정 / 문서 업데이트.
+사용자는 A7 hosted 검증에 앞서 Cloudflare 기반 무료 hosting 시도를 요청했다. 이 서버 경로는 artifact 기본 경로와 A7 검증을 대체하지 않고 병행한다.
+
+- [x] S0 공유 PredictionState core 추출, 기존 caller 재노출, RFC8785/hash/batch regression.
+- [x] S1 Cloudflare Worker routes / exact auth / bounded JSON: D1 feature compile, native tests, Clippy, `worker-build --release`.
+- [ ] S2 D1 digest CAS / lost response / corruption / capacity: local D1 merge, duplicate retry, body conflict, concurrent CAS 통과; lost response, corrupt row, 1.9 MB cap boundary는 미실시.
+- [x] S3 `/health`·`/ready` 및 local HTTP contract; hosted `/health`·`/ready`도 200.
+- [x] S4 artifact 기본값 유지 / server opt-in / cold fallback / token 비노출 client — 로컬 History Server E2E 통과.
+- [x] S5 Workers Free + D1 + `workers.dev` 배포 및 health/readiness 통과. Protected API merge, CPU/usage, 실제 CI consumer는 미실시.
+- [x] S6 무료 한도/overage, 배포 runbook, 현재 미검증 증거 기록. Hosted usage evidence는 아직 수집하지 않음.
+
+## 서버 준비 evidence — 2026-09-24
+
+- Shared PredictionState core를 `crates/prediction-core`로 분리하고 기존 `nanoom::prediction::*` caller를 유지했다.
+- `cargo test --locked --workspace --all-targets --all-features`: root 및 core suite 통과 (A6와 S0 검증).
+- `cargo check --manifest-path crates/history-worker/Cargo.toml --locked --target wasm32-unknown-unknown`, `cargo test --manifest-path crates/history-worker/Cargo.toml --locked` (6), Clippy `-D warnings`, `worker-build --release`: 통과. Wrangler 4.138.0 사용.
+- Wrangler local D1 HTTP contract: health/readiness, missing auth, empty snapshot 404, merge/duplicate/body conflict, concurrent CAS, projection privacy, ETag 304, media validation 통과. Scheduled cleanup trigger HTTP 200.
+- 로컬 테스트용 `.dev.vars` 삭제; crate `.gitignore`에서 build/cache와 개발 secret을 제외한다.
+- `wrangler whoami`: Cloudflare 계정 로그인 확인. Dashboard에서 Workers Free 및 결제 수단 없음 확인.
+- 전용 D1 `nanoom-history-state` 생성 및 remote migration 적용. 기존 D1은 재사용하지 않았다. R2 자동 청구 약관은 수락하지 않았고 R2 구독/Workers Paid 전환은 안 했다. 2026-09-25에 exact repository/scope ACL로 Worker secret과 GitHub `NANOOM_HISTORY_TOKEN` secret을 설정하고, 익명 snapshot 요청이 HTTP 401로 거부됨을 확인했다.
+- Worker `https://nanoom-history.giljongyudev.workers.dev` version `f4ea5fe3-06fa-4013-9e16-baee49006e76` 배포. Hosted `/health`·`/ready`는 200, 보호 snapshot은 `configuration_error` 503으로 fail closed.
+- [Cloudflare Worker/D1 server spec](docs/history-server-spec.md)에 D1 free quotas, CPU 제한, `workers.dev` 경로를 기록했다.
+- `scripts/history-server-e2e-test.sh`는 실제 Action/fixture와 로컬 Worker+D1을 연결해 cold fallback → 2개 run assignment → merge → duplicate no-op → 8개 warm sample 재사용 → warm run까지 통과했다. GitHub-hosted Actions artifact transport는 아직 실행하지 않았다.
+- `gh` 인증은 복구되어 있으며 GitHub-hosted E2E workflow는 현재 브랜치 push 후 실행할 예정이다.
 
 ## 별도 외부 증거와 범위
 
 - [ ] 실제 GHES: 환경 미확보 시 미실시. 로컬 wrapper 검증과 분리.
-- [ ] 실제 S3-compatible 제품/버전: 계약 통과 전 지원 주장 금지.
+- [x] Workers Free 확인: 기존 account Workers Paid 구독 없음, 결제 수단 등록 없음. 전용 D1 무료 DB 생성.
+- [x] Cloudflare hosted Worker/D1: migration 및 배포 완료, health/readiness 확인. Protected API data path, CPU/usage/CI consumer는 미실시.
 - [ ] Released Action/CLI/server consumer: release하지 않은 후보 증거와 분리.
 
-runtime 구현은 A4 실행 기록을 따른다. 서버 배포·AWS 리소스 생성·merge·release는 없다. 각 phase의 증거는 명령/환경/시나리오/result/commit/run URL 및 미검증 범위를 함께 기록한다.
+현재 OpenAPI 검증 재실행 결과:
+
+- `uv --cache-dir /private/tmp/nanoom-uv-cache run --no-project --with openapi-spec-validator --with pyyaml --with rfc8785 python docs/validation/check_prediction_spec.py` — exit 0. OpenAPI 27 schemas, 23 examples, 6 JCS vectors, 9 invalid cases, 39 local links 통과.
+- Worker validation: `cargo test --manifest-path crates/history-worker/Cargo.toml --locked` — 6 tests 통과. `cargo clippy --manifest-path crates/history-worker/Cargo.toml --locked --all-targets --all-features -- -D warnings` — 통과. `worker-build --release` — WASM 최적화 build 통과.
+- Root `cargo test --locked --workspace --all-targets --all-features` 및 root workspace Clippy/fmt도 통과. D1 local HTTP contract와 hosted health/readiness 증거는 이 파일 위의 서버 evidence를 참조.
+
+Worker는 Workers Free + D1 범위에서 배포했다. Workers Paid 및 R2 usage billing subscription을 활성화하지 않았다. D1 Free read/write/storage 상한 초과 시 요청이 실패할 수 있다. 각 phase의 evidence에는 명령/환경/시나리오/result/commit/run URL 및 미검증 범위를 기록한다.
 
 
 ## 문서 검증 evidence — 2026-09-24
@@ -90,7 +113,7 @@ LUNA의 읽기 전용 분산 설계 검토를 반영했다. 추가 LUNA 문서 �
 ## 용량·지연·보존 추가 인수
 
 - [ ] 같은 key 100,000회 → 최대 7개 날짜 count/sum, raw 배열 증가 없음; duplicate batch 가중치 증가 없음.
-- [ ] 순서 변경·2-process CAS·응답 유실 → 동일 count/sum, stats+receipt 원자성.
+- [ ] 순서 변경·동시 Worker request/D1 digest CAS·응답 유실 → 동일 count/sum, stats+receipt 원자성.
 - [ ] 새 key 증가 → 날짜 prune, 50,000 keys/16 MiB/4096 receipts cap, 80% 경고·기존 모델 보존.
 - [ ] input age 7일/receipt 8일 경계, clock 역전, 정확한 expiry/validUntil 및 전부 만료 404.
 - [ ] 1k/10k/30k task keys + fallback/prep: model/projection raw·archive bytes와 총 저장량 구분.
@@ -100,10 +123,10 @@ LUNA의 읽기 전용 분산 설계 검토를 반영했다. 추가 LUNA 문서 �
 - [ ] 작은 PR/짧은 task/느린 history: history off 대비 전체 CI 시간과 historyFetchMs 비교.
 - [ ] daily weighted mean vs 기존 median: 이상치·급변·드문 실행의 오차와 실제 배분 성능 비교.
 - [ ] 실제 artifact 측정 1일/model+prediction 30일/Plan 30일 보관, 자료 없는 rerun degraded.
-- [ ] S3 current 45일, opt-in noncurrent 1일, delete marker 정리 설정과 실제 지연 구분.
+- [ ] D1 inactive state 45일 scheduled delete 및 free DB row limit/backlog 동작 확인.
 - [ ] versioning 기본 off, 선택적 on, artifact run 빈도에 따른 총량 비교.
 
-위 항목은 후속 runtime 인수이며 문서나 합성 bytes 측정으로 완료 처리하지 않는다. 서버 runtime, 실제 S3 write, 2-replica 정합성, hosted CI, 실측 성능은 미실시다.
+위 항목은 후속 runtime 인수이며 문서나 합성 bytes 측정으로 완료 처리하지 않는다. Hosted D1 merge/write, lost response, corrupt row/capacity boundary, hosted CI, 실측 CPU·성능은 미실시다.
 
 ## 저장소 내 인계 확인 — 2026-09-24
 

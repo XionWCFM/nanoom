@@ -7,6 +7,9 @@ inputs:
   base: {description: "Explicit comparison base; empty resolves from the GitHub event", default: ''}
   head: {description: "Explicit comparison head; empty resolves from the GitHub event", default: ''}
   scheduler: {description: "Timing backend: artifact (default), off, or http", default: artifact}
+  historyBackend: {description: "History storage backend: artifact (default) or server", default: artifact}
+  historyServerUrl: {description: "HTTPS Nanoom History Server origin; loopback HTTP is allowed for local tests", default: ''}
+  historyServerToken: {description: "Bearer token for the Nanoom History Server; never logged", default: ''}
   timingRunner: {description: "Runner identity used for timing prediction", default: auto}
   packageManager: {description: "Package manager used by the focused install; keep this aligned with nanoom install", default: auto}
   timingEnvironment: {description: "Stable hardware identity used for timing history", default: ''}
@@ -55,6 +58,9 @@ runs:
         PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
         WORKFLOW_REF: ${{ github.workflow_ref }}
         SCHEDULER: ${{ inputs.scheduler }}
+        HISTORY_BACKEND: ${{ inputs.historyBackend }}
+        HISTORY_SERVER_URL: ${{ inputs.historyServerUrl }}
+        HISTORY_SERVER_TOKEN: ${{ inputs.historyServerToken }}
         TIMING_RUNNER: ${{ inputs.timingRunner }}
         PACKAGE_MANAGER: ${{ inputs.packageManager }}
         TIMING_ENVIRONMENT: ${{ inputs.timingEnvironment || (runner.environment == 'self-hosted' && format('{0}-{1}-{2}', runner.os, runner.arch, runner.name) || format('{0}-{1}', runner.os, runner.arch)) }}

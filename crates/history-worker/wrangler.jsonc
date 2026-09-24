@@ -1,0 +1,19 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "nanoom-history",
+  "main": "build/worker/shim.mjs",
+  "compatibility_date": "2026-09-24",
+  "build": {
+    "command": "worker-build --release"
+  },
+  "workers_dev": true,
+  "d1_databases": [
+    {
+      "binding": "PREDICTION_STATE",
+      "database_name": "nanoom-history-state",
+      "database_id": "da992199-43d0-408c-bc40-4d91e7b8ef31",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "triggers": { "crons": ["0 4 * * *"] }
+}

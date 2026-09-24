@@ -1,4 +1,4 @@
-"""Document contract/size check; no Nanoom runtime, network, or S3 validation.
+"""Document contract/size check; no Nanoom runtime, network, or R2 validation.
 
 uv run --no-project --with openapi-spec-validator --with pyyaml --with rfc8785 \
   python docs/validation/check_prediction_spec.py
@@ -157,7 +157,7 @@ def size_check():
     assert len(repeated['buckets']) == 7
     assert repeated['prediction'][0] == entries[0]['prediction'][0]
     print(f'PASS repeated observations: 7 -> 700000, buckets remain 7, entry bytes {sizes(entries[0])[0]} -> {sizes(repeated)[0]} (integer digit growth only)')
-    print('NOT VALIDATED: Rust semantics, prediction error, network latency, real CI, S3 CAS, producer/consumer/release paths.')
+    print('NOT VALIDATED: Rust semantics, prediction error, network latency, real CI, R2 CAS, producer/consumer/release paths.')
 
 
 if __name__ == '__main__':

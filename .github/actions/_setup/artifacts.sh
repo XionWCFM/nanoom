@@ -120,6 +120,17 @@ nanoom_history_charge_bytes() {
   NANOOM_HISTORY_BYTES=$((NANOOM_HISTORY_BYTES + bytes))
 }
 
+nanoom_history_server_url_valid() {
+  [[ "$1" =~ ^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?/?$ || "$1" =~ ^http://(127\.0\.0\.1|localhost)(:[0-9]{1,5})?/?$ ]]
+}
+
+nanoom_history_server_trusted_event() {
+  case "${GITHUB_EVENT_NAME:-}" in
+    push|schedule) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 nanoom_previous_successful_run_for_event() {
   local workflow_ref=$1 branch=$2 current_run=$3 event=$4 pr_number=${5:-} head_repository_id=${6:-}
   local workflow encoded_workflow encoded_branch response remaining

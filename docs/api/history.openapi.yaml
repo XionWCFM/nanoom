@@ -1,17 +1,17 @@
 openapi: 3.1.1
 info:
-  title: Nanoom Optional History Server
+  title: Nanoom Optional History Worker
   version: 1.0.0-design
-  summary: Artifact-first compact CI predictions; optional stateless Rust service backed by S3.
-  description: Design-only optional Rust prediction-state service. Artifact remains default. API /v1 is
+  summary: Artifact-first compact CI predictions; optional Rust Worker backed by Cloudflare D1.
+  description: Optional Rust prediction-state Worker. Artifact remains default. API /v1 is
     independent from PredictionTable/ModelState v3. Store derived estimates and bounded daily sufficient
     statistics, not raw execution history. See prediction-model-spec.md and history-server-spec.md.
   license:
     name: MIT OR Apache-2.0
     identifier: MIT OR Apache-2.0
 servers:
-- url: https://history.example.com
-  description: Replace with an operator-controlled TLS endpoint; example only.
+- url: https://nanoom-history.giljongyudev.workers.dev
+  description: Current Workers Free deployment; history routes stay closed until exact-scope auth is configured.
 tags:
 - name: Operations
   description: Unprivileged probes with minimal responses.
@@ -29,7 +29,7 @@ paths:
       security: []
       responses:
         '200':
-          description: Event loop responds; independent of S3 status.
+          description: Worker responds; independent of D1 status.
           headers:
             X-Request-Id:
               $ref: '#/components/headers/RequestId'
@@ -46,13 +46,13 @@ paths:
       operationId: getReadiness
       tags:
       - Operations
-      summary: Readiness from background S3 conditional-write probe
-      description: No request-time S3 calls. Initial probe must pass; then every 30s + 0..5s jitter. Failed
-        probe, success older than 60s, startup or drain returns 503. No bucket/key/credential information.
+      summary: Readiness from a read-only D1 binding check
+      description: The stateless Worker executes SELECT 1 against its D1 binding on this request.
+        No bucket/key/credential information is returned. Cloudflare manages Worker instance lifecycle.
       security: []
       responses:
         '200':
-          description: Initialized, fresh successful storage probe, not draining.
+          description: D1 binding responded to the readiness check.
           headers:
             X-Request-Id:
               $ref: '#/components/headers/RequestId'
@@ -137,19 +137,19 @@ paths:
               $ref: '#/components/headers/CacheControl'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
-        '429':
-          $ref: '#/components/responses/Overloaded'
         '503':
           $ref: '#/components/responses/Unavailable'
       description: Read internal model with a bounded request, project valid predictions, then compute
         HTTP ETag. No raw samples, day buckets or receipts in response. Expired contributors are filtered
-        before If-None-Match. Empty projection returns 404. At most 8 MiB; read never refreshes S3 lifecycle.
+        before If-None-Match. Empty projection returns 404. At most 8 MiB; reads do not write D1 or extend retention.
         Artifact planning has a separate 3-second end-to-end read budget.
   /v1/repositories/{repositoryKey}/scopes/{scopeId}/observations:merge:
     parameters:
@@ -162,7 +162,7 @@ paths:
       summary: Update bounded sufficient statistics and idempotency receipt atomically
       description: Validate an immutable aggregate batch. Prune expiry, deduplicate batchId+body digest,
         add integer day counts/sums, retain latest seven active UTC days per key, derive weighted estimates,
-        and commit state plus receipt with S3 CAS. Same batch is never added twice. No raw execution archive.
+        and commit state plus receipt in one D1 row using a digest-conditional update. Same batch is never added twice. No raw execution archive.
         Current prediction equality does not mean a new batch is a no-op. 8 CAS attempts/20s maximum.
       x-required-permission: history:write exact repositoryKey/scopeId
       parameters:
@@ -234,6 +234,8 @@ paths:
                     modelUpdatedAtMs: 1790208000000
         '400':
           $ref: '#/components/responses/BadRequest'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -246,8 +248,6 @@ paths:
           $ref: '#/components/responses/UnsupportedMedia'
         '422':
           $ref: '#/components/responses/InvalidHistory'
-        '429':
-          $ref: '#/components/responses/Overloaded'
         '503':
           $ref: '#/components/responses/Unavailable'
 components:
@@ -257,7 +257,7 @@ components:
       scheme: bearer
       bearerFormat: Opaque scoped credential
       description: Random 32-byte minimum secret, separate read/write scope ACL. This is not a GitHub
-        token or an OIDC JWT. No S3 credentials are sent by clients.
+        token or an OIDC JWT. No Cloudflare storage credentials are sent by clients.
   parameters:
     RepositoryKey:
       name: repositoryKey
@@ -280,9 +280,9 @@ components:
       required: true
       schema:
         $ref: '#/components/schemas/Digest'
-      description: Lowercase SHA256 of exact original request bytes. Same batchId+digest applies once
-        while receipt retained; conflicting digest is 409. Receipt lives 8 days; batch accepted for <7
-        days. Retry same bytes; no fixed response replay.
+      description: Lowercase SHA256 of the RFC8785 canonical ObservationBatch JSON. Whitespace and JSON
+        object-key order do not change the digest. Same batchId+digest applies once while the receipt is
+        retained; a conflicting digest is 409. Receipt lives 8 days; batches are accepted for under 7 days.
     IfNoneMatch:
       name: If-None-Match
       in: header
@@ -301,8 +301,7 @@ components:
         maxLength: 128
         pattern: ^[^\u0000-\u001f\u007f]+$
     ETag:
-      description: SHA256 of public prediction projection response bytes. Neither internal model digest
-        nor opaque S3 ETag.
+      description: SHA256 of public prediction projection response bytes. The internal model digest is not exposed.
       schema:
         type: string
         pattern: ^"sha256:[a-f0-9]{64}"$
@@ -359,6 +358,20 @@ components:
             code: unauthenticated
             detail: Missing or invalid bearer credential.
             requestId: req-example-01
+    MethodNotAllowed:
+      description: Endpoint exists but does not accept this method.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+        Cache-Control:
+          $ref: '#/components/headers/CacheControl'
+        Allow:
+          schema:
+            type: string
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
     Forbidden:
       description: Principal lacks exact scope permission, independent of object existence.
       headers:
@@ -468,26 +481,6 @@ components:
             status: 422
             code: invalid_history
             detail: Observation batch failed semantic validation.
-            requestId: req-example-01
-    Overloaded:
-      description: Replica data-plane concurrency limit reached; no queued write.
-      headers:
-        X-Request-Id:
-          $ref: '#/components/headers/RequestId'
-        Cache-Control:
-          $ref: '#/components/headers/CacheControl'
-        Retry-After:
-          $ref: '#/components/headers/RetryAfter'
-      content:
-        application/problem+json:
-          schema:
-            $ref: '#/components/schemas/Problem'
-          example:
-            type: about:blank
-            title: Overloaded
-            status: 429
-            code: overloaded
-            detail: Replica data-plane concurrency limit reached; no queued write.
             requestId: req-example-01
     Unavailable:
       description: Storage unavailable/corrupt or bounded CAS retry exhaustion. Commit may be uncertain
@@ -813,10 +806,7 @@ components:
         reason:
           type: string
           enum:
-          - initializing
           - storage_unavailable
-          - probe_stale
-          - draining
         requestId:
           type: string
           minLength: 1
@@ -850,6 +840,10 @@ components:
           type: string
           enum:
           - invalid_request
+          - not_found
+          - method_not_allowed
+          - configuration_error
+          - internal_error
           - unauthenticated
           - forbidden
           - history_not_found
@@ -858,7 +852,6 @@ components:
           - invalid_history
           - idempotency_key_mismatch
           - scope_mismatch
-          - overloaded
           - storage_unavailable
           - storage_corrupt
           - cas_retries_exhausted
@@ -877,7 +870,7 @@ components:
           maxLength: 128
           pattern: ^[^\u0000-\u001f\u007f]+$
       description: RFC9457 problem; no secrets/provider details. Corrupt state is not reset. Retry uncertain
-        network, 429 or 503 only. Expired batches cannot be retried as new observations.
+        network results or 503 only. Expired batches cannot be retried as new observations.
     EpochMs:
       type: integer
       minimum: 0
@@ -921,7 +914,7 @@ components:
           maxItems: 50000
       description: Public compact read projection. At most 8 MiB JSON. Planner downloads only this table.
         No row may be used after validUntilMs. On server reads, expired contributors may be pruned and
-        predictions reprojected from remaining buckets without mutating S3. If no valid row exists return
+        predictions reprojected from remaining buckets without mutating D1. If no valid row exists return
         404 before evaluating If-None-Match.
     AggregateObservation:
       type: object
@@ -1036,7 +1029,7 @@ components:
         modelUpdatedAtMs:
           $ref: '#/components/schemas/EpochMs'
       description: Receipt, not a replay of a fixed response. Duplicate batchId+body digest returns applied=false;
-        changed digest for retained batchId is 409. S3 CAS commits model and receipt atomically. New batches
+        changed digest for retained batchId is 409. D1 CAS commits model and receipt atomically. New batches
         can add counts even if a rounded prediction remains unchanged. No whole model or observation archive
         is returned.
     DayBucket:
@@ -1135,9 +1128,10 @@ components:
           items:
             $ref: '#/components/schemas/BatchReceipt'
           maxItems: 4096
-      description: Internal/updater-only. Maximum 16 MiB JSON including entries and receipts. S3 stores
-        a single canonical object. Artifact backend publishes this separately before the prediction artifact.
-        Never returned from public GET snapshot; changing this state requires S3 conditional PUT. No implicit
+      description: >-
+        Internal/updater-only. Artifact JSON supports up to 16 MiB. The free D1 Worker accepts a stored row up to 1.9 MB.
+        D1 stores one canonical model row per scope. Artifact backend publishes this separately before the prediction artifact. Never
+        returned from public GET snapshot; changing this state requires a digest-conditional D1 update. No implicit
         eviction of live receipts to accept a duplicate-risk write.
       examples:
       - version: 3
@@ -1335,9 +1329,14 @@ x-runtime-limits:
   predictionArchiveBytes: 4194304
   plannerHistoryBudgetMs: 3000
   plannerMaxReceivedBytesCombined: 8388608
-  dataPlaneConcurrencyPerReplica: 2
   casAttempts: 8
-  writeDeadlineSeconds: 20
+  workersFreeRequestsPerDay: 100000
+  workersFreeCpuMsPerRequest: 10
+  d1FreeRowsReadPerDay: 5000000
+  d1FreeRowsWrittenPerDay: 100000
+  d1FreeMaxStorageMBPerDatabase: 500
+  d1FreeTotalStorageGB: 5
+  d1WorkerModelRowMaxBytes: 1900000
   plannerMaxCandidateDownloadsPerScope: 2
   plannerBudgetScope: One shared deadline and combined byte counter across all scopes, metadata, retries,
     download and parse.
@@ -1352,6 +1351,5 @@ x-history-retention:
   predictionAndModelArtifactRetentionDays: 30
   capacityWarningPercent: 80
   inactiveModelExpirationDays: 45
-  s3VersioningDefault: false
-  optInNoncurrentVersionExpirationDays: 1
-  physicalDeletion: Asynchronous S3 Lifecycle; not an exact deletion SLA.
+  d1InactiveModelExpirationDays: 45
+  physicalDeletion: Daily scheduled D1 delete; no exact execution time guarantee.

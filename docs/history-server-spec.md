@@ -1,138 +1,80 @@
-# 선택적 Rust 예측 상태 서버 — OpenAPI / S3 / 분산 실행
+# 선택적 Nanoom History Worker — Cloudflare Workers + D1
 
-상태: **설계 문서이며 runtime 미구현**. 기본 GitHub artifact 방식은 서버 없이 동작한다. 이 서버는 원본 실행 이력을 보관하는 서비스가 아니라 다음 CI의 **작은 예측 상태**를 제공한다. 데이터/알고리즘의 기준은 [PredictionState v3](prediction-model-spec.md), HTTP 계약은 [OpenAPI 3.1.1](api/history.openapi.yaml), 구현 순서는 [전체 계획](../IMPLEMENTATION_PLAN.md)이다.
+상태: Rust Worker는 D1에 scope별 ModelState 한 행을 저장한다. Cloudflare Workers Free 계정을 확인하고 전용 D1 `nanoom-history-state` 및 schema를 만들었다. Worker는 [nanoom-history.giljongyudev.workers.dev](https://nanoom-history.giljongyudev.workers.dev)에 배포했다. Hosted `/health`와 `/ready`는 200이다. Actions에는 opt-in client가 구현됐고, Worker secret과 GitHub Actions secret을 exact repository/scope로 제한해 설정했다. 익명 protected snapshot은 401로 거부된다. 실제 hosted merge/warm reuse, CPU/사용량 검증은 아직 남았다. 기본 history 경로는 계속 GitHub artifact다. 데이터/알고리즘 기준은 [PredictionState v3](prediction-model-spec.md), HTTP 계약은 [OpenAPI](api/history.openapi.yaml)다.
 
-## 1. Rust 선택과 책임
-
-Rust + Axum + Tokio + AWS SDK for Rust를 사용한다. Nanoom의 Rust/Serde/Tokio 기반과 집계·예측·검증 코드를 공유할 수 있다는 이유이며, 언어 성능 우위를 측정했다고 주장하지 않는다. 구현 시 별도 workspace package/binary `nanoom-history-server`를 `crates/history-server`에 추가한다. server dependencies는 CLI binary에 포함시키지 않는다. pure prediction 모듈만 공유한다. 지금 Cargo나 서버 코드는 만들지 않는다.
-
-서버는 aggregate batch를 반영하고 예측값을 읽는 기능만 제공한다. 작업 실행, task DAG, queue/lease/heartbeat, remote cache, workflow 성공 판단은 담당하지 않는다. 기존 `scheduler:http`의 `/v1/runs/...` live coordinator와 URL·token·계약을 분리한다.
+## 1. 호스팅과 무료 한도
 
 ```mermaid
 flowchart LR
-  A[affected] -->|작은 예측표만 · 최대 3초| G[기본: prediction artifact]
-  A -->|선택적 예측 조회| L[HTTPS LB]
-  J[history job] -->|현재 attempt의 날짜 집계| L
-  L --> R1[Rust replica A]
-  L --> R2[Rust replica B]
-  R1 -->|GET / conditional PUT| S[(S3: ModelState 하나 / scope)]
-  R2 -->|GET / conditional PUT| S
-  S --> P[예측 projection]
-  P --> A
+  A[affected] -->|기본: prediction artifact| G[GitHub artifact]
+  A -->|선택적 compact GET| W[workers.dev Rust Worker]
+  J[history job] -->|현재 attempt aggregate POST| W
+  W -->|scope row / digest CAS| D[(D1)]
+  C[하루 1회 cron] -->|45일 지난 row 삭제| D
 ```
 
-## 2. 데이터와 Action 연결
+Cloudflare Workers Free는 하루 100,000 요청과 요청당 CPU 10ms를 제공한다. D1 무료 한도는 하루 500만 row read, 100,000 row write, 데이터베이스당 500 MB, 계정 전체 5 GB다. 무료 read/write 한도를 넘으면 쿼리가 실패하고 한도는 UTC 자정에 복구된다. Free의 한도에서 자동으로 유료 Worker로 승격하지 않는다. [Workers 가격/제한](https://developers.cloudflare.com/workers/platform/pricing/) · [D1 가격](https://developers.cloudflare.com/d1/platform/pricing/) · [D1 제한](https://developers.cloudflare.com/d1/platform/limits/).
 
-- public 읽기는 PredictionTable v3의 `[keyId,estimatedMs,observationCount,lastObservedAtMs,validUntilMs]` rows만 반환한다. 원본 sample, 날짜 bucket, receipt, command, per-execution SHA를 planner에 보내지 않는다.
-- ModelState v3는 최대 7개의 **날짜별 count/sum**과 파생 예측값, 짧은 batch receipt를 저장한다. 정확한 원본 sample 7개/128 MiB History v2 제안은 폐기한다. 아직 배포되지 않은 설계 변경이므로 HTTP `/v1`은 유지한다.
-- `scheduler: artifact`에서 `historyBackend: artifact | server`를 선택하며 기본은 artifact다. 다른 scheduler와 server backend 조합은 설정 오류다. `historyServerUrl`, `historyRepositoryKey`, secret 환경변수 `NANOOM_HISTORY_TOKEN`을 사용한다.
-- 실행 계획은 어느 backend에서도 artifact로 전달한다. runner의 측정 artifact는 1일 보관, history job이 성공 실행 ID를 dedup해 scope/run/attempt별 불변 집계 batch를 한 번 확정한다. server token은 runner task job에 배포하지 않는다.
-- affected는 같은 PR/branch scope의 prediction, 없으면 신뢰하는 base branch prediction을 조회한다. push는 같은 branch push scope만 사용한다. 서버가 다른 scope를 자동 탐색하지 않는다.
-- **planning의 전체 이력 lookup/다운로드/해석 예산은 기본 3초**다. metadata·재시도도 포함한다. prediction JSON은 8 MiB를 넘기지 않는다. 초과·장애는 바로 warning/cold로 전환하고 task를 진행한다. 긴 서버 write timeout을 planner read에 재사용하지 않는다.
-- history job의 write만 최대 3회/전체 60초/요청당 25초, full jitter 0~2초, Retry-After 우선으로 retry한다. retry 대상은 불명 network 결과·429·503뿐이다. 401/403/404/409/413/415/422는 반복하지 않는다. 원래 body bytes/Idempotency-Key를 재사용한다.
-- 이력 실패는 최적화 품질 저하이며 task 정확성 실패가 아니다. 계획 검증 실패·task 실패·affected base SHA 선택 실패는 그대로 fatal이다. 다른 backend에 조용히 dual-write하지 않는다.
+D1 한 row 상한 2,000,000 bytes에 여유를 두고 Worker state는 1,900,000 bytes까지만 저장한다. Free DB 500 MB 또는 read/write 한도에 닿으면 저장/조회가 실패할 수 있으므로 계정 전체가 항상 무료로 무제한 동작한다고 보장하지 않는다. 한도 초과 요청은 실패하되 Workers Paid로 올리지 않는다. Workers CPU 10ms 제한도 실제 최대 state에서 확인해야 한다.
 
-## 3. HTTP와 권한
+R2는 S3 호환 object storage이지만, 이 계정의 R2 시작 화면은 free allowance 초과 사용량의 자동 결제 구독과 약관 동의를 요구한다. 사용자는 $0 운영을 요청했으므로 R2 구독은 수락하지 않았다. 현재 대안인 D1은 SQL 저장소이며 S3 API 호환 저장소가 아니다. 향후 R2가 필요하면 자동 청구 조건을 별도로 합의해야 한다.
 
-| Endpoint | 권한 | 결과 |
+Worker 주소는 `workers.dev`를 사용한다. 사용자 도메인, DNS record, 카드 등록 없이 시작한다.
+
+## 2. 사용자 경로와 API
+
+- 기본은 artifact backend다. `scheduler: artifact`에서 사용자가 server를 opt-in하기 전에는 Worker에 요청하지 않는다. Action 입력으로 server backend를 opt-in한다.
+- planner는 작은 PredictionTable만 GET한다. model state, 날짜 bucket, batch receipt, raw measurement는 공개 응답에 넣지 않는다.
+- history job은 현재 attempt aggregate만 POST한다. fork PR에는 token을 주지 않고 artifact/cold 경로를 유지한다.
+- planner의 전체 lookup/download/parse budget은 모든 scope 합계 3초다. 이력 오류는 warning/cold이며 기존 task 실패 조건을 바꾸지 않는다.
+- Worker는 `/v1` 이력 API만 맡으며 `scheduler:http` coordinator의 queue/lease/run contract를 구현하지 않는다.
+
+| Route | 권한 | 동작 |
 |---|---|---|
-| `GET /health` | 없음 | 200, storage I/O 없는 liveness |
-| `GET /ready` | 없음 | background probe 상태에 따라 200/503 |
-| `GET /v1/repositories/{repositoryKey}/scopes/{scopeId}/snapshot` | exact scope read | compact PredictionTable 200 / 304 / 유효 row 없음 404 |
-| `POST /v1/repositories/{repositoryKey}/scopes/{scopeId}/observations:merge` | exact scope write | aggregate 반영 또는 같은 batch 재시도의 200 receipt |
+| `GET /health` | 없음 | 저장소 호출 없는 liveness, 200 |
+| `GET /ready` | 없음 | D1 `SELECT 1`, 성공 200 / 실패 503 |
+| `GET /v1/repositories/{repositoryKey}/scopes/{scopeId}/snapshot` | exact read ACL | compact PredictionTable 200 / 304 / 유효 row 없음 404 |
+| `POST /v1/repositories/{repositoryKey}/scopes/{scopeId}/observations:merge` | exact write ACL | 원자 병합 또는 duplicate receipt 200 |
 
-API `/v1`, Plan v1, ModelState/PredictionTable v3는 독립 버전이다. unknown/duplicate JSON object key, invalid Unicode, 압축 request body를 거부한다. UTF-8 JSON만 사용한다. 오류는 RFC9457 `application/problem+json`이며 code/requestId와 비밀을 포함하지 않는 detail을 제공한다. 401에는 Bearer challenge, 429/503에는 Retry-After를 넣는다. 304에는 body가 없다.
+API `/v1`, Plan v1, ModelState/PredictionTable v3는 독립 버전이다. Request body는 UTF-8 uncompressed JSON 최대 16 MiB며, D1에 저장되는 결과 ModelState는 1.9 MB 이하로 제한한다. 중복 JSON object key와 unknown typed fields를 거부한다. RFC9457 `application/problem+json` 응답은 request ID만 노출한다. 401에는 Bearer challenge, 503에는 `Retry-After`, 304에는 body가 없다.
 
-HTTP ETag는 **그 시점의 prediction projection bytes** SHA-256이다. S3 ETag나 전체 학습 모델 digest를 외부 ETag로 쓰지 않는다. 만료 bucket을 제외한 projection을 먼저 계산한 뒤 If-None-Match를 검사한다. 유효 row가 없으면 matching ETag라도 404이며 client는 cache를 무효화한다. GET projection 변경은 S3 write나 lifecycle 연장을 발생시키지 않는다.
+## 3. 인증과 저장
 
-### Scope
+Worker secret `NANOOM_AUTH_JSON`은 최대 5 KiB이며 repository alias와 principal별 exact read/write `(repositoryKey, scopeId)` ACL을 담는다. wildcard는 허용하지 않는다. Raw token은 최소 32-byte 난수며 Worker config에는 SHA-256 digest만 저장한다. GitHub에는 raw token을 `NANOOM_HISTORY_TOKEN` Actions secret으로 보관하며 저장소에 넣지 않는다. 현재 ACL은 이 repository의 E2E workflow scope 하나만 허용한다. Secret이 없거나 유효하지 않으면 protected route는 `configuration_error`로 닫힌다.
 
-repositoryKey는 operator registry가 GitHub API origin + numeric repository ID에 매핑하는 별칭이다. GitHub.com/GHES의 숫자 ID 충돌을 피한다. body에서 bucket/prefix/endpoint를 받지 않는다.
+Scope ID는 공개 RFC8785 JCS(Scope)의 SHA-256이다. Repository alias는 GitHub API origin과 numeric repository ID에 고정한다. Raw ref/path는 storage key에 넣지 않으며 body run 정보는 GitHub 서명 증거가 아니다.
 
-Scope = repositoryKey/workflowPath/ref/group/taskRunner/timingEnvironment. ref는 push full branch ref 또는 PR 번호/head repository ID/head ref/base ref다. scopeId는 RFC8785 JCS(Scope)의 SHA-256이며 별도 Unicode normalization은 없다. raw branch/path를 S3 key에 직접 이어 붙이지 않는다. URL/body scope 일치와 key 형식을 검증한다. Key ID는 공용 compiler가 계산하며 서버는 인증된 writer의 집계 주장을 받는다. request의 event/run 필드 자체가 GitHub 서명 증거는 아니다.
+각 `(repositoryKey, scopeId)`는 D1의 한 row에 canonical ModelState JSON, SHA-256 digest, 갱신 시각을 보관한다. Read는 digest를 확인한 뒤 schema를 검증한다. Snapshot GET은 만료 bucket을 제외해 PredictionTable을 계산하고 D1을 변경하지 않는다. HTTP ETag는 그 public projection bytes의 SHA-256이며 저장 digest를 노출하지 않는다.
 
-### 인증
+## 4. 동시 갱신과 보존
 
-v1은 exact scope read/write allowlist를 가진 opaque bearer credential을 쓴다. operator auth file에 principal ID/token SHA-256/허용 repository와 scope ID를 둔다. 32 random bytes 이상의 raw token은 secret manager에서 주입하고 constant-time compare를 사용한다. wildcard scope는 없다. TLS LB 뒤에서 실행하며 localhost 개발만 HTTP를 허용한다.
+1. 인증/정확 scope ACL, body 크기, JSON schema, scope/batch/idempotency key, age와 aggregate를 저장소 read 전에 검증한다.
+2. D1에서 state와 digest를 읽는다. 손상/버전 불일치를 빈 모델로 덮지 않는다.
+3. 동일 `batchId`와 digest면 `applied=false`; 같은 ID의 다른 digest는 409다.
+4. 공용 Rust `apply_batch`가 정수 daily count/sum, 최신 UTC 날짜, 7개 bucket, weighted prediction, receipt를 한 모델에 반영한다.
+5. 같은 D1 row의 digest가 읽은 값과 일치할 때만 `UPDATE`한다. 새 row는 primary key 충돌 시 `INSERT OR IGNORE`가 한 요청만 이긴다. 경쟁에서 지면 최신 state를 다시 읽어 최대 8회 dedup/merge하고, 소진은 `503 cas_retries_exhausted`다.
+6. state JSON 1,900,000 bytes, model key 또는 receipt cap을 넘으면 저장하지 않고 409를 반환한다. 살아 있는 receipt를 임의 제거하지 않는다.
 
-무효 token은 401, 권한 밖 scope는 객체 존재와 관계없이 403이다. storage I/O 전에 권한을 확인한다. write-only principal에는 prediction/model 본문을 돌려주지 않는다. PR credential에는 main write 권한을 넣지 않고 main write token을 PR 코드에 전달하지 않는다. fork PR은 credential 없이 artifact/cold를 사용한다. exact scope별 credential 발급 부담은 v1 한계로 남긴다. OIDC 자동 발급/UI/tenant 관리 시스템은 추가하지 않는다.
+Raw observation 배열은 저장하지 않는다. 최신 7 observed day와 최대 4096 batch receipt/8일을 보관하며 key/date bucket은 PredictionState v3 계약을 따른다. D1 row에는 `updated_at_ms` index가 있다. 매일 Worker cron이 마지막 갱신 후 45일 넘은 row를 최대 10,000개 삭제한다. 큰 backlog는 여러 날에 걸쳐 정리되며 정확한 cron 실행 시각을 보장하지 않는다.
 
-## 4. S3 모델 저장과 동시 갱신
+## 5. 로컬 및 hosted 검증
 
-```text
-<prefix>/prediction-state/v3/repositories/<repositoryKey>/scopes/<scopeId>/model.json
-<prefix>/probes/<replica-boot-id>/<probe-id>
-```
-
-모든 replica는 같은 region/bucket/endpoint/prefix를 사용한다. scope당 하나의 객체에 stats와 receipt를 함께 저장한다. DB, Redis, leader, 별도 latest pointer/event log를 두지 않는다. 동일 region multi-AZ는 가능하지만 비동기 cross-region active-active는 지원하지 않는다. DR 시 writer를 한 region으로 제한한다.
-
-저장소는 strong read-after-write와 conditional PUT을 만족해야 한다. AWS S3 general-purpose bucket을 기준으로 하며 S3-compatible 제품은 실제 계약 테스트를 통과한 제품/버전만 지원한다.
-
-### 원자적 적용 순서
-
-1. Content-Length 사전 검사, header 인증·scope 권한, bounded body 수신, schema/hash/batch identity/aggregate 검증. 최초 producedAt 이후 7일 이상인 batch는 422 `batch_expired`다.
-2. S3 GET에서 모델 bytes와 opaque ETag를 한 응답으로 읽는다. 404만 빈 모델로 처리한다. access denied/network/corrupt/version mismatch를 빈 모델로 덮어쓰지 않는다.
-3. 같은 batchId의 receipt가 있으면 digest 일치 시 unchanged, 다르면 409 `batch_conflict`. 응답 body의 영구 replay는 제공하지 않는다.
-4. receipt가 없으면 공용 Rust 함수로 integer daily count/sum을 합친다. 최신 7 observed days/최대 30 UTC일 cutoff를 적용하고 예측값을 계산한다. 새로운 batch는 반올림 예측값이 같아도 count/sum/receipt가 바뀌므로 no-op가 아니다.
-5. 만료 receipt를 제거하되 8일 이내 receipt는 버리지 않는다. key/receipt/bytes cap을 검사한다. overflow 또는 한도 초과면 기존 모델을 보존한 409다.
-6. 모델과 receipt를 같은 single PutObject로 저장한다. 기존 객체는 If-Match: 읽은 ETag, 새 객체는 If-None-Match:*. 저장 bytes는 JCS JSON/no newline/no compression, `x-amz-meta-content-sha256`을 함께 기록한다. multipart는 쓰지 않는다.
-7. 성공 PUT 확인 후에만 applied=true를 응답한다. crash-before-PUT은 변화 없음, crash-after-PUT/응답 유실은 receipt로 재시도 dedup한다.
-8. 412 및 concurrent 변경의 409/404는 최신 모델을 다시 읽고 dedup부터 재적용한다. 새 ETag에 낡은 합계를 붙여 쓰지 않는다. 최대 8회 CAS/전체 20초/full jitter 0~200ms 후 503 `cas_retries_exhausted`다.
-
-clock cutoff/watermark는 저장된 값보다 뒤로 돌리지 않는다. batch producedAt과 재전송 bytes는 불변이다. 8일 receipt와 7일 입력 age 규칙으로 동일 오래된 body가 다시 학습되지 않게 한다. 그 이후 다른 producedAt으로 같은 batch를 재발행하는 client 계약 위반까지 영구 감사하는 ledger는 만들지 않는다.
-
-raw observation 배열은 저장하지 않는다. stats는 순서 독립적인 정수 합, 최신 날짜 집합으로 병합한다. 최종 최대 7항의 가중 평균 계산은 공용 Rust 구현으로 고정한다. 유효 observation이 더 이상 없는 key를 제거한다. 종류 수가 계속 늘어나는 문제는 key/bytes cap으로 별도로 제한한다.
-
-## 5. 용량·운영·장애
-
-| 항목 | 상한 / 정책 |
+| 단계 | 상태 |
 |---|---|
-| public prediction JSON | 8 MiB, 학습 state/raw sample 제외 |
-| planning 이력 읽기 | 전체 3초, artifact 세부 budget은 공용 명세 참조 |
-| internal model | scope당 16 MiB, 전체 key 50,000개 |
-| 계산 상태 | key당 날짜 bucket 최대 7개, 최대 30 UTC일 |
-| aggregate request | 16 MiB, 최대 50,000 rows |
-| dedup receipt | scope당 4096개, 8일; batch age는 7일 미만 |
-| model/artifact | 예측/model artifact 30일, 측정 artifact 1일 |
-| 비활성 S3 model | 마지막 실제 변경 후 45일 lifecycle |
-| versioning | 새 전용 bucket 기본 off; opt-in noncurrent 1일 + delete marker 정리 |
+| 공유 PredictionState core / Rust Worker API | D1 build/native tests/clippy 통과; 로컬 D1 HTTP contract 통과 |
+| D1 schema / CAS / duplicate / concurrency / stale cleanup | local migration 및 merge/duplicate/conflict/concurrent CAS/scheduled cleanup 통과 |
+| `/health`, `/ready`, exact auth, errors, ETag | local contract 통과; hosted `/health`·`/ready` 200, 익명 protected snapshot 401 |
+| Cloudflare Workers Free + D1 + `workers.dev` | 배포 및 remote migration 완료; hosted authorized merge, CPU, usage는 미실시 |
+| Actions opt-in client / cold fallback | 구현 및 local D1 E2E 통과; GitHub-hosted artifact transport는 미실시 |
 
-v1은 학습 상태를 scope 단일 객체로 읽고 쓰므로 O(model bytes)이며 같은 scope write는 CAS로 직렬화된다. replica 추가가 그 scope의 write 처리량을 선형으로 늘리지 않는다. `ponytail:` 실제 한도에 도달하면 partition을 별도 검토하며, 처음부터 shard/index/manifest 계층을 추가하지 않는다. planner는 이 전체 model을 받지 않는다.
+계정 화면에서 Workers Free가 활성화되고 결제 수단은 등록되지 않은 상태를 확인했다. 전용 D1 DB `nanoom-history-state`를 만들고 `0001_initial.sql`을 적용했다. 기존 계정의 다른 D1 DB는 재사용하지 않는다. R2 구독/Worker Paid 전환은 하지 않았다. 2026-09-25에 `NANOOM_AUTH_JSON`을 한 repository/workflow scope ACL로 설정했다. 익명 snapshot 요청의 401 응답으로 auth config가 유효하고 unauthenticated access가 거부됨을 확인했으며 authorized merge는 hosted E2E에서 확인해야 한다.
 
-상한의 80%에서 capacity warning을 남긴다. stats 수/bytes/receipt 용량은 각각 관측한다. 초과를 숨기려고 임의 key나 유효 receipt를 제거하지 않는다. model write 실패는 telemetry degraded이고 task CI 결과는 유지한다. 글로벌 bucket quota 서비스는 만들지 않으므로 운영은 current/noncurrent bytes와 scope 수를 따로 확인한다.
+배포 명령은 `worker-build --release`, `wrangler d1 migrations apply nanoom-history-state --remote`, `wrangler deploy` 순이다. 2026-09-24 배포의 Worker version ID는 `f4ea5fe3-06fa-4013-9e16-baee49006e76`이다. Hosted `/health`·`/ready`를 각각 HTTP 200으로 확인했다. 인증 secret 부재 상태에서 protected snapshot은 `configuration_error` 503을 반환해 닫혀 있는 것도 확인했다. `workers.dev` hostname을 사용하므로 DNS는 필요 없다.
 
-S3 IAM은 모델 Get/Put, probes Get/Put/Delete, 부재 판별에 필요한 prefix 제한 ListBucket을 최소로 허용한다. AWS runtime IAM role과 SDK credential chain을 사용하고 Actions에 S3 credential을 전달하지 않는다. private bucket/TLS/default encryption을 적용한다. SSE-KMS 선택 시 필요한 key 권한을 추가한다. lifecycle 삭제는 비동기이며 30일 예측 유효 기간과 물리 삭제 시각을 혼동하지 않는다. corrupt 모델 복구는 writer 중단 후 operator 초기화 또는 별도 검증 backup 복원이며 자동 reset은 금지한다.
+Hosted 서버는 code/build/local test와 다른 증거다. 실제 Actions가 prediction을 읽고 쓰는지, warm run reuse, 전체 CI makespan, Worker CPU 10ms, free quota usage는 아직 측정하지 않았다. 이를 artifact/로컬 테스트 결과로 대신하지 않는다.
 
-### health / ready / 종료
+## 6. 참고
 
-- `/health`: storage 접근 없이 event loop가 응답하면 200.
-- startup probe: 별도 random key에서 conditional create → GET → CAS 성공 → stale CAS 거부 → 최종 상태 확인 → DELETE. CAS 무시 backend는 준비 완료가 될 수 없다.
-- 이후 30초(+0~5초 jitter) background probe. probe 전체 deadline 5초. 최근 실패, 마지막 성공이 60초보다 오래됨, 초기화, drain이면 `/ready` 503. 응답에 bucket/key/provider 원문을 넣지 않는다. probe 잔여물 lifecycle 1일.
-- data-plane 동시 요청은 replica당 2개, 추가 queue 없이 429. health/readiness/probe는 별도 경로다. S3 operation timeout 3초/SDK max attempts 2, write 전체 deadline 20초가 우선한다.
-- SIGTERM은 readiness를 내리고 신규 연결을 중단한 뒤 최대 25초 drain. deployment termination grace는 30초 이상이다. 클라이언트는 미확정 batch를 동일 bytes로 재시도한다.
-
-필수 설정은 bucket/prefix/auth file/repository registry/region, 선택은 S3-compatible endpoint/path-style이다. production listen 0.0.0.0:8080 + TLS LB. OCI image와 실행 예제부터 만들고 Helm/Terraform/autoscaling 시스템을 동시에 추가하지 않는다. JSON logs는 requestId/route/status/latency/responseBytes/modelBytes/keyCount/receiptCount/CAS retries/prune count/fallback reason 중심이다. secrets/raw batch/command는 로그에 넣지 않는다.
-
-## 6. LUNA 구현·검증
-
-| 단계 | 산출물 | 통과 조건 |
-|---|---|---|
-| S0 | pure compile/apply/project, Key JCS vectors | integer bucket 병합·중복 batch·오래된 batch·weighted estimate·expiry |
-| S1 | 별도 Rust server package, OpenAPI boundary/auth | 공개 GET에 learning buckets/receipts/raw sample 없음; scope 권한 확인 |
-| S2 | bounded S3 adapter/CAS | 2 processes 동시 반영, 중복 재시도, crash/응답 유실 후 중복 합산 없음 |
-| S3 | health/ready/drain/OCI | S3 down이면 health200/ready503, 복구, 종료 중 원자성 |
-| S4 | artifact/server client 연결 | planner model download 0회, 3초 read budget/cold, artifact 기본 유지 |
-| S5 | 실제 consumer + 2 replicas/S3 | task 정확성, compact transfer, 이력 조회를 포함한 CI makespan 비교 |
-| S6 | PR/운영 문서/체크리스트 | local/synthetic/S3-compatible/AWS/hosted/released 증거 분리 |
-
-합성 bytes 측정은 실제 네트워크 성능 증거가 아니다. 작은 PR·큰 PR·짧은 task·느린 이력 서버를 포함하고 `historyFetchMs + 계획/배분 + 실제 실행 + 필요한 후처리`의 전체 완료 시간을 history off 기준과 비교한다. 이력을 받아 절약하는 시간보다 fetch 비용이 크면 해당 경로의 최적화 성공으로 인정하지 않는다. 상한 초과가 잦아 항상 cold가 되는 것도 기능 완료가 아니다.
-
-문서 validation은 `uv run --no-project --with openapi-spec-validator --with pyyaml python -m openapi_spec_validator docs/api/history.openapi.yaml`로 수행한다. 구현 단계는 `cargo test --locked -p nanoom-history-server --all-targets`와 전용 prefix의 실제 S3 계약 테스트를 분리한다. mock 통과만으로 분산 인수 완료라 하지 않는다. 이번 변경은 명세이며 server/배포/외부 쓰기를 실행하지 않는다.
-
-## 7. 근거
-
-- [OpenAPI 3.1.1](https://spec.openapis.org/oas/v3.1.1.html), [RFC8785](https://www.rfc-editor.org/rfc/rfc8785), [RFC9457](https://www.rfc-editor.org/rfc/rfc9457).
-- [S3 conditional writes](https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-writes.html), [consistency](https://docs.aws.amazon.com/AmazonS3/latest/userguide/Welcome.html#ConsistencyModel), [lifecycle](https://docs.aws.amazon.com/AmazonS3/latest/userguide/intro-lifecycle-rules.html).
-- [AWS SDK for Rust](https://docs.aws.amazon.com/sdk-for-rust/latest/dg/welcome.html), [Axum shutdown](https://docs.rs/axum/latest/axum/serve/struct.Serve.html).
-
-확인일 2026-09-24. 알고리즘·budget은 Nanoom 설계 결정이며 AWS 성능 보장이 아니다.
+- [Workers pricing](https://developers.cloudflare.com/workers/platform/pricing/) · [Workers limits](https://developers.cloudflare.com/workers/platform/limits/) · [Rust Workers](https://developers.cloudflare.com/workers/languages/rust/)
+- [D1 pricing](https://developers.cloudflare.com/d1/platform/pricing/) · [D1 limits](https://developers.cloudflare.com/d1/platform/limits/) · [Wrangler D1 configuration](https://developers.cloudflare.com/d1/wrangler-commands/)
+- [RFC8785](https://www.rfc-editor.org/rfc/rfc8785) · [RFC9457](https://www.rfc-editor.org/rfc/rfc9457)

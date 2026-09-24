@@ -3,6 +3,14 @@ set -Eeuo pipefail
 started=$(date +%s)
 source "$GITHUB_ACTION_PATH/../_setup/artifacts.sh"
 artifact_version=$(nanoom_artifact_version "$SCHEDULER" "${ARTIFACT_VERSION:-}")
+history_backend=${HISTORY_BACKEND:-artifact}
+HISTORY_SERVER_URL=${HISTORY_SERVER_URL:-}
+HISTORY_SERVER_TOKEN=${HISTORY_SERVER_TOKEN:-}
+[[ "$history_backend" =~ ^(artifact|server)$ ]] || { echo 'historyBackend must be artifact or server' >&2; false; }
+if [[ "$history_backend" == server && "$SCHEDULER" != artifact ]]; then
+  echo 'historyBackend=server requires scheduler=artifact so successful task measurements are available' >&2
+  false
+fi
 if [[ "$SCHEDULER" == off ]]; then
   result='{"status":"success","scheduler":"off","reason":"historical scheduling explicitly disabled"}'
 elif [[ "$SCHEDULER" == http ]]; then
@@ -29,7 +37,8 @@ else
   current_summary=$(jq -cn --argjson count "$current_file_count" '{measurementFileCount:$count}')
   source_run_id=''; previous_model_name=''; previous_prediction_path=''; previous_model_path=''; previous_model_unavailable=false
 
-  nanoom_history_budget_start 60 25165824
+  if [[ "$history_backend" == artifact ]]; then
+    nanoom_history_budget_start 60 25165824
   nanoom_try_previous_model() {
     local candidate_run=$1 candidate_dir=$2 candidate_artifacts pointer
     [[ -n "$candidate_run" ]] || return 1
@@ -62,15 +71,110 @@ else
       if nanoom_try_previous_model "$candidate_run" "$RUNNER_TEMP/nanoom-prev-push"; then source_run_id=$candidate_run; fi
       ;;
   esac
+  fi
 
   args=(history --model-output "$model_path" --prediction-output "$prediction_path" --model-artifact-name "$MODEL_ARTIFACT" --run-id "$RUN_ID" --run-attempt "$RUN_ATTEMPT")
+  batch_dir="$output_dir/batches"
+  if [[ "$history_backend" == server ]]; then
+    args+=(--batch-output-dir "$batch_dir")
+  fi
   if (( current_file_count > 0 )); then args+=("${current_inputs[@]}"); fi
   if [[ -n "$previous_model_path" && -n "$previous_prediction_path" ]]; then
     args+=(--previous-model "$previous_model_path" --previous-prediction "$previous_prediction_path" --previous-model-name "$previous_model_name")
   fi
-  cli_result=$(nanoom "${args[@]}")
+  compile_failed=false
+  if [[ "$history_backend" == server ]]; then
+    nanoom_history_budget_start 60 25165824
+    if ! cli_result=$(nanoom_history_timeout nanoom "${args[@]}"); then
+      compile_failed=true
+      cli_result='{"status":"degraded","historyBatchCompileFailed":true,"scopeCount":0,"emittedBatchCount":0}'
+      echo 'could not compile History Server batches; task CI remains successful in degraded mode' >&2
+    fi
+  else
+    cli_result=$(nanoom "${args[@]}")
+  fi
   if [[ "${MEASUREMENT_DOWNLOAD_OUTCOME:-success}" != success ]]; then
     cli_result=$(jq -c '.status="degraded" | .measurementDownloadDegraded=true' <<<"$cli_result")
+  fi
+  if [[ "$history_backend" == server ]]; then
+    applied_count=0; duplicate_count=0; batch_count=0; server_degraded=$compile_failed
+    if [[ "${MEASUREMENT_DOWNLOAD_OUTCOME:-success}" != success ]]; then
+      server_degraded=true
+    fi
+    if [[ -d "$batch_dir" ]]; then
+      while IFS= read -r batch_path; do
+        batch_count=$((batch_count + 1))
+        scope_id=${batch_path##*/}
+        scope_id=${scope_id%.json}
+        [[ "$scope_id" =~ ^[a-f0-9]{64}$ ]] || { server_degraded=true; continue; }
+        if command -v sha256sum >/dev/null 2>&1; then
+          idempotency_key=$(sha256sum "$batch_path" | awk '{print $1}')
+        else
+          idempotency_key=$(shasum -a 256 "$batch_path" | awk '{print $1}')
+        fi
+        repository_key=$(jq -er '.scope.repositoryKey' "$batch_path") || { server_degraded=true; continue; }
+        if ! nanoom_history_server_trusted_event; then
+          server_degraded=true
+          echo 'History Server write skipped for an event that may run untrusted code' >&2
+          break
+        fi
+        if [[ -z "$HISTORY_SERVER_TOKEN" ]] || ! nanoom_history_server_url_valid "$HISTORY_SERVER_URL"; then
+          server_degraded=true
+          echo 'History Server URL or credential is unavailable; measurements were not merged' >&2
+          break
+        fi
+        [[ "$repository_key" =~ ^[a-z0-9][a-z0-9._-]{0,63}$ ]] || { server_degraded=true; continue; }
+        history_server_base=${HISTORY_SERVER_URL%/}
+        response_path="$output_dir/merge-$scope_id.json"
+        merged=false
+        for attempt in 1 2 3; do
+          remaining=$(nanoom_history_remaining) || break
+          status_code=$(curl --silent --show-error --max-time "$remaining" --max-filesize 1048576 \
+            -X POST \
+            -H "Authorization: Bearer $HISTORY_SERVER_TOKEN" \
+            -H 'Content-Type: application/json' \
+            -H "Idempotency-Key: $idempotency_key" \
+            -H 'Accept: application/json' \
+            --data-binary "@$batch_path" \
+            -o "$response_path" -w '%{http_code}' \
+            "$history_server_base/v1/repositories/$repository_key/scopes/$scope_id/observations:merge") || status_code=000
+          if [[ "$status_code" == 200 ]]; then
+            applied=$(jq -r '.applied | select(type == "boolean")' "$response_path") || break
+            [[ "$applied" == true || "$applied" == false ]] || break
+            if [[ "$applied" == true ]]; then
+              applied_count=$((applied_count + 1))
+            else
+              duplicate_count=$((duplicate_count + 1))
+            fi
+            merged=true
+            break
+          fi
+          [[ "$status_code" == 000 || "$status_code" =~ ^5 ]] || break
+        done
+        if [[ "$merged" != true ]]; then
+          server_degraded=true
+          echo "History Server merge failed for scope $scope_id; continuing task CI in degraded mode" >&2
+        fi
+      done < <(find "$batch_dir" -type f -name '*.json' -print 2>/dev/null | sort)
+    fi
+    if [[ "$batch_count" -gt 0 && "$server_degraded" == false ]]; then
+      server_status=merged
+    elif [[ "$batch_count" -eq 0 && "$server_degraded" == false ]]; then
+      server_status=no_observations
+    else
+      server_status=degraded
+      cli_result=$(jq -c '.status="degraded" | .historyServerDegraded=true' <<<"$cli_result")
+    fi
+    if [[ "$server_degraded" == true && "$(jq -r '.historyServerDegraded // false' <<<"$cli_result")" != true ]]; then
+      cli_result=$(jq -c '.status="degraded" | .historyServerDegraded=true' <<<"$cli_result")
+    fi
+    elapsed=$(( $(date +%s) - started ))
+    result=$(jq -cn --argjson cli "$cli_result" --argjson current "$current_summary" --arg artifactVersion "$artifact_version" --arg serverStatus "$server_status" --argjson batches "$batch_count" --argjson applied "$applied_count" --argjson duplicates "$duplicate_count" --argjson elapsed "$elapsed" '{status:$cli.status,scheduler:"artifact",historyBackend:"server",artifactVersion:$artifactVersion,publish:false,sourceRunId:null,current:$current,cli:$cli,serverMerge:{status:$serverStatus,batchCount:$batches,appliedBatchCount:$applied,duplicateBatchCount:$duplicates},mergeMs:($elapsed*1000)}')
+    echo 'publish=false' >> "$GITHUB_OUTPUT"
+    echo "result=$result" >> "$GITHUB_OUTPUT"
+    printf 'Final JSON\n%s\n' "$result"
+    { echo '### nanoom history'; echo; echo "History Server batch merge finished with status \`$server_status\` ($applied_count applied, $duplicate_count duplicate)."; } >> "$GITHUB_STEP_SUMMARY"
+    exit 0
   fi
   if [[ "$previous_model_unavailable" == true ]]; then
     cli_result=$(jq -c '.status="degraded" | .previousModelDegraded=true' <<<"$cli_result")

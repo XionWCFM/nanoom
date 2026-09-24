@@ -56,6 +56,12 @@ pub struct HistoryArgs {
 
     #[arg(
         long,
+        help = "Optional directory for canonical ObservationBatch v3 files"
+    )]
+    pub batch_output_dir: Option<PathBuf>,
+
+    #[arg(
+        long,
         hide = true,
         help = "Override current UTC milliseconds for reproducible checks"
     )]
@@ -124,6 +130,7 @@ pub fn execute(args: HistoryArgs) -> Result<()> {
     let mut duplicate_batch_count = 0_u64;
     let mut degraded_scope_count = 0_u64;
     let mut accepted_observation_count = 0_u64;
+    let mut emitted_batch_count = 0_u64;
     for (scope_id, (scope, observations, preparation_observations)) in measurements {
         let produced_at_ms = observations
             .iter()
@@ -150,6 +157,11 @@ pub fn execute(args: HistoryArgs) -> Result<()> {
                 continue;
             }
         };
+        if let Some(directory) = args.batch_output_dir.as_deref() {
+            let bytes = canonical_bytes(&batch).map_err(crate::error::Error::InvalidConfig)?;
+            write_output(&directory.join(format!("{scope_id}.json")), &bytes)?;
+            emitted_batch_count += 1;
+        }
         let unique_task_observations = observations
             .iter()
             .map(|observation| observation.execution_id.as_str())
@@ -238,6 +250,7 @@ pub fn execute(args: HistoryArgs) -> Result<()> {
             "scopeCount": state_bundle.states.len(),
             "appliedBatchCount": applied_batch_count,
             "duplicateBatchCount": duplicate_batch_count,
+            "emittedBatchCount": emitted_batch_count,
             "degradedScopeCount": degraded_scope_count,
             "acceptedObservationCount": accepted_observation_count,
             "modelArtifactName": args.model_artifact_name,

@@ -1,10 +1,10 @@
 # Nanoom 개선 실행 계획 — LUNA 작업 명세
 
-상태: **A1~A6 local 구현·gates 완료. A4/A5 변경의 공식 OpenAPI validator는 DNS로 미실시. A5 preparation telemetry/automatic k local 구현·gates와 384-item synthetic scheduler 측정 완료; real trace wall time·prediction error·실제 artifact bytes는 미실시. A7과 S0~S6 미완료. GitHub CLI token이 invalid여서 PR/hosted validation/release 미실시.** 기준 source `539b2c08cc7e2543f3a0cdd10fbdba451b2502d5`(v0.6.0). 조사일 2026-09-24. 이 문서의 나머지 proposed 동작을 released product 기능으로 설명하지 않는다.
+상태: **A1~A6 local 구현·gates 완료. 현재 OpenAPI schema/examples/digest validation 통과. A5 real trace wall time·prediction error·실제 artifact bytes 미실시. A7 hosted 검증 미완료(GitHub CLI token invalid). D1 local build/HTTP/CAS와 Workers Free 배포 health/readiness 통과. S4 opt-in client, hosted protected data path/CPU/usage가 남음.** 기준 source `539b2c08cc7e2543f3a0cdd10fbdba451b2502d5`(v0.6.0). 조사일 2026-09-24. 이 문서의 나머지 proposed 동작을 released product 기능으로 설명하지 않는다.
 
 ## 다른 세션에서 시작하기
 
-Luna Max 실행 세션은 [LUNA_HANDOFF.md](LUNA_HANDOFF.md)에서 시작한다. 인계 브랜치는 `codex/prediction-state-v3`이며, 이 저장소 루트의 `IMPLEMENTATION_PLAN.md`가 상세 실행 계획이다. [SPEC](SPEC.md)으로 현재/제안 계약을 구분하고, [예측 모델](docs/prediction-model-spec.md), [선택적 서버](docs/history-server-spec.md), [OpenAPI](docs/api/history.openapi.yaml), [CHECKLIST](CHECKLIST.md)를 함께 읽는다. A1~A6의 local implementation/gates는 CHECKLIST에 기록했다. A4/A5 공식 OpenAPI validator, A5 real trace metrics, hosted GitHub/GHES, release는 미검증이며 A7 hosted validation부터 계속한다. 결과와 미실시 항목은 CHECKLIST에 갱신한다.
+Luna Max 실행 세션은 [LUNA_HANDOFF.md](LUNA_HANDOFF.md)에서 시작한다. 인계 브랜치는 `codex/prediction-state-v3`이며, 이 저장소 루트의 `IMPLEMENTATION_PLAN.md`가 상세 실행 계획이다. [SPEC](SPEC.md)으로 현재/제안 계약을 구분하고, [예측 모델](docs/prediction-model-spec.md), [선택적 서버](docs/history-server-spec.md), [OpenAPI](docs/api/history.openapi.yaml), [CHECKLIST](CHECKLIST.md)를 함께 읽는다. A7 hosted validation은 GitHub 인증 복구 후 별도로 진행하고, Cloudflare Worker는 Workers Free + D1으로 이어간다. 실제 Worker build/local D1/Cloudflare hosted evidence와 미실시 범위는 CHECKLIST에 갱신한다.
 
 문서 검증은 저장소 루트에서 실행한다.
 
@@ -22,7 +22,7 @@ uv run --no-project --with openapi-spec-validator --with pyyaml --with rfc8785 p
 - 자체 task DAG는 만들지 않는다. Nx/Turbo 의존성 실행 또는 GitHub needs를 쓴다.
 - `concurrency`는 Nanoom assignment 상한이며 `strategy.max-parallel`이 아니다.
 - 최종 구현 납품은 producer PR + 실제 consumer fixture PR/CI까지다. merge/release하지 않는다.
-- 선택적 **Rust History Server 구현 계획을 포함**한다. 서버 spec은 [서버 명세](docs/history-server-spec.md), HTTP source of truth는 [OpenAPI](docs/api/history.openapi.yaml)다. 서버 runtime과 배포는 문서 작성 후 S0~S6 단계에서 수행한다.
+- 선택적 **Cloudflare Rust Worker + D1 History Server 구현**을 진행한다. 서버 spec은 [서버 명세](docs/history-server-spec.md), HTTP source of truth는 [OpenAPI](docs/api/history.openapi.yaml)다. Workers Free + D1 + `workers.dev`를 목표로 하며 free 한도 초과는 과금 대신 실패한다. R2 usage billing 구독은 활성화하지 않는다.
 - 기존 `scheduler:http` live coordinator는 새 History Server와 별개다. coordinator/queue/lease를 이 서버에 구현하지 않는다.
 
 현재 Nanoom checkout의 `.opencode/`와 fixture checkout의 사용자 변경을 보존한다. Nanoom은 인계 브랜치 `codex/prediction-state-v3`에서 이어서 작업한다. 별도 worktree를 만드는 경우 해당 브랜치의 문서 커밋을 포함한다. fixture는 별도 `codex/` worktree에서 작업한다. fixture는 stale local branch가 아니라 작업 시작 시 확인한 remote main을 기반으로 한다. reset/stash로 사용자 작업을 치우지 않는다.
@@ -80,7 +80,7 @@ GitHub.com upload v4.6.2/download v4.3.0, GHES upload v3.2.2/download v3.1.0을 
 
 ## 4. PredictionState v3·예측·자동 개수
 
-공용 데이터 source of truth는 [예측 모델 명세](docs/prediction-model-spec.md)다. 기존 History v2 원본 sample 보관 제안을 대체한다. 공유 Rust 모듈의 compile-batch/apply-batch/project-predictions만 artifact와 서버가 재사용한다. scheduler는 작은 PredictionTable만 읽는다. GitHub 전송은 Action 계층, S3 전송은 선택적 server crate다. 단일 구현용 provider factory/trait나 서버 scaffold를 먼저 만들지 않는다.
+공용 데이터 source of truth는 [예측 모델 명세](docs/prediction-model-spec.md)다. 기존 History v2 원본 sample 보관 제안을 대체한다. 공유 Rust 모듈의 compile-batch/apply-batch/project-predictions만 artifact와 서버가 재사용한다. scheduler는 작은 PredictionTable만 읽는다. GitHub 전송은 Action 계층, D1 전송은 선택적 Worker crate다. 단일 구현용 provider factory/trait나 서버 scaffold를 먼저 만들지 않는다.
 
 - task identity: group/workspace/task/shard/totalShards/taskRunner/timingEnvironment. exact → workspace만 제외한 동일 task/layout/runner/environment fallback → cold 1. build/test나 shard 1/2와 1/4 혼합 금지.
 - 원본 실행은 현재 attempt 집계에서만 실행 ID로 dedup한다. 이후 key별 날짜 count/sum 최대 7개와 짧은 batch receipt를 저장한다. 전체 raw history나 실행별 provenance를 누적하지 않는다.
@@ -107,7 +107,7 @@ History API/artifact/업로드 문제는 구체 상태·이유·source·fallback
 
 회당 planning payload와 updater state, 총 artifact 저장량을 각각 측정한다. 같은 key를 100,000번 관측해도 날짜 bucket 수는 7개 이하다. 새 key가 늘면 30 UTC일 pruning 이후 key 50,000개/model 16 MiB/receipt 4096개 중 먼저 닿는 cap을 적용한다. 저장 초과는 기존 상태 보존 + warning/degraded이며 80%부터 경고한다. 정상 PR이 반복적으로 cold가 되는 것은 완료로 인정하지 않는다.
 
-서버 probe는 `/health`, `/ready`다. 유효 예측이 없으면 matching ETag보다 먼저 404다. S3 versioning 기본 off, opt-in noncurrent 1일 및 delete marker 정리, 비활성 model은 마지막 실제 변경 후 45일 lifecycle이다. 예측의 논리 만료와 비동기 물리 삭제는 별개다. model/prediction artifact는 30일, 현재 attempt 측정 artifact는 1일, task rerun용 Plan은 30일 보관한다. run별 사본의 빈도×크기×보관기간 총량도 별도로 보고한다.
+서버 probe는 `/health`, `/ready`다. 유효 예측이 없으면 matching ETag보다 먼저 404다. D1 Worker는 scope당 row 1.9 MB로 제한하고 비활성 state는 마지막 변경 후 45일 뒤 daily cron에서 삭제한다. 예측의 논리 만료와 물리 삭제는 별개다. Worker Free의 10ms CPU 안에서 최대 state가 처리된다고 가정하지 않고 hosted runtime을 측정한다. model/prediction artifact는 30일, 현재 attempt 측정 artifact는 1일, task rerun용 Plan은 30일 보관한다. run별 사본의 빈도×크기×보관기간 총량도 별도로 보고한다.
 
 ## 5. LUNA 실행 카드
 
@@ -123,7 +123,7 @@ History API/artifact/업로드 문제는 구체 상태·이유·source·fallback
 | A5 | A4 telemetry | 준비 예측/자동 k/index/진단 | 속도 우선·동률 비용·cold fallback·결정성·성능 검증 |
 | A6 | A2~A5 | basic/advanced/Nx/Turbo/needs 예제, completion gates | 잘못된 skip/누락은 최종 실패, 0작업은 정상 skip |
 | A7 | A6 | producer PR + fixture PR + candidate hosted runs | 동일 SHA Action/binary, cold→warm, positive jobs, aggregate 증거 |
-| S0~S6 | A4 공유 PredictionState v3, A7 artifact 경로 보장 | 선택적 Rust History Server와 client opt-in | [서버 작업 카드](docs/history-server-spec.md)의 OpenAPI/S3/2-replica/인증/운영 인수 |
+| S0~S6 | A4 공유 PredictionState v3, artifact 기본 경로 유지 | Cloudflare Worker/D1 server와 client opt-in | [서버 작업 카드](docs/history-server-spec.md)의 OpenAPI/D1 CAS/인증/운영 인수; A7과 독립 진행 |
 
 서버 phase는 공유 데이터 계약에 의존한다. 서버를 먼저 억지로 완성해 artifact 기본 경로를 우회하지 않는다. 계약 변경 시 관련 문서/CLI/Action/fixture/서버 spec을 함께 리뷰한다. 작업자가 새로운 공개 API, fallback, 데이터 손실 가능 구현을 임의로 선택하지 않도록 의문은 주 에이전트가 이 명세에 반영한다.
 
@@ -157,6 +157,6 @@ status Action은 optional `requiredJobs`를 추가한다. 그 이름의 job은 �
 
 producer의 생성된 local Git fixture는 remote head checkout 증거가 아니다. 실제 fixture remote main 기반 worktree에서 candidate commit SHA로 Actions를 고정한다. 같은 SHA의 binary를 준비 job에서 한 번 빌드·artifact 전달하고 `version:local`로 사용한다. @latest 이전 release로 후보 검증을 대신하지 않는다.
 
-cold 실행 후 같은 workflow/branch의 warm 실행에서 loaded/source run/자동 선택 근거/non-skipped jobs/item 일치/aggregate를 확인한다. small/medium/full, no-change, 실패 전파를 구분한다. 서버는 별도로 2개 process + 실제 S3 조건부 쓰기 인수를 수행한다. mock/local compatible/AWS/hosted/released 증거를 섞지 않는다.
+cold 실행 후 같은 workflow/branch의 warm 실행에서 loaded/source run/자동 선택 근거/non-skipped jobs/item 일치/aggregate를 확인한다. small/medium/full, no-change, 실패 전파를 구분한다. Cloudflare server는 local D1 contract와 실제 hosted D1/Workers Free 증거를 구분한다. 고정 process 수를 주장하지 않는다.
 
-실제 GHES, 실제 AWS S3 또는 released consumer 증거가 없으면 해당 항목은 미실시다. 권한이 없을 때 새 계정/리소스를 자동 생성한 것으로 대신하지 않는다. merge·release·배포는 이번 문서 납품에 포함하지 않는다.
+실제 GHES, Cloudflare hosted Worker/D1 또는 released consumer 증거가 없으면 해당 항목은 미실시다. Cloudflare 로그인을 확인했고 Workers Free 계정에 전용 D1 DB를 만들었다. R2 구독과 Workers Paid 전환 없이 D1 free limits에서 계속한다. merge·release는 이번 문서 납품에 포함하지 않는다.

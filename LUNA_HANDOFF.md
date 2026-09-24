@@ -8,10 +8,10 @@
 - 인계 브랜치: `codex/prediction-state-v3`.
 - 구현 조사 기준: `539b2c08cc7e2543f3a0cdd10fbdba451b2502d5`(v0.6.0). 문서 커밋 이후 현재 HEAD와 차이는 시작할 때 다시 확인한다.
 - 준비된 것: 전체 실행 계획, 데이터/서버 명세, OpenAPI, 체크리스트, 문서 검증 스크립트.
-- 완료: A1~A3 local runtime gates와 parent review. A3 phase commit은 `c372891`. A4 local Rust/Action 구현 및 regression은 [CHECKLIST.md](CHECKLIST.md)에 기록했으며, 공식 OpenAPI validator는 DNS로 막혔다. A5 preparation telemetry/automatic k local gates와 384-item synthetic scheduler timing도 기록했다. Real CI wall time·prediction error·actual artifact bytes, hosted GitHub/GHES transport, release, producer/consumer PR은 미실시다. 현재 단계는 A6다. OpenAPI·합성 payload 검증을 hosted/전체 구현 검증으로 승계하지 않는다.
+- 완료: A1~A6 local runtime gates는 [CHECKLIST.md](CHECKLIST.md)에 기록했다. 현재 OpenAPI schema/examples/digest validation도 통과했다. A5 real CI wall time·prediction error·actual artifact bytes, hosted GitHub/GHES transport, release, producer/consumer PR은 미실시다. Cloudflare D1 build/local HTTP/CAS/cron contract 통과, Worker deployed 및 hosted health/readiness 통과. Protected route secret, Actions client, hosted merge/CPU/usage는 미완료다. OpenAPI·합성 payload·local Worker 결과를 hosted 데이터 경로 증거로 승계하지 않는다.
 - 인계 시 기존 사용자 파일 `.opencode/`가 untracked다. 읽을 필요 없이 보존하며 작업 커밋에 포함하지 않는다. 이후 발견하는 사용자 변경도 같은 원칙으로 보존한다.
 
-목표는 **이력 조회와 갱신 비용까지 포함한 전체 CI 완료 시간 감소**다. 서버 없는 GitHub artifact 경로를 먼저 완성하고, 같은 집계·예측 로직을 재사용하는 선택적 Rust/S3 서버를 이어서 구현한다. 실제 검증으로 확인한 범위만 완료로 표시한다.
+목표는 **이력 조회와 갱신 비용까지 포함한 전체 CI 완료 시간 감소**다. GitHub artifact를 기본으로 유지하며 Cloudflare Workers Free + D1 기반 선택적 서버를 구현한다. 사용자가 $0 운영을 요청해 자동 청구 조건이 있는 R2 구독은 활성화하지 않았다. A7 hosted 검증과 서버는 독립 경로다. 실제 검증으로 확인한 범위만 완료로 표시한다.
 
 새 worktree에서 시작할 때는 이 브랜치의 문서 커밋을 포함해야 한다. 로컬 `main`의 v0.6.0만으로 시작하지 않는다. 현재 checkout에 이미 이 브랜치가 선택되어 있으면 그대로 사용한다. 다른 작업이 점유한 checkout이나 사용자 변경을 옮기기 위한 reset/stash/clean은 하지 않는다.
 
@@ -35,7 +35,7 @@ git status --short
 git log -3 --oneline
 ```
 
-현재 branch/HEAD와 기존 변경 목록을 확인하고 `.opencode/`를 보존한다. A3 local contract gates 및 parent review, A4/A5 local Rust/Action work는 CHECKLIST에 기록했다. A4 OpenAPI 공식 검증은 DNS로 미실시이고 A5 real trace metrics와 hosted 증거는 별도다. **A6부터 순서대로 계속**한다.
+현재 branch/HEAD와 기존 변경 목록을 확인하고 `.opencode/`를 보존한다. A1~A6 local work는 CHECKLIST에 기록했다. Cloudflare Workers Free를 확인하고 D1 migration과 Worker를 배포했다. `https://nanoom-history.giljongyudev.workers.dev`의 `/health`·`/ready`는 200이다. protected API는 auth secret을 설정하지 않아 503 fail-closed이며, Actions client와 hosted data path는 별도다. A7, A5 real metrics는 별도다.
 
 문서 검증은 다음 명령으로 재현할 수 있다. 최초 한 번 실행하고 이후에는 관련 계약을 바꿨을 때 다시 실행한다. 설치가 막히면 네트워크/도구 오류를 기록하며 독립적인 Rust 작업은 계속한다.
 
@@ -82,9 +82,9 @@ A1은 identity·fallback·실행 정확성 수정이다. A4의 PredictionState v
 | A5 | 준비 시간 관측과 자동 assignment 개수 | cold/unknown 분리, 결정성, 실제 시간·예측 오차·크기 측정 |
 | A6 | 예제/마이그레이션, requiredJobs, completion gate | positive인데 skip/실행0이면 실패, no-change는 성공, coverage 96% 기준 정합 |
 | A7 | producer와 실제 consumer fixture의 candidate 검증 | 같은 SHA의 Action+binary, cold→warm, non-skipped jobs, 실패 전파, aggregate, PR/run URL |
-| S0~S6 | 별도 Rust 서버, S3 CAS, 인증/운영, opt-in client | 서버 명세의 단계별 증거, 2-process 동시성, 실제 S3/hosted 경로 |
+| S0~S6 | Cloudflare Rust Worker, D1 CAS, 인증/운영, opt-in client | 서버 명세의 단계별 증거, local D1 concurrency, 실제 workers.dev hosted path |
 
-A1~A6의 로컬 작업은 각 단계 검증이 통과하면 이어서 진행한다. A7 artifact 사용자 경로가 확인되기 전에 서버 단계의 구현을 앞당기지 않는다. 서버는 기존 공용 모델 코드를 재사용하며 CLI 기본 사용에 서버 dependency나 credential을 요구하지 않는다.
+A1~A6의 로컬 작업은 완료 기록에 따른다. 사용자가 서버 구현 순서를 앞당겼으므로 S0/S1부터 A7과 병행한다. 서버는 기존 공용 모델 코드를 재사용하며 CLI 기본 사용에 서버 dependency나 credential을 요구하지 않는다.
 
 fixture 작업은 그 저장소의 현재 상태와 remote main을 확인한 별도 worktree에서 수행한다. 기존 fixture checkout의 미커밋 변경을 가져가거나 지우지 않는다. `@latest`의 이전 release로 candidate SHA를 검증하지 않는다.
 
@@ -97,8 +97,9 @@ fixture 작업은 그 저장소의 현재 상태와 remote main을 확인한 별
 - 과거 median과 새 가중 평균의 정확도 차이를 실측한다. 합성 파일이 작다는 사실로 속도·정확도 향상을 주장하지 않는다.
 - history 실패는 warning/degraded/cold. Plan/hash/head/실제 task/affected base SHA 실패는 fatal이다.
 - `concurrency`는 Nanoom assignment 상한이다. GitHub `strategy.max-parallel`과 다르다.
-- 자체 DAG/queue/Redis/DB/partition framework를 추가하지 않는다. 서버는 Rust 별도 binary, scope당 S3 객체와 CAS, `/health`·`/ready`를 따른다.
-- 현재 계획에 없는 권한 변경·유료 리소스 생성·운영 배포·merge·release는 실행하지 않는다. 기존에 제공된 테스트 환경에서 할 수 있는 검증과 필요한 추가 환경을 구분한다.
+- 별도 서비스나 queue framework를 추가하지 않는다. 서버는 Rust Worker, scope당 D1 row와 digest CAS, `/health`·`/ready`를 따른다.
+- Workers Free/D1/`workers.dev` 범위만 시도한다. Cloudflare 로그인과 Workers Free를 확인했고 D1 DB를 만들었다. Workers Paid 전환이나 R2 usage billing을 활성화하지 않는다.
+- 현재 계획에 없는 권한 변경·유료 리소스 생성·merge·release는 실행하지 않는다. 기존에 제공된 테스트 환경에서 할 수 있는 검증과 필요한 추가 환경을 구분한다.
 
 ## 7. 검증 명령과 증거의 범위
 
@@ -122,7 +123,7 @@ cargo llvm-cov --locked --workspace --all-features --fail-under-lines 96 --summa
 
 `bash scripts/review-change.sh <검증한-base-ref>`는 committed diff만 본다. 인계 문서 커밋을 구현 증거로 사용하지 않는다. 미커밋 diff와 untracked 파일을 별도로 검토하고, 실제 구현 commit이 생긴 뒤 올바른 base로 다시 확인한다.
 
-local unit/Action contract, 생성 fixture, 실제 GitHub consumer, GHES, S3-compatible, AWS S3, released consumer는 서로 다른 증거다. 필요한 외부 proof가 빠졌으면 로컬 단계만 완료하고 전체 완료는 미검증으로 남긴다. 공급된 환경이 없을 때 mock 결과를 실제 서비스 결과로 대체하지 않는다.
+local unit/Action contract, 생성 fixture, 실제 GitHub consumer, GHES, local D1, 실제 Cloudflare D1/Workers Free, released consumer는 서로 다른 증거다. 필요한 외부 proof가 빠졌으면 로컬 단계만 완료하고 전체 완료는 미검증으로 남긴다. 공급된 환경이 없을 때 mock 결과를 실제 서비스 결과로 대체하지 않는다.
 
 ## 8. 진행 기록과 인계 형식
 
@@ -151,9 +152,8 @@ local unit/Action contract, 생성 fixture, 실제 GitHub consumer, GHES, S3-com
 Luna 모델, reasoning max로 Nanoom 작업을 시작해줘.
 브랜치는 codex/prediction-state-v3이고 이 브랜치의 문서 커밋을 포함한 checkout을 사용해.
 루트 LUNA_HANDOFF.md를 먼저 읽고 연결된 명세와 CHECKLIST를 확인해.
-계획만 다시 제안하지 말고 CHECKLIST의 첫 미완료 단계인 A6부터 수행해.
-각 단계 검증과 실행 기록을 남기며 A6을 완료하고,
-A7의 실제 artifact 사용자 경로를 확인한 후 S0~S6 서버 단계로 진행해.
+CHECKLIST에서 완료 표시되지 않은 실제 작업부터 수행해. A1~A6 local gates, OpenAPI 검증, Workers Free + D1 배포와 health/readiness는 이미 통과했다.
+A7 hosted producer/consumer 검증은 유효한 GitHub 인증이 가능해진 뒤 진행해. 서버 쪽은 S2의 응답 유실/손상 row/용량 경계 검증 후 S4 opt-in client를 진행하고 artifact 기본값과 cold fallback을 유지해. Cloudflare Workers Free와 D1을 쓰고 R2 구독이나 Workers Paid로 전환하지 마. 배포된 `workers.dev`를 재사용하고, 코드 변경 없이 D1 migration/deploy를 반복하지 마. 보호 route smoke와 CPU/D1 usage는 secret/client를 실제로 구성할 수 있을 때 측정해.
 기존 사용자 변경은 보존하고, 외부 환경이 없으면 해당 검증을 미실시로 정확히 기록해.
-merge/release/운영 배포는 하지 말고 검토 가능한 변경과 증거를 인계해.
+새 merge/release는 하지 말고 검토 가능한 변경과 증거를 인계해. Workers Free + D1 배포는 이미 완료된 상태다.
 ```
