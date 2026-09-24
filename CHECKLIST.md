@@ -238,7 +238,7 @@ run Action 회귀는 no execution 및 task failure가 assignment를 실패시키
 ```text
 단계: A4
 시작 HEAD: 9faa14024285e5ad5cc562d1e29e14b0bedd1389
-결과 commit: `622e1fa feat: implement PredictionState v3 artifact history`; A4 문서/ADR 보강 commit은 이후 별도로 기록한다.
+결과 commits: `622e1fa feat: implement PredictionState v3 artifact history`, `c7a9530 docs: record PredictionState v3 artifact decision`, `6ffb8ba fix: bound history metadata parsing by shared deadline`.
 시작 상태: tracked tree clean; 사용자 .opencode/ 미추적 1개 보존하고 stage하지 않음.
 ```
 
@@ -253,6 +253,7 @@ run Action 회귀는 no execution 및 task failure가 assignment를 실패시키
 - `cargo clippy --locked --all-targets --all-features -- -D warnings` — exit 0.
 - `cargo fmt --all --check` — exit 0.
 - `bash scripts/action-contract.sh` — exit 0; assignment/history lookup/Plan/checkout/completion contracts 포함.
+- `bash scripts/review-change.sh 9faa14024285e5ad5cc562d1e29e14b0bedd1389` — exit 0, 30 changed committed files, heuristics PASS; primary agent manual producer→history→affected review PASS.
 - `bash scripts/history-artifact-test.sh` — exit 0; push/PR run 선택, prediction-only planning download, updater-only model download, metadata+archive 합산 byte limit, deadline cancellation, no-change metadata I/O 0회.
 - `bash scripts/assignment-action-test.sh` — exit 0.
 - `bash -n` changed Action/test scripts, Ruby/Node YAML parse, `git diff --check` — exit 0.
