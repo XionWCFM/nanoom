@@ -1,8 +1,9 @@
 name: nanoom status
-description: Evaluate all needs results without artifacts
+description: Evaluate workflow results and require selected jobs to succeed
 inputs:
   needs: {description: "JSON from toJSON(needs) in the aggregate job", required: false}
   results: {description: "Optional newline-delimited job=result pairs; avoids passing large needs JSON", required: false}
+  requiredJobs: {description: "Optional JSON array of job IDs that must exist and succeed", required: false, default: '[]'}
 outputs:
   result:
     description: Canonical aggregate status result JSON
@@ -16,4 +17,5 @@ runs:
       env:
         NEEDS: ${{ inputs.needs }}
         RESULTS: ${{ inputs.results }}
+        REQUIRED_JOBS: ${{ inputs.requiredJobs }}
       run: bash "$GITHUB_ACTION_PATH/run.sh"

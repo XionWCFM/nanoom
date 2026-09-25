@@ -1,3 +1,4 @@
+use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::Path;
 use std::process::Command;
@@ -163,20 +164,51 @@ fn test_cli_version() {
 }
 
 #[test]
-fn test_history_merges_without_repository_config() {
+fn history_compiles_v3_measurements_and_reuses_its_published_model() {
     let dir = tempdir().unwrap();
-    let first = dir.path().join("first.json");
-    let second = dir.path().join("second.json");
-    let merged = dir.path().join("history.json");
-    fs::write(&first, r#"{"samples":[{"group":"ci","workspace":"a","task":"test","runner":"nx","environment":"linux","durationMs":10}]}"#).unwrap();
-    fs::write(&second, r#"{"samples":[{"group":"ci","workspace":"a","task":"test","runner":"nx","environment":"linux","durationMs":20}]}"#).unwrap();
+    let sample = dir.path().join("measurements.json");
+    let model = dir.path().join("model.json");
+    let prediction = dir.path().join("prediction.json");
+    write_json(
+        &sample,
+        &serde_json::json!({
+            "version": 3,
+            "scope": {
+                "repositoryKey": "github-12345",
+                "workflowPath": ".github/workflows/ci.yml",
+                "ref": {"kind":"push", "ref":"refs/heads/main"},
+                "group": "ci", "taskRunner": "nx", "timingEnvironment": "linux"
+            },
+            "runId": "123456789", "runAttempt": 1,
+            "observations": [
+                {"executionId":"exec-a","observedAtMs":1790208000000_i64,"group":"ci","workspace":"a","task":"test","shard":1,"totalShards":2,"taskRunner":"nx","timingEnvironment":"linux","durationMs":10},
+                {"executionId":"exec-b","observedAtMs":1790208000000_i64,"group":"ci","workspace":"a","task":"test","shard":1,"totalShards":2,"taskRunner":"nx","timingEnvironment":"linux","durationMs":20},
+                {"executionId":"exec-c","observedAtMs":1790208000000_i64,"group":"ci","workspace":"b","task":"test","shard":1,"totalShards":4,"taskRunner":"nx","timingEnvironment":"linux","durationMs":30}
+            ],
+            "preparationObservations": [
+                {"executionId":"prep-a","observedAtMs":1790208000000_i64,"packageManager":"pnpm","packageManagerVersion":"10.0.0","installMode":"focused","lockfileDigest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","checkoutDigest":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","workspaceSetDigest":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","durationMs":400}
+            ]
+        }),
+    );
+    let base_args = [
+        "history",
+        "--input",
+        sample.to_str().unwrap(),
+        "--model-output",
+        model.to_str().unwrap(),
+        "--prediction-output",
+        prediction.to_str().unwrap(),
+        "--model-artifact-name",
+        "nanoom-model-v3",
+        "--run-id",
+        "123456789",
+        "--run-attempt",
+        "1",
+        "--now-ms",
+        "1790208000000",
+    ];
     let output = Command::new(binary_path())
-        .args(["history", "--input"])
-        .arg(&first)
-        .arg("--input")
-        .arg(&second)
-        .arg("--output")
-        .arg(&merged)
+        .args(base_args)
         .current_dir(dir.path())
         .output()
         .unwrap();
@@ -186,25 +218,109 @@ fn test_history_merges_without_repository_config() {
         String::from_utf8_lossy(&output.stderr)
     );
     let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(result["sampleCount"], 2);
-    let history: serde_json::Value = serde_json::from_slice(&fs::read(merged).unwrap()).unwrap();
-    assert_eq!(history["samples"].as_array().unwrap().len(), 2);
+    assert_eq!(result["status"], "success");
+    assert_eq!(result["acceptedObservationCount"], 4);
+    let model_bytes = fs::read(&model).unwrap();
+    let expected_digest = format!("{:x}", Sha256::digest(&model_bytes));
+    let state: serde_json::Value = serde_json::from_slice(&model_bytes).unwrap();
+    assert_eq!(
+        state["states"].as_array().unwrap()[0]["entries"]
+            .as_array()
+            .unwrap()
+            .len(),
+        6
+    );
+    assert!(state.get("samples").is_none());
+    let table: serde_json::Value = serde_json::from_slice(&fs::read(&prediction).unwrap()).unwrap();
+    assert_eq!(
+        table["predictions"].as_array().unwrap()[0]["table"]["rows"]
+            .as_array()
+            .unwrap()
+            .len(),
+        6
+    );
+    assert_eq!(
+        table["predictions"][0]["modelArtifact"]["sha256"],
+        expected_digest
+    );
+
+    let second_model = dir.path().join("model-retry.json");
+    let second_prediction = dir.path().join("prediction-retry.json");
+    let output = Command::new(binary_path())
+        .args([
+            "history",
+            "--input",
+            sample.to_str().unwrap(),
+            "--previous-model",
+            model.to_str().unwrap(),
+            "--previous-prediction",
+            prediction.to_str().unwrap(),
+            "--previous-model-name",
+            "nanoom-model-v3",
+            "--model-output",
+            second_model.to_str().unwrap(),
+            "--prediction-output",
+            second_prediction.to_str().unwrap(),
+            "--model-artifact-name",
+            "nanoom-model-v3",
+            "--run-id",
+            "123456789",
+            "--run-attempt",
+            "1",
+            "--now-ms",
+            "1790211600000",
+        ])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(result["duplicateBatchCount"], 1);
+    assert_eq!(fs::read(model).unwrap(), fs::read(second_model).unwrap());
+    assert_eq!(
+        fs::read(prediction).unwrap(),
+        fs::read(second_prediction).unwrap()
+    );
 }
 
 #[test]
-fn test_history_rejects_corrupt_input() {
+fn history_ignores_legacy_samples_instead_of_converting_them() {
     let dir = tempdir().unwrap();
-    let corrupt = dir.path().join("corrupt.json");
-    fs::write(&corrupt, "not json").unwrap();
+    let legacy = dir.path().join("history-v2.json");
+    let model = dir.path().join("model.json");
+    let prediction = dir.path().join("prediction.json");
+    fs::write(&legacy, r#"{"samples":[{"durationMs":12000}]}"#).unwrap();
     let output = Command::new(binary_path())
-        .args(["history", "--input"])
-        .arg(&corrupt)
-        .arg("--output")
-        .arg(dir.path().join("history.json"))
+        .args([
+            "history",
+            "--input",
+            legacy.to_str().unwrap(),
+            "--model-output",
+            model.to_str().unwrap(),
+            "--prediction-output",
+            prediction.to_str().unwrap(),
+            "--model-artifact-name",
+            "nanoom-model-v3",
+            "--run-id",
+            "123456789",
+            "--run-attempt",
+            "1",
+            "--now-ms",
+            "1790208000000",
+        ])
         .output()
         .unwrap();
-    assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("Invalid config"));
+    assert!(output.status.success());
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(result["status"], "degraded");
+    assert_eq!(result["rejectedMeasurementFiles"], 1);
+    let state: serde_json::Value = serde_json::from_slice(&fs::read(model).unwrap()).unwrap();
+    assert_eq!(state["states"], serde_json::json!([]));
+    assert!(fs::metadata(prediction).unwrap().len() > 0);
 }
 
 #[test]
@@ -857,6 +973,29 @@ fn run_resolves_local_nx_from_nested_relative_cwd() {
     let result: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
     assert_eq!(result["status"], "success");
     assert_eq!(result["executions"][0]["runner"], "nx");
+}
+
+#[test]
+fn explicit_planned_run_filter_fails_when_no_workspace_matches() {
+    let dir = tempdir().unwrap();
+    setup_monorepo(dir.path());
+
+    let (success, stdout, stderr) = run_cli_parts(
+        dir.path(),
+        &[
+            "run",
+            "ci",
+            "test",
+            "--all",
+            "--filter",
+            "missing-workspace",
+            "--json",
+        ],
+        &[],
+    );
+
+    assert!(!success, "an explicit planned item must not become a no-op");
+    assert!(format!("{stdout}{stderr}").contains("no workspace matched"));
 }
 
 #[test]

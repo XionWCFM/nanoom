@@ -1,0 +1,305 @@
+name: History Server E2E
+
+on:
+  push:
+    branches: [codex/prediction-state-v3]
+    paths-ignore:
+      - CHECKLIST.md
+      - IMPLEMENTATION_PLAN.md
+      - LUNA_HANDOFF.md
+      - SPEC.md
+      - docs/**
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  affected:
+    runs-on: ubuntu-latest
+    outputs:
+      has_change: ${{ steps.affected.outputs.has_change }}
+      plan: ${{ steps.affected.outputs.plan }}
+      groups: ${{ steps.affected.outputs.groups }}
+      fixture_base: ${{ steps.fixture.outputs.base }}
+      fixture_head: ${{ steps.fixture.outputs.head }}
+    env:
+      NANOOM_LOCAL_BINARY: ${{ github.workspace }}/target/debug/nanoom
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build local Nanoom
+        run: cargo build --locked --bin nanoom
+      - id: fixture
+        name: Create immutable Yarn fixture
+        shell: bash
+        run: |
+          (cd "$RUNNER_TEMP" && bash "$GITHUB_WORKSPACE/.github/test-fixtures/setup-fixture.sh" --shards --distribution --change)
+          fixture="$RUNNER_TEMP/.fixture"
+          (cd "$fixture" && node .yarn/releases/yarn-4.11.0.cjs install --no-immutable)
+          git -C "$fixture" add yarn.lock
+          if ! git -C "$fixture" diff --cached --quiet; then git -C "$fixture" commit -q -m 'refresh fixture lockfile' --no-gpg-sign; fi
+          rm -rf "$fixture/node_modules"
+          echo "base=$(git -C "$fixture" rev-parse main)" >> "$GITHUB_OUTPUT"
+          echo "head=$(git -C "$fixture" rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          tar -cf "$RUNNER_TEMP/history-e2e-fixture.tar" -C "$RUNNER_TEMP" .fixture
+      - id: affected
+        uses: ./.github/actions/affected
+        with:
+          version: local
+          cwd: ${{ runner.temp }}/.fixture
+          config: nanoom.config.json
+          base: ${{ steps.fixture.outputs.base }}
+          head: ${{ steps.fixture.outputs.head }}
+          scheduler: artifact
+          historyBackend: server
+          historyServerUrl: https://nanoom-history.giljongyudev.workers.dev
+          historyServerToken: ${{ secrets.NANOOM_HISTORY_TOKEN }}
+          timingRunner: yarn
+          packageManager: yarn
+          timingEnvironment: 'runner-labels:["ubuntu-latest"]'
+      - name: Verify an affected plan was produced
+        env:
+          RESULT: ${{ steps.affected.outputs.result }}
+        run: jq -e '.status == "success" and .hasChange == true and .historyNeeded == true and (.historyScopes | length > 0)' <<< "$RESULT"
+      - uses: actions/upload-artifact@v4.6.2
+        with:
+          name: nanoom-history-e2e-fixture
+          path: ${{ runner.temp }}/history-e2e-fixture.tar
+          retention-days: 1
+          if-no-files-found: error
+
+  run:
+    needs: affected
+    if: needs.affected.outputs.has_change == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.affected.outputs.groups).ci }}
+    env:
+      NANOOM_LOCAL_BINARY: ${{ github.workspace }}/target/debug/nanoom
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build local Nanoom
+        run: cargo build --locked --bin nanoom
+      - name: Add Nanoom binary to PATH
+        run: echo "$GITHUB_WORKSPACE/target/debug" >> "$GITHUB_PATH"
+      - run: corepack enable
+      - uses: actions/download-artifact@v4.3.0
+        with:
+          name: ${{ fromJSON(needs.affected.outputs.plan).artifactName }}
+          path: ${{ runner.temp }}/nanoom-plan
+      - uses: actions/download-artifact@v4.3.0
+        with:
+          name: nanoom-history-e2e-fixture
+          path: ${{ runner.temp }}
+      - name: Extract fixture and select the assignment
+        id: select
+        shell: bash
+        env:
+          GITHUB_ACTION_PATH: ${{ github.workspace }}/.github/actions/prepare
+          PLAN: ${{ needs.affected.outputs.plan }}
+          PLAN_DIR: ${{ runner.temp }}/nanoom-plan
+          GROUP: ci
+          ASSIGNMENT_ID: ${{ matrix.assignmentId }}
+          REPOSITORY: ${{ github.repository }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          FIXTURE_SHA: ${{ needs.affected.outputs.fixture_head }}
+          GITHUB_JOB: run
+          MATRIX_INDEX: ${{ strategy.job-index }}
+        run: |
+          tar -xf "$RUNNER_TEMP/history-e2e-fixture.tar" -C "$RUNNER_TEMP"
+          GITHUB_SHA="$FIXTURE_SHA" bash "$GITHUB_ACTION_PATH/select.sh"
+          cwd=$(sed -n 's/^cwd=//p' "$GITHUB_OUTPUT")
+          mkdir -p "$(dirname "$cwd")"
+          git clone -q --no-checkout "$RUNNER_TEMP/.fixture" "$cwd"
+          git -C "$cwd" checkout -q "$FIXTURE_SHA"
+          (cd "$cwd" && yarn install --immutable)
+      - name: Run the validated assignment and emit real timing data
+        id: task
+        shell: bash
+        env:
+          GITHUB_ACTION_PATH: ${{ github.workspace }}/.github/actions/run
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+          CWD: ${{ steps.select.outputs.cwd }}
+          ASSIGNMENT_FILE: ${{ runner.temp }}/nanoom-plan/selected/assignment.json
+          PLAN: ${{ needs.affected.outputs.plan }}
+          FIXTURE_SHA: ${{ needs.affected.outputs.fixture_head }}
+          REPOSITORY: ${{ github.repository }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          GITHUB_JOB: run
+          MATRIX_INDEX: ${{ strategy.job-index }}
+          GITHUB_REPOSITORY_ID: ${{ github.repository_id }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+          GITHUB_REF: ${{ github.ref }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          TOOL: auto
+          PM: yarn
+          SCHEDULER: artifact
+          TIMING_ENVIRONMENT: ${{ matrix.timingEnvironment }}
+          COORDINATOR_URL: ''
+          COORDINATOR_TOKEN: ''
+        run: GITHUB_SHA="$FIXTURE_SHA" bash "$GITHUB_ACTION_PATH/run.sh"
+      - name: Upload the measurement artifact for History Action
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: ${{ steps.task.outputs.sample-name }}
+          path: ${{ steps.task.outputs.sample-path }}
+          retention-days: 1
+          if-no-files-found: error
+      - name: Verify the run emitted observations
+        env:
+          SAMPLE: ${{ steps.task.outputs.sample-path }}
+        run: jq -e '.version == 3 and (.observations | length > 0)' "$SAMPLE"
+
+  history:
+    needs: [affected, run]
+    runs-on: ubuntu-latest
+    env:
+      NANOOM_LOCAL_BINARY: ${{ github.workspace }}/target/debug/nanoom
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build local Nanoom
+        run: cargo build --locked --bin nanoom
+      - id: history
+        uses: ./.github/actions/history
+        with:
+          version: local
+          scheduler: artifact
+          historyBackend: server
+          historyServerUrl: https://nanoom-history.giljongyudev.workers.dev
+          historyServerToken: ${{ secrets.NANOOM_HISTORY_TOKEN }}
+      - name: Verify applied D1 merge
+        env:
+          RESULT: ${{ steps.history.outputs.result }}
+        run: jq -e '.status == "success" and .serverMerge.status == "merged" and .serverMerge.appliedBatchCount > 0' <<< "$RESULT"
+      - name: Clear measurement directory before replay
+        run: rm -rf "$RUNNER_TEMP/nanoom-current-measurements"
+      - id: history-replay
+        uses: ./.github/actions/history
+        with:
+          version: local
+          scheduler: artifact
+          historyBackend: server
+          historyServerUrl: https://nanoom-history.giljongyudev.workers.dev
+          historyServerToken: ${{ secrets.NANOOM_HISTORY_TOKEN }}
+      - name: Verify hosted duplicate replay was a no-op
+        env:
+          RESULT: ${{ steps.history-replay.outputs.result }}
+        run: jq -e '.status == "success" and .serverMerge.status == "merged" and .serverMerge.appliedBatchCount == 0 and .serverMerge.duplicateBatchCount > 0' <<< "$RESULT"
+
+  warm:
+    needs: [affected, history]
+    runs-on: ubuntu-latest
+    env:
+      NANOOM_LOCAL_BINARY: ${{ github.workspace }}/target/debug/nanoom
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build local Nanoom
+        run: cargo build --locked --bin nanoom
+      - name: Add Nanoom binary to PATH
+        run: echo "$GITHUB_WORKSPACE/target/debug" >> "$GITHUB_PATH"
+      - run: corepack enable
+      - uses: actions/download-artifact@v4.3.0
+        with:
+          name: nanoom-history-e2e-fixture
+          path: ${{ runner.temp }}
+      - name: Restore the fixture for warm affected analysis
+        run: tar -xf "$RUNNER_TEMP/history-e2e-fixture.tar" -C "$RUNNER_TEMP"
+      - id: affected
+        uses: ./.github/actions/affected
+        with:
+          version: local
+          cwd: ${{ runner.temp }}/.fixture
+          config: nanoom.config.json
+          base: ${{ needs.affected.outputs.fixture_base }}
+          head: ${{ needs.affected.outputs.fixture_head }}
+          scheduler: artifact
+          historyBackend: server
+          historyServerUrl: https://nanoom-history.giljongyudev.workers.dev
+          historyServerToken: ${{ secrets.NANOOM_HISTORY_TOKEN }}
+          timingRunner: yarn
+          packageManager: yarn
+          timingEnvironment: 'runner-labels:["ubuntu-latest"]'
+      - name: Verify warm prediction samples were consumed
+        id: choose
+        env:
+          RESULT: ${{ steps.affected.outputs.result }}
+          GROUPS: ${{ steps.affected.outputs.groups }}
+        run: |
+          jq -e '.scheduling.historyStatus == "loaded"' <<< "$RESULT"
+          assignment=$(jq -ce '[.ci.include[] | select((.predictionSources.sampleCount // 0) > 0)] | first // error("no warm assignment")' <<< "$GROUPS")
+          echo "assignment=$assignment" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v4.3.0
+        with:
+          name: ${{ fromJSON(steps.affected.outputs.plan).artifactName }}
+          path: ${{ runner.temp }}/nanoom-warm-plan
+      - name: Select the warm assignment and restore fixture checkout
+        id: select
+        shell: bash
+        env:
+          GITHUB_ACTION_PATH: ${{ github.workspace }}/.github/actions/prepare
+          PLAN: ${{ steps.affected.outputs.plan }}
+          PLAN_DIR: ${{ runner.temp }}/nanoom-warm-plan
+          GROUP: ci
+          ASSIGNMENT_ID: ${{ fromJSON(steps.choose.outputs.assignment).assignmentId }}
+          REPOSITORY: ${{ github.repository }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          FIXTURE_SHA: ${{ needs.affected.outputs.fixture_head }}
+          GITHUB_JOB: warm
+          MATRIX_INDEX: 0
+        run: |
+          GITHUB_SHA="$FIXTURE_SHA" bash "$GITHUB_ACTION_PATH/select.sh"
+          cwd=$(sed -n 's/^cwd=//p' "$GITHUB_OUTPUT")
+          mkdir -p "$(dirname "$cwd")"
+          git clone -q --no-checkout "$RUNNER_TEMP/.fixture" "$cwd"
+          git -C "$cwd" checkout -q "$FIXTURE_SHA"
+          (cd "$cwd" && yarn install --immutable)
+      - name: Execute a warm assignment
+        id: task
+        shell: bash
+        env:
+          GITHUB_ACTION_PATH: ${{ github.workspace }}/.github/actions/run
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+          CWD: ${{ steps.select.outputs.cwd }}
+          ASSIGNMENT_FILE: ${{ runner.temp }}/nanoom-warm-plan/selected/assignment.json
+          PLAN: ${{ steps.affected.outputs.plan }}
+          FIXTURE_SHA: ${{ needs.affected.outputs.fixture_head }}
+          REPOSITORY: ${{ github.repository }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          GITHUB_JOB: warm
+          MATRIX_INDEX: 0
+          GITHUB_REPOSITORY_ID: ${{ github.repository_id }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+          GITHUB_REF: ${{ github.ref }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          TOOL: auto
+          PM: yarn
+          SCHEDULER: artifact
+          TIMING_ENVIRONMENT: ${{ fromJSON(steps.choose.outputs.assignment).timingEnvironment }}
+          COORDINATOR_URL: ''
+          COORDINATOR_TOKEN: ''
+        run: GITHUB_SHA="$FIXTURE_SHA" bash "$GITHUB_ACTION_PATH/run.sh"
+      - name: Verify the warm run emitted measurements
+        env:
+          SAMPLE: ${{ steps.task.outputs.sample-path }}
+        run: jq -e '.version == 3 and (.observations | length > 0)' "$SAMPLE"

@@ -1,0 +1,84 @@
+name: nanoom prepare (GHES)
+description: Validate one Plan v1 assignment and create its isolated sparse checkout
+inputs:
+  plan: {description: "Plan reference output from nanoom affected", required: true}
+  group: {description: "Affected group in the Plan", required: true}
+  assignmentId: {description: "Assignment ID from the Plan matrix", required: true}
+  version: {description: "Action ref (version tag or latest), explicit release tag, or local", default: action}
+  releaseBaseUrl: {description: "HTTPS origin hosting Nanoom release assets", default: "https://github.com"}
+outputs:
+  plan: {description: "Original trusted Plan reference", value: "${{ inputs.plan }}"}
+  assignment-file: {description: "Validated assignment context file", value: "${{ steps.select.outputs.assignment-file }}"}
+  cwd: {description: "Isolated sparse checkout path", value: "${{ steps.select.outputs.cwd }}"}
+  head: {description: "Validated checkout commit", value: "${{ steps.checkout.outputs.head }}"}
+  group: {description: "Validated affected group", value: "${{ steps.select.outputs.group }}"}
+  assignment-id: {description: "Validated assignment ID", value: "${{ steps.select.outputs.assignment-id }}"}
+  result: {description: "Canonical prepare result", value: "${{ steps.checkout.outputs.result }}"}
+  prepared-at-ms: {description: "UTC millisecond timestamp at the start of the prepare action", value: "${{ steps.started.outputs.prepared-at-ms }}"}
+runs:
+  using: composite
+  steps:
+    - name: Record preparation start
+      id: started
+      shell: bash
+      run: |
+        source "$GITHUB_ACTION_PATH/../_setup/artifacts.sh"
+        echo "prepared-at-ms=$(nanoom_utc_now_ms)" >> "$GITHUB_OUTPUT"
+    - name: Set up nanoom
+      shell: bash
+      env:
+        REQUESTED: ${{ inputs.version }}
+        ACTION_REF: ${{ github.action_ref }}
+        API: ${{ github.api_url }}
+        RELEASE_BASE_URL: ${{ inputs.releaseBaseUrl }}
+        TOKEN: ${{ github.token }}
+        BINARY: ${{ env.NANOOM_LOCAL_BINARY }}
+      run: bash "$GITHUB_ACTION_PATH/../_setup/setup.sh"
+    - name: Download Plan v1 artifact
+      uses: actions/download-artifact@v3.1.0
+      with:
+        name: ${{ fromJSON(inputs.plan).artifactName }}
+        path: ${{ runner.temp }}/nanoom-plan-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}-${{ strategy.job-index || 0 }}
+    - name: Validate and select assignment
+      id: select
+      shell: bash
+      env:
+        PLAN: ${{ inputs.plan }}
+        PLAN_DIR: ${{ runner.temp }}/nanoom-plan-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}-${{ strategy.job-index || 0 }}
+        GROUP: ${{ inputs.group }}
+        ASSIGNMENT_ID: ${{ inputs.assignmentId }}
+        REPOSITORY: ${{ github.repository }}
+        WORKFLOW_REF: ${{ github.workflow_ref }}
+        RUN_ID: ${{ github.run_id }}
+        RUN_ATTEMPT: ${{ github.run_attempt }}
+        GITHUB_SHA: ${{ github.sha }}
+        GITHUB_JOB: ${{ github.job }}
+        MATRIX_INDEX: ${{ strategy.job-index || 0 }}
+      run: bash "$GITHUB_ACTION_PATH/../prepare/select.sh"
+    - name: Checkout exact Plan head with root manifests only
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ github.repository }}
+        ref: ${{ steps.select.outputs.head }}
+        token: ${{ github.token }}
+        path: .nanoom/${{ github.run_id }}/${{ github.run_attempt }}/${{ github.job }}/${{ strategy.job-index || 0 }}
+        fetch-depth: 1
+        persist-credentials: false
+        sparse-checkout: |
+          /*
+          !/*/
+        sparse-checkout-cone-mode: false
+    - name: Apply assignment cone checkout
+      id: checkout
+      shell: bash
+      env:
+        ASSIGNMENT_FILE: ${{ steps.select.outputs.assignment-file }}
+        PATHS_FILE: ${{ steps.select.outputs.paths-file }}
+        CWD: ${{ steps.select.outputs.cwd }}
+        GITHUB_SHA: ${{ steps.select.outputs.head }}
+        REPOSITORY: ${{ github.repository }}
+        WORKFLOW_REF: ${{ github.workflow_ref }}
+        RUN_ID: ${{ github.run_id }}
+        RUN_ATTEMPT: ${{ github.run_attempt }}
+        PLAN: ${{ inputs.plan }}
+      run: bash "$GITHUB_ACTION_PATH/../prepare/checkout.sh"

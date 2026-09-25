@@ -37,10 +37,16 @@ npm install --save-dev @nanoom/cli
 
 ```text
 nanoom affected --base <revision> [--head <revision>] [--history <json>] [--json]
+               [--plan-output <file> --plan-context <file>]
+nanoom plan select --input <file> --reference <file> --group <name>
+                   --assignment <id> --output-dir <directory>
 nanoom run <group> <task> [--filter <workspace>] [--all]
            [--shard N --total-shards N] [--continue-on-error] [--json]
 nanoom install [--package-manager auto|pnpm|yarn|npm] [--filter <workspace>]...
-nanoom history --input <sample-or-history.json>... --output <history.json>
+              [--filter-file <file>]
+nanoom history --input <measurement-v3.json>... --model-output <model-v3.json>
+               --prediction-output <prediction-v3.json> --model-artifact-name <name>
+               --run-id <id> --run-attempt <n>
 nanoom status <job,...> --results job=status,... [--json]
 nanoom schema [--output <file>]
 ```
@@ -70,52 +76,62 @@ Nanoom은 Nx/Turbo 설정을 읽지 않고 이 manifest들로 graph를 만들며
 configured workspace의 `package.json`이 삭제되거나 rename되면 현재 graph만으로 이전
 dependency를 복원하지 않고, 남아 있는 workspace 전체를 보수적으로 affected 처리합니다.
 
-각 matrix entry의 `checkout`은 affected workspace, 내부 dependency closure,
-`checkout.always`의 합집합입니다. run job은 이를 cone mode에 그대로 전달합니다.
-cone mode는 선택한 디렉터리와 root 파일을 함께 checkout하므로 lockfile과 root 설정은
-별도 pattern이 필요 없습니다.
+각 assignment의 checkout 경로는 affected workspace, 내부 dependency closure,
+`checkout.always`의 합집합입니다. `prepare` Action은 Plan artifact와 reference를 검증한 뒤
+정확한 Plan head를 `$GITHUB_WORKSPACE/.nanoom/<run>/<attempt>/<job>/<matrix-index>`에
+root-only non-cone checkout하고, 그 assignment의 paths 파일로 cone checkout을 적용합니다.
+선택한 디렉터리와 root 파일이 포함되므로 lockfile과 root 설정도 유지됩니다.
+
+정적 Action workflow는 상세 Plan 대신 짧은 reference와 group/assignmentId matrix를 전달합니다.
+소비 job에서 `prepare`가 내보낸 assignment file과 원래 Plan reference를 install/run에
+함께 전달하세요.
 
 ```yaml
-# affected job
-- uses: actions/checkout@v7
-  with:
-    fetch-depth: 1
-    sparse-checkout-cone-mode: false
-    sparse-checkout: |
-      /package.json
-      /nanoom.config.json
-      /packages/*/package.json
-      /tools/*/package.json
-
-# run matrix job env: self-hosted runner의 이전 worktree와 격리
-env:
-  NANOOM_WORKDIR: .nanoom/${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}-${{ strategy.job-index }}
-
-- uses: actions/checkout@v7
-  with:
-    path: ${{ env.NANOOM_WORKDIR }}
-    fetch-depth: 1
-    sparse-checkout-cone-mode: ${{ matrix.checkout.coneMode }}
-    sparse-checkout: ${{ matrix.checkout.sparseCheckout }}
-
-- uses: XionWCFM/nanoom/.github/actions/run@latest
-  with:
-    cwd: ${{ env.NANOOM_WORKDIR }}
-    matrix: ${{ toJSON(matrix) }}
-    group: ci
-    cleanupCheckout: true
+jobs:
+  run:
+    needs: affected
+    if: needs.affected.outputs.has_change == 'true'
+    strategy:
+      matrix: ${{ fromJSON(needs.affected.outputs.groups).ci.include }}
+    runs-on: ${{ matrix.runnerLabels || 'ubuntu-latest' }}
+    steps:
+      - id: prepare
+        uses: XionWCFM/nanoom/.github/actions/prepare@latest
+        with:
+          plan: ${{ needs.affected.outputs.plan }}
+          group: ${{ matrix.group }}
+          assignmentId: ${{ matrix.assignmentId }}
+      - id: install
+        uses: XionWCFM/nanoom/.github/actions/install@latest
+        with:
+          plan: ${{ needs.affected.outputs.plan }}
+          assignmentFile: ${{ steps.prepare.outputs.assignment-file }}
+          cwd: ${{ steps.prepare.outputs.cwd }}
+          packageManager: pnpm
+      - uses: XionWCFM/nanoom/.github/actions/run@latest
+        with:
+          plan: ${{ needs.affected.outputs.plan }}
+          assignmentFile: ${{ steps.prepare.outputs.assignment-file }}
+          cwd: ${{ steps.prepare.outputs.cwd }}
+          preparedAtMs: ${{ steps.prepare.outputs.prepared-at-ms }}
+          installResult: ${{ steps.install.outputs.result }}
+          cleanupCheckout: true
 ```
 
 `cleanupCheckout`은 명시적으로 켠 경우에만 동작하며, `cwd`가 `.nanoom/` 아래의
-격리 경로가 아니면 삭제를 거부합니다.
+격리 경로가 아니면 삭제를 거부합니다. 정적 install/run Action은 legacy inline matrix를
+받지 않습니다. 기존 `scheduler: http` 연속 coordinator는 별도 continuous-agent matrix 입력을
+유지합니다.
 
-`run --json`은 성공 실행마다 `workspace`, 실제 `runner`, `durationMs`를 냅니다. 첫 실패 뒤에는 새 작업을 시작하지 않고 `completed`, `failed`, `pending`을 남깁니다. `install`은 assignment의 workspace union을 한 번에 focused install할 수 있습니다.
+`run --json`은 성공 실행마다 `workspace`, 실제 `runner`, `durationMs`를 냅니다. 명시한 `--all --filter`가 workspace를 찾지 못하면 실패하며, run Action도 계획된 workspace 실행이 없으면 assignment를 실패시키고 후속 item을 시작하지 않습니다. 첫 작업 실패 뒤에는 `completed`, `failed`, `pending`을 남깁니다. static assignment의 빈 install은 거부합니다. `install`은 assignment의 workspace union을 한 번에 focused install하며, standalone no-filter install과 continuous scheduler의 전체 install은 유지됩니다.
 
 ## 실행시간 기반 정적 배치
 
-historical scheduler는 기본으로 켜져 있습니다. 같은 workflow와 branch의 마지막 성공 run에서 history를 읽고, exact key `group/workspace/task/shard/runner/environment`의 최근 성공 7개 median을 사용합니다. exact sample이 없으면 같은 group median, 그것도 없으면 가중치 `1`입니다.
+artifact history는 기본으로 켜져 있습니다. static Plan을 쓰는 artifact `run` Action의 성공 결과는 v3 measurement artifact를 만들고, `history` job이 현재 measurements와 이전 model을 병합해 ModelState와 작은 PredictionArtifact를 게시합니다. PredictionArtifact는 마지막 publish marker입니다. `affected`는 같은 workflow의 해당 branch/pull request에서 이전 성공 run을 찾고 compact prediction만 받습니다. PR은 PR scope를 먼저 보고 base branch scope를 fallback으로 사용합니다. raw measurements와 ModelState는 planning에 내려받지 않습니다.
 
-배치는 예상 runtime makespan을 먼저 최소화합니다. runtime이 같은 후보에서는 모든 assignment의 sparse checkout path 수 합계가 가장 작은 bucket을 선택해 중복 checkout을 줄입니다. `result.scheduling`의 `historyStatus`, `historySourceRunId`, `predictionSources`, `totalCheckoutPathCount`, `uniqueCheckoutPathCount`, `duplicatedCheckoutPathCount`로 근거를 확인할 수 있습니다.
+task prediction은 `(group, workspace, task, shard, totalShards, runner, environment)` exact key를 먼저 보고, 없으면 workspace를 제외한 동일 task/layout/runner/environment fallback을 확인합니다. key별 최근 30 UTC일 안의 최대 7개 일별 count/duration 집계로 7일 half-life 가중 평균을 계산합니다. 유효한 값이 없거나 history가 만료·손상·지연되면 cold weight `1`로 배분합니다. history lookup은 요청과 parse를 합쳐 최대 3초, metadata와 archive 수신량 합계 8 MiB, prediction JSON 8 MiB, archive 4 MiB로 제한합니다. 제한이나 네트워크 오류는 affected/task 결과를 실패시키지 않고 cold 배분을 유지합니다.
+
+배치는 configured distribution tier의 concurrency 상한 안에서 후보 assignment 수를 비교합니다. task와 preparation 이력이 모두 warm이면 preparation+task makespan, 총 runner time, sparse checkout 경로 수, assignment 수, 안정적인 배치 순서로 선택합니다. 후보는 1·2의 거듭제곱, 선택된 tier의 concurrency 설정값, 상한이며 중복은 제거합니다. task history가 cold이거나 후보 중 preparation 예측을 만들 수 없으면 상한 concurrency를 유지합니다. preparation exact key는 group/runner/environment/package manager/version/install mode/lockfile/checkout/workspace-set을 구분하고, fallback key는 checkout/workspace-set만 제외합니다. `affected`는 package-manager 명령을 실행하지 않고 root `package.json`의 `packageManager` 정확한 버전과 lockfile digest를 사용합니다. 선언과 Action의 `packageManager` 입력이 맞지 않거나 버전/lockfile을 확정할 수 없으면 cold-cap을 유지합니다. `result.scheduling`은 `automaticAssignmentCount`, `coldCapAssignmentCount`, `preparationPredictionSources`와 기존 `historyStatus`, `historySourceRunId`, `historyFetchMs`, `predictionSources`, checkout 경로 수를 제공합니다. 실제 CI 개선은 hosted cold→warm wall time과 real trace 오차를 확인하기 전까지 주장하지 않습니다. 배치와 artifact 결정은 [ADR-0014](docs/adr/0014-prediction-state-v3-artifact-history.md), 상세 wire/한도는 [PredictionState v3 명세](docs/prediction-model-spec.md)를 참고하세요.
 
 group 또는 distribution tier의 `runnerLabels`로 matrix job의 runner를 정할 수 있습니다. 배열은 fallback 순서가 아니라 모든 라벨을 만족해야 하는 AND 조건입니다. tier 설정이 group 설정을 덮어쓰며, 생략하면 workflow의 `ubuntu-latest` fallback을 사용합니다.
 
@@ -143,44 +159,118 @@ group 또는 distribution tier의 `runnerLabels`로 matrix job의 runner를 정�
 
 ```yaml
 strategy:
-  matrix: ${{ fromJSON(needs.affected.outputs.groups).ci.matrix }}
+  matrix: ${{ fromJSON(needs.affected.outputs.groups).ci.include }}
 runs-on: ${{ matrix.runnerLabels || 'ubuntu-latest' }}
 ```
 
 `timingEnvironment`을 생략하면 정렬된 runner label 배열로 안정적인 history identity를 만듭니다. 성능이 다른 runner가 같은 라벨 집합을 공유하는 autoscaled pool에서는 image/pool revision을 명시하세요. PR이 수정할 수 있는 config로 privileged self-hosted runner를 선택하면 신뢰되지 않은 코드를 그 runner에서 실행할 수 있으므로, fork PR은 고정 hosted runner 또는 격리된 pool만 사용하고 동적 label routing은 trusted push/`workflow_dispatch`에 제한하세요.
 
-첫 실행은 `bootstrap-fallback` cold scheduling으로 정상 실행됩니다. 성공한 `run`만 sample artifact를 올리고 표준 `history` job이 다음 실행용 artifact로 병합합니다. 이전 성공 run에 sample만 있고 merged history가 없으면 history job 누락으로 실패합니다. historical scheduling이 필요 없는 경우에만 affected/run/history 모두 `scheduler: off`를 명시합니다.
+첫 실행은 cold scheduling으로 정상 실행됩니다. history upload/merge가 실패하면 결과를 degraded로 표시하고 다음 실행은 cold로 진행합니다. 해당 affected group에 배분 선택지가 없으면 metadata를 조회하지 않고 `historyStatus: history_not_needed`로 기록합니다. 기능을 명시적으로 끄려면 affected/run/history에 `scheduler: off`를 설정하세요.
+
+## Plan v1 파일 CLI
+
+Plan v1 producer는 상세 계획을 파일에 저장하고 작은 reference/matrix JSON만 stdout에 출력합니다. context 파일에는 repository, workflow, run ID, producer attempt, planning job, 비교한 전체 base/head SHA, 실행 tool을 넣습니다.
+
+```bash
+nanoom affected --base "$BASE_SHA" --head "$HEAD_SHA" \
+  --plan-context plan-context.json --plan-output plan-v1.json > affected-result.json
+jq -c '.plan' affected-result.json > plan-reference.json
+nanoom plan select --input plan-v1.json --reference plan-reference.json \
+  --group ci --assignment ci-0001 --output-dir selected
+```
+
+`selected/assignment.json`에는 검증된 assignment context가, `selected/paths.txt`에는 sparse checkout 경로가 기록됩니다. selector는 계획 파일의 raw bytes SHA-256, schema, repository/workflow/run/head를 검증합니다. 재실행은 같은 run의 이전 producer attempt(`producerAttempt <= current.attempt`)만 재사용할 수 있으며 reference의 `current` identity는 실행 중인 caller가 제공해야 합니다. 각 group의 compact matrix는 최대 256 assignment, 전체 결과는 UTF-16 인코딩 1 MiB 이하입니다. 이를 넘으면 group과 이유를 출력하고 실패합니다. no-change는 assignment 0개인 정상 Plan입니다. 기존 `affected --json` 상세 report와 bounded Plan output은 함께 요청할 수 없습니다. GitHub.com affected는 Plan을 30일 artifact로 올리고 `prepare`는 official artifact download/checkout Action을 사용합니다. `affected-ghes`와 `prepare-ghes`는 GHES용 upload v3.2.2/download v3.1.0을 사용합니다.
+
+Planned install은 `nanoom install --filter-file FILE`로 non-empty JSON string array를 전달할 수 있습니다. 상대 경로는 working directory 기준입니다. JSON이 아니거나 배열이 아닌 값, 문자열이 아닌 값, 빈 문자열, 제어문자는 package manager를 실행하기 전에 오류가 됩니다. 기존 `--filter`와 동시 사용도 거부합니다. 두 옵션을 생략한 standalone `nanoom install`은 계속 root 전체 설치를 수행합니다.
 
 ```yaml
 - id: affected
   uses: XionWCFM/nanoom/.github/actions/affected@latest
-
-- uses: XionWCFM/nanoom/.github/actions/install@latest
   with:
-    matrix: ${{ toJSON(matrix) }}
+    packageManager: pnpm
+
+- id: prepare
+  uses: XionWCFM/nanoom/.github/actions/prepare@latest
+  with:
+    plan: ${{ needs.affected.outputs.plan }}
+    group: ${{ matrix.group }}
+    assignmentId: ${{ matrix.assignmentId }}
+
+- id: install
+  uses: XionWCFM/nanoom/.github/actions/install@latest
+  with:
+    plan: ${{ needs.affected.outputs.plan }}
+    assignmentFile: ${{ steps.prepare.outputs.assignment-file }}
+    cwd: ${{ steps.prepare.outputs.cwd }}
     packageManager: pnpm
 
 - uses: XionWCFM/nanoom/.github/actions/run@latest
   with:
-    matrix: ${{ toJSON(matrix) }}
-    group: ci
+    plan: ${{ needs.affected.outputs.plan }}
+    assignmentFile: ${{ steps.prepare.outputs.assignment-file }}
+    cwd: ${{ steps.prepare.outputs.cwd }}
+    preparedAtMs: ${{ steps.prepare.outputs.prepared-at-ms }}
+    installResult: ${{ steps.install.outputs.result }}
+    cleanupCheckout: true
 
 - uses: XionWCFM/nanoom/.github/actions/history@latest
 ```
 
 history job은 run 성공 뒤 실행하고 aggregate `status`의 dependency에 포함합니다. 작은 workflow는 `${{ toJSON(needs) }}`를 그대로 전달할 수 있습니다. 대규모 matrix에서는 outputs까지 포함한 JSON이 runner process 한도를 넘을 수 있으므로 `results`에 필요한 job 결과만 `job=${{ needs.job.result }}` 형식으로 전달합니다.
 
-기본 `run`과 `history`는 GitHub.com용 `actions/upload-artifact@v4.6.2`를 사용합니다. GHES에서는 같은 입력과 결과 계약을 공유하는 `run-ghes`와 `history-ghes`가 Node 24 보안 백포트 `actions/upload-artifact@v3.2.2`를 사용합니다. composite Action의 `uses:`는 파라미터화할 수 없고 조건부 step도 사전 다운로드되므로 진입점을 분리했으며 서버를 자동 감지하지 않습니다. v3는 Actions Runner `2.327.1` 이상이 필요합니다. GitHub-hosted timing environment는 OS/architecture, self-hosted는 OS/architecture/runner name으로 분리됩니다. autoscaled pool은 안정적인 pool 또는 image revision을 `timingEnvironment`로 지정하세요.
+기본 `affected`, `run`, `history`, `prepare`는 GitHub.com용 artifact v4 Action을 사용합니다. GHES에서는 `affected-ghes`, `prepare-ghes`, `run-ghes`, `history-ghes`가 upload v3.2.2/download v3.1.0을 사용합니다. composite Action의 `uses:`는 파라미터화할 수 없고 조건부 step도 사전 다운로드되므로 진입점을 분리했으며 서버를 자동 감지하지 않습니다. v3는 Actions Runner `2.327.1` 이상이 필요합니다. GitHub-hosted timing environment는 OS/architecture, self-hosted는 OS/architecture/runner name으로 분리됩니다. autoscaled pool은 안정적인 pool 또는 image revision을 `timingEnvironment`로 지정하세요.
 
 ```yaml
 # GHES only; GitHub.com은 기본 run/history를 그대로 사용합니다.
+- uses: XionWCFM/nanoom/.github/actions/affected-ghes@latest
+  with:
+    packageManager: pnpm
+- id: prepare
+  uses: XionWCFM/nanoom/.github/actions/prepare-ghes@latest
+  with:
+    plan: ${{ needs.affected.outputs.plan }}
+    group: ${{ matrix.group }}
+    assignmentId: ${{ matrix.assignmentId }}
+
+- id: install
+  uses: XionWCFM/nanoom/.github/actions/install@latest
+  with:
+    plan: ${{ needs.affected.outputs.plan }}
+    assignmentFile: ${{ steps.prepare.outputs.assignment-file }}
+    cwd: ${{ steps.prepare.outputs.cwd }}
+    packageManager: pnpm
+
 - uses: XionWCFM/nanoom/.github/actions/run-ghes@latest
   with:
-    matrix: ${{ toJSON(matrix) }}
-    group: ci
+    plan: ${{ needs.affected.outputs.plan }}
+    assignmentFile: ${{ steps.prepare.outputs.assignment-file }}
+    cwd: ${{ steps.prepare.outputs.cwd }}
+    preparedAtMs: ${{ steps.prepare.outputs.prepared-at-ms }}
+    installResult: ${{ steps.install.outputs.result }}
+    cleanupCheckout: true
 
 - uses: XionWCFM/nanoom/.github/actions/history-ghes@latest
 ```
+
+조건부 matrix의 `skipped`는 no-change일 때만 정상입니다. positive plan에서 `run` job이 누락되거나 skip되어도 aggregate가 실패하도록 단일 `ci` group 예제에 `requiredJobs`를 설정합니다. no-change면 빈 배열을 전달해 의도한 skip을 허용합니다.
+
+```yaml
+jobs:
+  status:
+    if: always()
+    needs: [affected, run, history]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: XionWCFM/nanoom/.github/actions/status@latest
+        with:
+          results: |
+            affected=${{ needs.affected.result }}
+            run=${{ needs.run.result }}
+            history=${{ needs.history.result }}
+          requiredJobs: ${{ needs.affected.outputs.has_change == 'true' && '["run"]' || '[]' }}
+```
+
+여러 group을 별도 job으로 실행하면 각 group의 `groups.<name>.hasChange`가 참일 때만 대응 job ID를 `requiredJobs`에 넣으세요. 한 group만 변경됐는데 다른 group job까지 요구하는 정적 배열을 전달하면 정상 no-change group도 실패합니다.
 
 ## HTTP continuous assignment
 
@@ -195,7 +285,7 @@ history job은 run 성공 뒤 실행하고 aggregate `status`의 dependency에 �
 
 ## 경계와 검증
 
-`affected` Action이 GitHub event를 explicit `--base`/`--head`로 변환하고 CLI는 플랫폼 독립적으로 계산합니다. `status`는 timing/history/coordinator를 해석하지 않고 `needs`만 집계합니다. Task DAG, remote task cache, flaky retry, agent type routing, Nx assignment rules와 공식 SaaS/server는 v0.3.0 범위가 아닙니다.
+`affected` Action이 GitHub event를 explicit `--base`/`--head`로 변환하고 CLI는 플랫폼 독립적으로 계산합니다. `status`는 timing/history/coordinator를 해석하지 않고 `needs` 결과를 집계하며, caller가 지정한 `requiredJobs`만 추가로 성공을 요구합니다. Task DAG, remote task cache, flaky retry, agent type routing, Nx assignment rules와 공식 SaaS/server는 v0.3.0 범위가 아닙니다.
 
 설정 schema는 `nanoom schema --output nanoom.schema.json`으로 생성합니다. v0.5.0의 GHES history와 checkout-cost 결정은 [ADR-0012](docs/adr/0012-ghes-history-checkout-cost.md)에 기록되어 있습니다.
 

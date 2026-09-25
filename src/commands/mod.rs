@@ -2,6 +2,7 @@ pub mod affected;
 pub mod cache_key;
 pub mod history;
 pub mod install;
+pub mod plan;
 pub mod run;
 pub mod status;
 

@@ -57,20 +57,59 @@ jobs:
   matrix:
     runs-on: ubuntu-latest
     outputs:
+      plan: ${{ steps.affected.outputs.plan }}
       groups: ${{ steps.affected.outputs.groups }}
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
       - id: affected
         uses: XionWCFM/nanoom/.github/actions/affected@main
+        with:
+          packageManager: pnpm
+          timingRunner: turbo
 
   test:
     needs: matrix
+    if: needs.matrix.outputs.groups != '' && fromJSON(needs.matrix.outputs.groups).ci.hasChange
     strategy:
-      matrix: ${{ fromJSON(needs.matrix.outputs.groups).ci.matrix }}
+      matrix: ${{ fromJSON(needs.matrix.outputs.groups).ci.include }}
     runs-on: ${{ matrix.runnerLabels || 'ubuntu-latest' }}
     steps:
-      - uses: actions/checkout@v4
-      - run: npm install -g @nanoom/cli && pnpm install
-      - run: nanoom run ci ${{ matrix.task }} ${{ matrix.shard && format('--shard {0} --total-shards {1}', matrix.shard, 3) || '' }}
+      - id: prepare
+        uses: XionWCFM/nanoom/.github/actions/prepare@latest
+        with:
+          plan: ${{ needs.matrix.outputs.plan }}
+          group: ci
+          assignmentId: ${{ matrix.assignmentId }}
+      - id: install
+        uses: XionWCFM/nanoom/.github/actions/install@latest
+        with:
+          plan: ${{ needs.matrix.outputs.plan }}
+          assignmentFile: ${{ steps.prepare.outputs.assignment-file }}
+          cwd: ${{ steps.prepare.outputs.cwd }}
+          packageManager: pnpm
+      - uses: XionWCFM/nanoom/.github/actions/run@latest
+        with:
+          plan: ${{ needs.matrix.outputs.plan }}
+          assignmentFile: ${{ steps.prepare.outputs.assignment-file }}
+          cwd: ${{ steps.prepare.outputs.cwd }}
+          preparedAtMs: ${{ steps.prepare.outputs.prepared-at-ms }}
+          installResult: ${{ steps.install.outputs.result }}
+          packageManager: pnpm
+          monorepoTool: turbo
+          cleanupCheckout: true
+
+  status:
+    if: always()
+    needs: [matrix, test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: XionWCFM/nanoom/.github/actions/status@latest
+        with:
+          results: |
+            matrix=${{ needs.matrix.result }}
+            test=${{ needs.test.result }}
+          requiredJobs: ${{ needs.matrix.outputs.groups != '' && fromJSON(needs.matrix.outputs.groups).ci.hasChange && '["test"]' || '[]' }}
 ```
+
+이 workflow는 `ci` group을 하나의 Turbo matrix job으로 실행합니다. Nx consumer도 같은 Plan/prepare/install 흐름을 쓰고 `timingRunner: nx`, `monorepoTool: nx`로 실행기를 맞춥니다. package manager가 pnpm이면 `packageManager: pnpm`은 그대로 둡니다. Nx/Turbo task graph 설정은 각 도구의 설정 파일에서 관리합니다.

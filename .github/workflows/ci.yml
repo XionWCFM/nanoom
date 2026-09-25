@@ -123,6 +123,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       has_change: ${{ steps.affected.outputs.has_change }}
+      plan: ${{ steps.affected.outputs.plan }}
       groups: ${{ steps.affected.outputs.groups }}
       result: ${{ steps.affected.outputs.result }}
     env:
@@ -144,19 +145,27 @@ jobs:
           base: main
           head: HEAD
           timingRunner: yarn
+      - name: Download Plan v1 artifact
+        uses: actions/download-artifact@v4.3.0
+        with:
+          name: ${{ fromJSON(steps.affected.outputs.plan).artifactName }}
+          path: ${{ runner.temp }}/nanoom-plan
       - name: Test affected matrix contract
         env:
           GROUPS: ${{ steps.affected.outputs.groups }}
           RESULT: ${{ steps.affected.outputs.result }}
-        run: bash scripts/verify-affected-report.sh
+          PLAN_FILE: ${{ runner.temp }}/nanoom-plan/plan-v1.json
+        run: bash scripts/verify-affected-report.sh "$PLAN_FILE"
 
   fixture-run:
     name: Fixture ${{ matrix.assignmentId }}
     needs: fixture-affected
+    if: needs.fixture-affected.outputs.has_change == 'true'
     runs-on: ${{ matrix.runnerLabels || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.fixture-affected.outputs.groups).ci.matrix }}
+      matrix:
+        include: ${{ fromJSON(needs.fixture-affected.outputs.groups).ci.include }}
     env:
       NANOOM_LOCAL_BINARY: ${{ github.workspace }}/target/release/nanoom
       FIXTURE_LOG: ${{ github.workspace }}/.fixture/result.log
@@ -170,56 +179,63 @@ jobs:
         run: cargo build --locked --release
       - name: Create Yarn Berry fixture
         run: bash .github/test-fixtures/setup-fixture.sh --shards --distribution --change
-      - id: install
-        uses: ./.github/actions/install
+      - name: Download affected Plan v1 artifact
+        uses: actions/download-artifact@v4.3.0
         with:
-          version: local
-          cwd: .fixture
-          packageManager: yarn
-          matrix: ${{ toJSON(matrix) }}
+          name: ${{ fromJSON(needs.fixture-affected.outputs.plan).artifactName }}
+          path: ${{ runner.temp }}/nanoom-plan
+      - name: Select this assignment
+        env:
+          PLAN_DIR: ${{ runner.temp }}/nanoom-plan
+          ASSIGNMENT_ID: ${{ matrix.assignmentId }}
+        run: |
+          ./target/release/nanoom plan select \
+            --input "$PLAN_DIR/plan-v1.json" \
+            --reference "$PLAN_DIR/plan-reference.json" \
+            --group ci \
+            --assignment "$ASSIGNMENT_ID" \
+            --output-dir "$RUNNER_TEMP/nanoom-assignment"
+          jq -c '[.items[].name] | unique' \
+            "$RUNNER_TEMP/nanoom-assignment/assignment.json" \
+            > "$RUNNER_TEMP/nanoom-assignment/filters.json"
       - name: Verify root and workspace dependencies
         shell: bash
-        run: while IFS= read -r name; do node .fixture/verify-install.js "$name"; done < <(jq -r '[.items[].name] | unique[]' <<< '${{ toJSON(matrix) }}')
-      - name: Verify install result
         env:
-          RESULT: ${{ steps.install.outputs.result }}
-        run: jq -e '.status == "success" and .cli.scope.dependencyClosure and .cli.scope.devDependencies and .command != ""' <<< "$RESULT"
-      - id: task
-        uses: ./.github/actions/run
-        with:
-          version: local
-          cwd: .fixture
-          packageManager: yarn
-          monorepoTool: turbo
-          matrix: ${{ toJSON(matrix) }}
-          group: ci
-      - name: Verify run result
+          ASSIGNMENT_FILE: ${{ runner.temp }}/nanoom-assignment/assignment.json
+        run: |
+          ./target/release/nanoom -C .fixture -c nanoom.config.json install \
+            --package-manager yarn \
+            --filter-file "$RUNNER_TEMP/nanoom-assignment/filters.json" \
+            --json > "$RUNNER_TEMP/nanoom-install-result.json"
+          jq -e '.status == "success" and .scope.dependencyClosure and .scope.devDependencies and .command != ""' \
+            "$RUNNER_TEMP/nanoom-install-result.json"
+          while IFS= read -r name; do
+            node .fixture/verify-install.js "$name"
+          done < <(jq -r '[.items[].name] | unique[]' "$ASSIGNMENT_FILE")
+      - name: Run every planned item
         env:
-          RESULT: ${{ steps.task.outputs.result }}
-        run: jq -e '.status == "success" and .results[0].cli.status == "success" and .results[0].command != "" and .reason != "" and (.results[0].cli.executions[0].durationMs >= 0)' <<< "$RESULT"
-
-  fixture-history:
-    name: Fixture timing history
-    needs: fixture-run
-    runs-on: ubuntu-latest
-    env:
-      NANOOM_LOCAL_BINARY: ${{ github.workspace }}/target/release/nanoom
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - run: cargo build --locked --release
-      - id: history
-        uses: ./.github/actions/history
-        with:
-          version: local
-      - env:
-          RESULT: ${{ steps.history.outputs.result }}
-        run: jq -e '.status == "success" and .scheduler == "artifact" and (.cli.sampleCount >= 4)' <<< "$RESULT"
+          ASSIGNMENT_FILE: ${{ runner.temp }}/nanoom-assignment/assignment.json
+        shell: bash
+        run: |
+          while IFS= read -r item; do
+            group=$(jq -r '.group // "ci"' <<< "$item")
+            task=$(jq -er '.task' <<< "$item")
+            name=$(jq -er '.name' <<< "$item")
+            args=(-C .fixture -c nanoom.config.json run "$group" "$task" --all --filter "$name" --json --runner yarn)
+            shard=$(jq -r '.shard // empty' <<< "$item")
+            if [[ -n "$shard" ]]; then
+              args+=(--shard "$shard" --total-shards "$(jq -er '.totalShards' <<< "$item")")
+            fi
+            result=$(./target/release/nanoom "${args[@]}")
+            jq -e --arg name "$name" \
+              '.status == "success" and ([.executions[].workspace] | index($name) != null)' \
+              <<< "$result"
+          done < <(jq -c '.items[]' "$ASSIGNMENT_FILE")
 
   fixture-aggregate:
     name: Fixture aggregate status
     if: always()
-    needs: [fixture-affected, fixture-run, fixture-history]
+    needs: [fixture-affected, fixture-run]
     runs-on: ubuntu-latest
     env:
       NANOOM_LOCAL_BINARY: ${{ github.workspace }}/target/release/nanoom
@@ -237,8 +253,8 @@ jobs:
           results: |
             fixture-affected=${{ needs.fixture-affected.result }}
             fixture-run=${{ needs.fixture-run.result }}
-            fixture-history=${{ needs.fixture-history.result }}
+          requiredJobs: ${{ needs.fixture-affected.outputs.has_change == 'true' && '["fixture-run"]' || '[]' }}
       - name: Verify status result
         env:
           RESULT: ${{ steps.aggregate.outputs.result }}
-        run: jq -e '.status == "success" and (.jobs | length) == 3 and .reason != ""' <<< "$RESULT"
+        run: jq -e '.status == "success" and (.jobs | length) == 2 and .reason != ""' <<< "$RESULT"

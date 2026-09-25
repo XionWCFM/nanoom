@@ -2,7 +2,7 @@ use clap::{Parser, Subcommand};
 use nanoom::{
     commands::{
         affected::AffectedArgs, cache_key::CacheKeyArgs, history::HistoryArgs,
-        install::InstallArgs, run::RunArgs, status::StatusArgs,
+        install::InstallArgs, plan::PlanArgs, run::RunArgs, status::StatusArgs,
     },
     Config, Result,
 };
@@ -42,6 +42,9 @@ enum Commands {
 
     #[command(about = "Merge successful task timing samples")]
     History(HistoryArgs),
+
+    #[command(about = "Validate and select a Plan v1 assignment")]
+    Plan(PlanArgs),
 
     #[command(about = "Aggregate job status")]
     Status(StatusArgs),
@@ -119,6 +122,10 @@ async fn run_cli(cli: Cli) -> Result<()> {
         return nanoom::commands::history::execute(args);
     }
 
+    if let Commands::Plan(args) = cli.command {
+        return nanoom::commands::plan::execute(args, &cwd);
+    }
+
     let config = Config::load(&config_path, &cwd)?;
 
     dispatch(cli.command, &config, &cwd).await
@@ -130,6 +137,7 @@ async fn dispatch(command: Commands, config: &Config, cwd: &std::path::Path) -> 
         Commands::Run(args) => nanoom::commands::run::execute(args, config, cwd).await,
         Commands::Install(args) => nanoom::commands::install::execute(args, config, cwd).await,
         Commands::History(args) => nanoom::commands::history::execute(args),
+        Commands::Plan(args) => nanoom::commands::plan::execute(args, cwd),
         Commands::Status(args) => nanoom::commands::status::execute(args, config).await,
         Commands::Schema { .. } => Ok(()),
         Commands::CacheKey(args) => nanoom::commands::cache_key::execute(args, cwd),

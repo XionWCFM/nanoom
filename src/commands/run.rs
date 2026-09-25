@@ -53,6 +53,7 @@ struct TaskConfig {
 struct TaskExecution {
     workspace: String,
     runner: String,
+    started_at_ms: u64,
     duration_ms: u64,
 }
 
@@ -107,6 +108,12 @@ pub async fn execute(args: RunArgs, config: &Config, cwd: &std::path::Path) -> R
     };
 
     if projects.is_empty() {
+        if args.all && args.filter.is_some() {
+            return Err(Error::ConfigValidation(format!(
+                "no workspace matched explicit --all --filter for group '{}' and task '{}'",
+                args.group, args.task
+            )));
+        }
         if args.json {
             println!(
                 "{}",
@@ -349,6 +356,12 @@ async fn run_task(
         cmd.env(key, value);
     }
 
+    let started_at_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+        .try_into()
+        .unwrap_or(u64::MAX);
     let started = Instant::now();
     let status = if json {
         crate::commands::run_streamed(&mut cmd).await?
@@ -367,6 +380,7 @@ async fn run_task(
     Ok(TaskExecution {
         workspace: project.name.clone(),
         runner: program,
+        started_at_ms,
         duration_ms: started.elapsed().as_millis().try_into().unwrap_or(u64::MAX),
     })
 }
@@ -601,7 +615,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn test_execute_no_matching_projects_prints_message() {
+    async fn test_execute_explicit_filter_fails_when_no_projects_match() {
         let dir = tempdir().unwrap();
         setup_workspace(dir.path());
         let config = make_config(vec!["packages/*".to_string()]);
@@ -622,7 +636,9 @@ mod tests {
         )
         .await;
 
-        result.unwrap();
+        assert!(
+            matches!(result, Err(Error::ConfigValidation(message)) if message.contains("no workspace matched explicit --all --filter"))
+        );
     }
 
     #[tokio::test]

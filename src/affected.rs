@@ -447,28 +447,95 @@ pub fn generate_matrix_with_history(
     runner: &str,
     environment: &str,
 ) -> serde_json::Value {
+    generate_matrix_using(output, |group_name, group_output, distribution| {
+        crate::scheduler::assign_with_config(
+            group_name,
+            &group_output.workspaces,
+            distribution.concurrency,
+            history,
+            runner,
+            environment,
+            (
+                distribution
+                    .runner_labels
+                    .clone()
+                    .or_else(|| group_output.runner_labels.clone()),
+                distribution
+                    .timing_environment
+                    .clone()
+                    .or_else(|| group_output.timing_environment.clone()),
+            ),
+        )
+    })
+}
+
+pub fn generate_matrix_with_prediction_index(
+    output: &AffectedOutput,
+    predictions: &crate::prediction::PredictionIndex,
+    context: Option<&crate::prediction::PredictionContext>,
+    runner: &str,
+    environment: &str,
+    now_ms: u64,
+) -> serde_json::Value {
+    generate_matrix_with_prediction_index_and_preparation(
+        output,
+        predictions,
+        context,
+        runner,
+        environment,
+        None,
+        now_ms,
+    )
+}
+
+pub fn generate_matrix_with_prediction_index_and_preparation(
+    output: &AffectedOutput,
+    predictions: &crate::prediction::PredictionIndex,
+    context: Option<&crate::prediction::PredictionContext>,
+    runner: &str,
+    environment: &str,
+    preparation_context: Option<&crate::prediction::PreparationContext>,
+    now_ms: u64,
+) -> serde_json::Value {
+    generate_matrix_using(output, |group_name, group_output, distribution| {
+        crate::scheduler::assign_with_prediction_index_auto(
+            group_name,
+            &group_output.workspaces,
+            distribution.concurrency,
+            predictions,
+            context,
+            runner,
+            environment,
+            (
+                distribution
+                    .runner_labels
+                    .clone()
+                    .or_else(|| group_output.runner_labels.clone()),
+                distribution
+                    .timing_environment
+                    .clone()
+                    .or_else(|| group_output.timing_environment.clone()),
+            ),
+            &distribution.concurrency_candidates,
+            preparation_context,
+            now_ms,
+        )
+    })
+}
+
+fn generate_matrix_using(
+    output: &AffectedOutput,
+    mut assign: impl FnMut(
+        &str,
+        &GroupOutput,
+        &crate::scheduler::SelectedTier,
+    ) -> Vec<crate::scheduler::Assignment>,
+) -> serde_json::Value {
     let mut matrix = serde_json::Map::new();
 
     for (group_name, group_output) in &output.group {
         if let Some(distribution) = &group_output.distribution {
-            let assignments = crate::scheduler::assign_with_config(
-                group_name,
-                &group_output.workspaces,
-                distribution.concurrency,
-                history,
-                runner,
-                environment,
-                (
-                    distribution
-                        .runner_labels
-                        .clone()
-                        .or_else(|| group_output.runner_labels.clone()),
-                    distribution
-                        .timing_environment
-                        .clone()
-                        .or_else(|| group_output.timing_environment.clone()),
-                ),
-            );
+            let assignments = assign(group_name, group_output, distribution);
             matrix.insert(
                 group_name.clone(),
                 serde_json::json!({ "include": assignments }),
@@ -527,4 +594,86 @@ pub fn generate_matrix_for_group(output: &AffectedOutput, group_name: &str) -> s
         .get(group_name)
         .cloned()
         .unwrap_or_else(|| serde_json::json!({ "include": [] }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::explain_affected;
+    use crate::config::Config;
+    use crate::workspace::Workspace;
+
+    #[test]
+    fn affected_reasons_cover_direct_global_structural_and_transitive_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        for (name, dependencies) in [
+            (
+                "app",
+                serde_json::json!({"@repo/mid":"workspace:*","external":"^1.0.0"}),
+            ),
+            (
+                "mid",
+                serde_json::json!({"@repo/core":"workspace:*","@repo/app":"workspace:*"}),
+            ),
+            ("core", serde_json::json!({"@repo/mid":"workspace:*"})),
+            ("unrelated", serde_json::json!({})),
+        ] {
+            let path = dir.path().join("packages").join(name);
+            std::fs::create_dir_all(&path).unwrap();
+            std::fs::write(
+                path.join("package.json"),
+                serde_json::to_vec(&serde_json::json!({
+                    "name": format!("@repo/{name}"),
+                    "version":"1.0.0",
+                    "dependencies":dependencies
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+        }
+        let config: Config = serde_json::from_value(serde_json::json!({
+            "group":{"ci":{"tasks":["test"]}},
+            "workspace":{"include":["packages/*"]}
+        }))
+        .unwrap();
+        let workspace = Workspace::discover(&config, dir.path()).unwrap();
+        let direct_file = dir.path().join("packages/core/src/index.ts");
+
+        let reasons = explain_affected(&workspace, &[direct_file], &[], &[], dir.path());
+        assert_eq!(reasons["@repo/core"].kind, "direct");
+        assert_eq!(reasons["@repo/mid"].kind, "transitiveDependent");
+        assert_eq!(
+            reasons["@repo/app"].dependency_path,
+            ["@repo/app", "@repo/mid", "@repo/core"]
+        );
+        assert!(!reasons.contains_key("@repo/unrelated"));
+
+        let global = explain_affected(
+            &workspace,
+            &[dir.path().join("pnpm-lock.yaml")],
+            &[],
+            &["pnpm-lock.yaml".into()],
+            dir.path(),
+        );
+        assert_eq!(global.len(), 4);
+        assert!(global
+            .values()
+            .all(|reason| reason.kind == "globalDependency"));
+
+        let structural = explain_affected(
+            &workspace,
+            &[],
+            &[dir.path().join("packages/core/package.json")],
+            &[],
+            dir.path(),
+        );
+        assert_eq!(structural.len(), 4);
+        assert!(structural
+            .values()
+            .all(|reason| reason.kind == "workspaceManifestStructure"));
+        assert_eq!(
+            structural["@repo/core"].changed_files,
+            ["packages/core/package.json"]
+        );
+        assert!(explain_affected(&workspace, &[], &[], &[], dir.path()).is_empty());
+    }
 }

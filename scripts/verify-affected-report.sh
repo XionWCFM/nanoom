@@ -1,14 +1,35 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-jq -e '.ci.hasChange == true and (.ci.matrix.include | length) == 2' <<<"$GROUPS" >/dev/null
-jq -e '[.ci.matrix.include[].items[].name] | sort == ["@fixture/app", "@fixture/core", "@fixture/shared", "@fixture/shared"]' <<<"$GROUPS" >/dev/null
-jq -e '[.ci.matrix.include[].items[] | select(.name == "@fixture/shared") | .shard] | sort == [1,2]' <<<"$GROUPS" >/dev/null
-jq -e '[.ci.matrix.include[] | has("assignmentId") and has("predictedDurationMs") and has("checkoutPathCount") and has("predictionSources") and has("reason")] | all' <<<"$GROUPS" >/dev/null
-jq -e '[.ci.matrix.include[] | .checkout.coneMode == true and (.checkout.sparseCheckout | length > 0)] | all' <<<"$GROUPS" >/dev/null
-jq -e '[.ci.matrix.include[] | .runnerLabels == ["ubuntu-latest"] and (.timingEnvironment | startswith("runner-labels:"))] | all' <<<"$GROUPS" >/dev/null
-jq -e '.scheduling.objective == ["predictedRuntimeMakespanMs","totalCheckoutPathCount","targetBucketRuntimeMs","assignmentId"] and .scheduling.totalCheckoutPathCount >= .scheduling.uniqueCheckoutPathCount and .scheduling.duplicatedCheckoutPathCount == (.scheduling.totalCheckoutPathCount - .scheduling.uniqueCheckoutPathCount) and ((.scheduling.historyStatus == "loaded" and ((.scheduling.predictionSources.sampleCount == 0 and .scheduling.predictionSources.cold > 0) or (.scheduling.predictionSources.sampleCount > 0 and (.scheduling.predictionSources.exact + .scheduling.predictionSources.group) > 0))) or (.scheduling.historyStatus == "bootstrap-fallback" and .scheduling.predictionSources.cold > 0))' <<<"$RESULT" >/dev/null
-jq -e '[.ci.matrix.include[].items[] | has("path") or has("label")] | any | not' <<<"$GROUPS" >/dev/null
-jq -e '.affected.has_change and (.affected.diagnostics.comparison.baseCommit | length) == 40 and (.affected.diagnostics.comparison.headCommit | length) == 40 and .affected.group.ci.totalWorkspaces == 4 and .affected.group.ci.affectedWorkspaces == 3 and .affected.group.ci.affectedPercent == 75 and .affected.group.ci.distribution.name == "full" and .affected.group.ci.distribution.maxAffectedPercent == 100 and .affected.group.ci.distribution.concurrency == 2 and .groups.ci == {hasChange:true,assignmentCount:2}' <<<"$RESULT" >/dev/null
+plan=${1:?usage: verify-affected-report.sh plan-v1.json}
 
-echo "affected assignment contract: 4 work items in 2 deterministic buckets"
+jq -e '.ci.include | length == 2' <<<"$GROUPS" >/dev/null
+jq -e '[.ci.include[].assignmentId] | sort == ["ci-1", "ci-2"]' <<<"$GROUPS" >/dev/null
+jq -e '[.ci.include[] | has("assignmentId") and has("predictedDurationMs") and has("predictionSources") and has("predictionReason") and has("runnerLabels") and has("timingEnvironment")] | all' <<<"$GROUPS" >/dev/null
+jq -e '[.ci.include[] | .runnerLabels == ["ubuntu-latest"] and (.timingEnvironment | startswith("runner-labels:"))] | all' <<<"$GROUPS" >/dev/null
+
+jq -e '
+  .version == 1
+  and .hasChange == true
+  and .taskRunner == "yarn"
+  and .assignmentCount == 2
+  and .itemCount == 4
+  and ([.groups.ci.assignments[].items[].name] | sort) == ["@fixture/app", "@fixture/core", "@fixture/shared", "@fixture/shared"]
+  and ([.groups.ci.assignments[].items[] | select(.name == "@fixture/shared") | .shard] | sort) == [1, 2]
+  and ([.groups.ci.assignments[] as $assignment | $assignment.items[] as $item | select(($assignment.checkoutPaths | index($item.path)) == null)] | length) == 0
+' "$plan" >/dev/null
+
+jq -e '
+  .status == "success"
+  and .hasChange == true
+  and .historyNeeded == true
+  and .groupCount == 1
+  and .assignmentCount == 2
+  and .itemCount == 4
+  and .timingRunner == "yarn"
+  and (.historyStatus == "loaded" or .historyStatus == "fallback" or .historyStatus == "disabled")
+  and .scheduling.historyBackend == "artifact"
+  and .scheduling.historyStatus == .historyStatus
+' <<<"$RESULT" >/dev/null
+
+echo "affected Plan contract: 4 work items in 2 validated assignments"

@@ -1,15 +1,19 @@
 name: nanoom run
 description: Run one authoritative matrix entry
 inputs:
-  matrix: {description: "One matrix entry or include wrapper emitted by nanoom affected", required: true}
-  group: {description: "Affected group that selected this matrix entry", required: true}
+  plan: {description: "Original affected Plan reference used to anchor assignment-file validation", default: ''}
+  assignmentFile: {description: "Validated assignment-file output from nanoom prepare for static work", default: ''}
+  preparedAtMs: {description: "prepared-at-ms output from the matching prepare action", default: ''}
+  installResult: {description: "Canonical result output from the matching nanoom install action", default: ''}
+  matrix: {description: "scheduler=http continuous agent only; static inline matrices are not accepted", default: ''}
+  group: {description: "Affected group for a scheduler=http continuous agent", default: ''}
   packageManager: {description: "Package manager override: auto, pnpm, yarn, or npm", default: auto}
   monorepoTool: {description: "Runner override: auto, turbo, nx, pnpm, yarn, or npm", default: auto}
   scheduler: {description: "Timing backend selected by affected: artifact (default), off, or http", default: artifact}
   timingEnvironment: {description: "Stable hardware identity used for timing history", default: ''}
   cleanupCheckout: {description: "Delete cwd after the run when it is an isolated .nanoom/ checkout", default: 'false'}
   coordinatorUrl: {description: "HTTPS coordinator base URL for scheduler=http", default: ''}
-  cwd: {description: "Consumer working directory", default: .}
+  cwd: {description: "Prepared checkout path; defaults to the run/job/matrix isolated checkout when assignmentFile is set", default: ''}
   version: {description: "Action ref (version tag or latest), explicit release tag, or local for repository tests", default: action}
   releaseBaseUrl: {description: "HTTPS origin hosting Nanoom release assets; use your GitHub Enterprise Server URL when it mirrors releases", default: "https://github.com"}
 outputs:
@@ -34,6 +38,10 @@ runs:
       shell: bash
       env:
         MATRIX: ${{ inputs.matrix }}
+        ASSIGNMENT_FILE: ${{ inputs.assignmentFile }}
+        PREPARED_AT_MS: ${{ inputs.preparedAtMs }}
+        INSTALL_RESULT: ${{ inputs.installResult }}
+        PLAN: ${{ inputs.plan }}
         GROUP: ${{ inputs.group }}
         PM: ${{ inputs.packageManager }}
         TOOL: ${{ inputs.monorepoTool }}
@@ -43,27 +51,44 @@ runs:
         TIMING_ENVIRONMENT: ${{ inputs.timingEnvironment || (runner.environment == 'self-hosted' && format('{0}-{1}-{2}', runner.os, runner.arch, runner.name) || format('{0}-{1}', runner.os, runner.arch)) }}
         COORDINATOR_URL: ${{ inputs.coordinatorUrl }}
         COORDINATOR_TOKEN: ${{ env.NANOOM_COORDINATOR_TOKEN }}
+        GITHUB_SHA: ${{ github.sha }}
+        REPOSITORY: ${{ github.repository }}
+        GITHUB_REPOSITORY_ID: ${{ github.repository_id }}
+        GITHUB_SERVER_URL: ${{ github.server_url }}
+        GITHUB_REF: ${{ github.ref }}
+        GITHUB_EVENT_NAME: ${{ github.event_name }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        PR_HEAD_REPOSITORY_ID: ${{ github.event.pull_request.head.repo.id }}
+        PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+        WORKFLOW_REF: ${{ github.workflow_ref }}
+        RUN_ID: ${{ github.run_id }}
+        RUN_ATTEMPT: ${{ github.run_attempt }}
+        MATRIX_INDEX: ${{ strategy.job-index || 0 }}
       run: bash "$GITHUB_ACTION_PATH/run.sh"
     - name: Upload successful timing sample
-      if: inputs.scheduler == 'artifact' && steps.run.outcome == 'success'
+      id: upload
+      if: inputs.scheduler == 'artifact' && steps.run.outcome == 'success' && steps.run.outputs.sample-path != ''
+      continue-on-error: true
       uses: actions/upload-artifact@v4.6.2
       with:
         name: ${{ steps.run.outputs.sample-name }}
         path: ${{ steps.run.outputs.sample-path }}
-        retention-days: 30
+        retention-days: 1
         if-no-files-found: error
     - name: Record timing upload cost
       id: final
-      if: inputs.scheduler == 'artifact' && steps.run.outcome == 'success'
+      if: always() && inputs.scheduler == 'artifact' && steps.run.outcome == 'success' && steps.run.outputs.sample-path != ''
       shell: bash
       env:
         BASE_RESULT: ${{ steps.run.outputs.result }}
         UPLOAD_STARTED: ${{ steps.run.outputs.upload-started }}
-      run: echo "result=$(jq -c --argjson ms "$(( ($(date +%s) - UPLOAD_STARTED) * 1000 ))" '. + {telemetryUploadMs:$ms}' <<<"$BASE_RESULT")" >> "$GITHUB_OUTPUT"
+        UPLOAD_OUTCOME: ${{ steps.upload.outcome }}
+      run: echo "result=$(jq -c --argjson ms "$(( ($(date +%s) - UPLOAD_STARTED) * 1000 ))" --arg outcome "$UPLOAD_OUTCOME" '. + {telemetryUploadMs:$ms,measurementArtifactStatus:(if $outcome == "success" then "uploaded" else "degraded" end)}' <<<"$BASE_RESULT")" >> "$GITHUB_OUTPUT"
     - name: Clean isolated checkout
       if: ${{ always() && inputs.cleanupCheckout == 'true' }}
       shell: bash
       env:
         CLEANUP_CHECKOUT: ${{ inputs.cleanupCheckout }}
-        CWD: ${{ inputs.cwd }}
+        CWD: ${{ inputs.cwd || format('{0}/.nanoom/{1}/{2}/{3}/{4}', github.workspace, github.run_id, github.run_attempt, github.job, strategy.job-index || 0) }}
       run: bash "$GITHUB_ACTION_PATH/cleanup.sh"

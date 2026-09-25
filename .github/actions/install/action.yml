@@ -1,7 +1,9 @@
 name: nanoom install
 description: Focused dependency installation for a matrix entry
 inputs:
-  matrix: {description: "One matrix entry or include wrapper emitted by nanoom affected", required: true}
+  plan: {description: "Original affected Plan reference used to anchor assignment-file validation", default: ''}
+  assignmentFile: {description: "Validated assignment-file output from nanoom prepare for static work", default: ''}
+  matrix: {description: "scheduler=http continuous agent only; static inline matrices are not accepted", default: ''}
   packageManager: {description: "Package manager override: auto, pnpm, or yarn", default: auto}
   cwd: {description: "Consumer working directory", default: .}
   version: {description: "Action ref (version tag or latest), explicit release tag, or local for repository tests", default: action}
@@ -28,6 +30,13 @@ runs:
       shell: bash
       env:
         MATRIX: ${{ inputs.matrix }}
+        ASSIGNMENT_FILE: ${{ inputs.assignmentFile }}
+        PLAN: ${{ inputs.plan }}
         PM: ${{ inputs.packageManager }}
         CWD: ${{ inputs.cwd }}
+        GITHUB_SHA: ${{ github.sha }}
+        REPOSITORY: ${{ github.repository }}
+        WORKFLOW_REF: ${{ github.workflow_ref }}
+        RUN_ID: ${{ github.run_id }}
+        RUN_ATTEMPT: ${{ github.run_attempt }}
       run: bash "$GITHUB_ACTION_PATH/run.sh"

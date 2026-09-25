@@ -10,10 +10,12 @@ keywords = ["monorepo", "task-runner", "affected", "git", "workspace"]
 categories = ["development-tools", "command-line-utilities"]
 
 [workspace]
-members = []
+members = ["crates/prediction-core"]
+default-members = [".", "crates/prediction-core"]
 
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
+nanoom-prediction-core = { path = "crates/prediction-core" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 globset = "0.4"
