@@ -334,11 +334,11 @@ fi
 compact_matrix=$(jq -c 'with_entries(.value.include |= map(if .items then {assignmentId,predictedDurationMs,checkoutPathCount,predictionSources,reason,checkout,runnerLabels,timingEnvironment,items:[.items[] | {group,name,task,shard,totalShards} | with_entries(select(.value != null))]} elif .mode == "continuous" then {agentId,runId,mode,checkout,runnerLabels,timingEnvironment} else {name,task,shard,totalShards,checkoutPathCount,runnerLabels,timingEnvironment} | with_entries(select(.value != null)) end))' <<<"$matrix")
 groups=$(jq -c 'with_entries(.value = {hasChange:((.value.include|length)>0),matrix:.value})' <<<"$compact_matrix"); has=$(jq -r 'any(to_entries[]; .value.include | length > 0)' <<<"$compact_matrix")
 result=$(jq -c --argjson groups "$groups" '. + {groups:($groups | with_entries(.value |= {hasChange,assignmentCount:(.matrix.include|length)}))}' <<<"$report")
-matrix=$(jq -c '{include:[.[] | (.include // .matrix.include // [])[]]}' <<<"$groups")
-output_bytes=$(printf 'has_change=%s\ngroups=%s\nmatrix=%s\nresult=%s\n' "$has" "$groups" "$matrix" "$result" | iconv -f UTF-8 -t UTF-16LE | wc -c | tr -d ' ')
+combined_matrix=$(jq -c '{include:[.[] | (.include // .matrix.include // [])[]]}' <<<"$groups")
+output_bytes=$(printf 'has_change=%s\ngroups=%s\nmatrix=%s\nresult=%s\n' "$has" "$groups" "$combined_matrix" "$result" | iconv -f UTF-8 -t UTF-16LE | wc -c | tr -d ' ')
 (( output_bytes <= 1048576 )) || { echo "Action outputs exceed GitHub's 1 MiB UTF-16 limit: $output_bytes bytes" >&2; false; }
 echo "has_change=$has" >> "$GITHUB_OUTPUT"; echo "groups=$groups" >> "$GITHUB_OUTPUT"; echo "result=$result" >> "$GITHUB_OUTPUT"
-echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+echo "matrix=$combined_matrix" >> "$GITHUB_OUTPUT"
 assignments=$(jq '[to_entries[].value.include[]] | length' <<<"$matrix"); items=$(jq '[.affected.group[].workspaces[]] | length' <<<"$report"); elapsed=$(( $(date +%s) - started ))
 printf '  Resolved revisions\n    source: %s\n    base: %s\n    head: %s\n    successful run: %s\n  Result\n    ✓ affected work items=%s; assignments=%s; history=%s; elapsed=%ss\n  Final JSON\n    %s\n' "$revision_source" "$resolved_base" "$resolved_head" "${successful_run_id:-none}" "$items" "$assignments" "$history_status" "$elapsed" "$result"
 { echo '### nanoom affected'; echo; echo "**Revision:** \`$revision_source\` $resolved_base → $resolved_head (successful run: ${successful_run_id:-none})"; echo; echo "**Result:** $items work items in $assignments assignments; history \`$history_status\`."; echo; echo '| Group | Total | Affected | Percent | Tier | Concurrency |'; echo '|---|---:|---:|---:|---|---:|'; jq -r '.affected.group | to_entries[] | "| \(.key) | \(.value.totalWorkspaces) | \(.value.affectedWorkspaces) | \(.value.affectedPercent) | \(.value.distribution.name // "legacy") | \(.value.distribution.concurrency // (.value.workspaces|length)) |"' <<<"$report"; } >> "$GITHUB_STEP_SUMMARY"
