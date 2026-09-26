@@ -48,6 +48,11 @@ export FAKE_REQUESTS="$tmp/requests" FAKE_ARTIFACTS="$tmp/artifacts.json"
 export FAKE_PREDICTION_ZIP="$tmp/prediction.zip" FAKE_MODEL_ZIP="$tmp/model.zip"
 source "$root/.github/actions/_setup/artifacts.sh"
 
+# Release artifact listing has no history budget; do not reject it as exhausted.
+unset NANOOM_HISTORY_DEADLINE_MS NANOOM_HISTORY_BYTES NANOOM_HISTORY_MAX_BYTES
+release_artifacts=$(nanoom_run_artifacts 88)
+jq -e '.artifacts | length == 3' <<<"$release_artifacts" >/dev/null
+
 nanoom_history_budget_start 10 8388608
 prediction_metadata=$(nanoom_prediction_model_metadata "$tmp/prediction/prediction-v3.json")
 jq -e '.name == "nanoom-model-v3-88-1" and .sha256 == "ada20f873e74812b9e056d9134c73ae06102c808739d5fd1c73f0b40e800302b"' <<<"$prediction_metadata" >/dev/null

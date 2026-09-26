@@ -105,6 +105,7 @@ grep -q '../prepare/select.sh' .github/actions/prepare-ghes/action.yml
 grep -q 'original Plan reference output' .github/actions/_setup/assignment.sh
 grep -q 'actions/checkout@v4' .github/actions/prepare/action.yml
 grep -q 'sparse-checkout set --cone --stdin' .github/actions/prepare/checkout.sh
+# Cover both unbudgeted release artifact listing and bounded history reads.
 bash scripts/history-artifact-test.sh
 bash scripts/plan-action-test.sh
 bash scripts/revision-action-test.sh
