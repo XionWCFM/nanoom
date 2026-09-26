@@ -27,7 +27,7 @@ schemars = { version = "0.8", features = ["derive"] }
 serde_yaml = "0.9"
 toml = "0.8"
 sha2 = "0.10"
-nodejs-semver = "5.0"
+nodejs-semver = "6.0"
 
 [dev-dependencies]
 tempfile = "3.9"
