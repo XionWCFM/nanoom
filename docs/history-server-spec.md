@@ -73,6 +73,8 @@ Raw observation 배열은 저장하지 않는다. 최신 7 observed day와 최�
 
 Hosted E2E는 실제 Actions artifact transport와 hosted D1 read/write, duplicate replay의 무해성, warm reuse를 검증했다. 이 fixture 결과를 실제 consumer repository의 전체 CI makespan이나 실제 workload 성능으로 일반화하지 않는다. Worker CPU 10ms 및 Cloudflare free quota 사용량도 아직 계측하지 않았다.
 
+로컬 `scripts/history-server-e2e-test.sh`는 `worker-build@0.8.5`를 준비하고 Worker 소스를 빌드한 뒤 임시 D1 서버를 시작한다. 새 checkout에서도 기존의 무시된 빌드 산출물 없이 실행할 수 있어야 한다.
+
 ## 6. 참고
 
 - [Workers pricing](https://developers.cloudflare.com/workers/platform/pricing/) · [Workers limits](https://developers.cloudflare.com/workers/platform/limits/) · [Rust Workers](https://developers.cloudflare.com/workers/languages/rust/)

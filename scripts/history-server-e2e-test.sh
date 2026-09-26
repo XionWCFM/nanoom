@@ -15,6 +15,8 @@ trap cleanup EXIT
 for tool in cargo curl git jq node npx shasum uuidgen; do command -v "$tool" >/dev/null || { echo "missing required tool: $tool" >&2; exit 1; }; done
 wrangler() { npm_config_cache="$tmp/npm-cache" npx --yes wrangler@4.138.0 "$@"; }
 cargo build --locked --bin nanoom >/dev/null
+cargo install --locked worker-build --version 0.8.5
+(cd "$root/crates/history-worker" && worker-build --release)
 mkdir -p "$tmp/bin"
 export PATH="$root/target/debug:$tmp/bin:$PATH" NO_PROXY=127.0.0.1,localhost no_proxy=127.0.0.1,localhost
 cat > "$tmp/bin/yarn" <<'SH'
