@@ -1,5 +1,9 @@
 # @nanoom/cli
 
+## 0.7.1
+
+- Allow release artifact listing without a history lookup budget while retaining bounded history reads.
+
 ## 0.7.0
 
 - Provide semantic matrix names and exact source SHA/sparse checkout patterns from the affected Plan.

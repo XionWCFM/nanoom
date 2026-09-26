@@ -98,6 +98,10 @@ nanoom_history_remaining() {
 }
 
 nanoom_history_timeout() {
+  if [[ -z ${NANOOM_HISTORY_DEADLINE_MS:-} ]]; then
+    "$@"
+    return $?
+  fi
   local remaining
   remaining=$(nanoom_history_remaining) || return 124
   if command -v timeout >/dev/null 2>&1; then
@@ -116,6 +120,7 @@ except subprocess.TimeoutExpired:
 
 nanoom_history_charge_bytes() {
   local bytes=$1
+  [[ -n ${NANOOM_HISTORY_MAX_BYTES:-} ]] || return 0
   (( bytes >= 0 && NANOOM_HISTORY_BYTES + bytes <= NANOOM_HISTORY_MAX_BYTES )) || return 1
   NANOOM_HISTORY_BYTES=$((NANOOM_HISTORY_BYTES + bytes))
 }
@@ -160,7 +165,7 @@ nanoom_run_artifacts() {
       budget_options+=(--max-time "$remaining" --max-filesize 1048576)
     fi
     response=$(curl --fail --silent --show-error \
-      "${budget_options[@]}" \
+      ${budget_options[@]+"${budget_options[@]}"} \
       -H "Authorization: Bearer $TOKEN" \
       -H 'Accept: application/vnd.github+json' \
       "$API/repos/$REPOSITORY/actions/runs/$run_id/artifacts?per_page=100&page=$page")
