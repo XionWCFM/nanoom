@@ -8,7 +8,11 @@ static_plan=false
 preparation_observation_status=skipped
 if [[ -n ${ASSIGNMENT_FILE:-} ]]; then
   if [[ -z "$CWD" || "$CWD" == . ]]; then
-    CWD="$GITHUB_WORKSPACE/.nanoom/$RUN_ID/$RUN_ATTEMPT/$GITHUB_JOB/${MATRIX_INDEX:-0}"
+    if [[ -n ${INSTALL_RESULT:-} ]]; then
+      CWD=$(jq -er '.cwd | select(type == "string" and length > 0)' <<<"$INSTALL_RESULT")
+    else
+      CWD="$GITHUB_WORKSPACE/.nanoom/$RUN_ID/$RUN_ATTEMPT/$GITHUB_JOB/${MATRIX_INDEX:-0}"
+    fi
     ACTION_CWD=$CWD
   fi
   source "$GITHUB_ACTION_PATH/../_setup/assignment.sh"

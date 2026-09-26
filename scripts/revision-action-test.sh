@@ -51,56 +51,40 @@ run_action() {
 }
 
 export FAKE_CURL_LOG="$tmp/curl.log" FAKE_NANOOM_ARGS="$tmp/nanoom.log"
-export FAKE_CURL_RESPONSE="{\"workflow_runs\":[{\"id\":87,\"head_sha\":\"$head\",\"conclusion\":\"success\",\"event\":\"push\",\"created_at\":\"2026-09-01T00:00:00Z\"},{\"id\":88,\"head_sha\":\"$base\",\"conclusion\":\"success\",\"event\":\"push\",\"created_at\":\"2026-09-01T00:00:00Z\"},{\"id\":99,\"head_sha\":\"$head\",\"conclusion\":\"success\",\"event\":\"push\",\"created_at\":\"2026-09-01T01:00:00Z\"}]}"
-run_action "$tmp/output" "$tmp/summary" >/dev/null
-jq -e --arg base "$base" --arg head "$head" '.revisionResolution.baseSource == "lastSuccessfulPush" and .revisionResolution.baseCommit == $base and .revisionResolution.headCommit == $head and .revisionResolution.successfulRunId == 88' <(sed -n 's/^result=//p' "$tmp/output") >/dev/null
+export FAKE_CURL_RESPONSE='{}'
+run_action "$tmp/output" "$tmp/summary" push "$base" >/dev/null
+jq -e --arg base "$base" --arg head "$head" '.revisionResolution.baseSource == "pushBefore" and .revisionResolution.baseCommit == $base and .revisionResolution.headCommit == $head and .revisionResolution.successfulRunId == null' <(sed -n 's/^result=//p' "$tmp/output") >/dev/null
 grep -q -- "--base $base --head $head" "$tmp/nanoom.log"
-grep -q "lastSuccessfulPush" "$tmp/summary"
-grep -q "actions/workflows/.github%2Fworkflows%2Fci.yml/runs" "$tmp/curl.log"
+test ! -s "$tmp/curl.log"
 
 export BASE_OVERRIDE="$base"
 run_action "$tmp/explicit-output" "$tmp/explicit-summary" >/dev/null
-test ! -s "$tmp/curl.log"
-jq -e '.revisionResolution.baseSource == "explicit" and .revisionResolution.successfulRunId == null' <(sed -n 's/^result=//p' "$tmp/explicit-output") >/dev/null
+jq -e '.revisionResolution.baseSource == "explicit"' <(sed -n 's/^result=//p' "$tmp/explicit-output") >/dev/null
 unset BASE_OVERRIDE
 
-export FAKE_CURL_RESPONSE='{"workflow_runs":[]}'
-run_action "$tmp/pr-output" "$tmp/pr-summary" pull_request main >/dev/null
+for event in pull_request merge_group; do
+  run_action "$tmp/$event-output" "$tmp/$event-summary" "$event" "$base" >/dev/null
+  test ! -s "$tmp/curl.log"
+done
+jq -e '.revisionResolution.baseSource == "pullRequestBase"' <(sed -n 's/^result=//p' "$tmp/pull_request-output") >/dev/null
+jq -e '.revisionResolution.baseSource == "mergeGroupBase"' <(sed -n 's/^result=//p' "$tmp/merge_group-output") >/dev/null
+
+for invalid in '' 0000000000000000000000000000000000000000 --all; do
+  if run_action "$tmp/invalid-output" "$tmp/invalid-summary" push "$invalid" >/dev/null 2>&1; then
+    echo "invalid event base unexpectedly succeeded: $invalid" >&2; exit 1
+  fi
+  test ! -s "$tmp/nanoom.log"
+done
+if run_action "$tmp/dispatch-output" "$tmp/dispatch-summary" workflow_dispatch >/dev/null 2>&1; then
+  echo 'dispatch without explicit base unexpectedly succeeded' >&2; exit 1
+fi
+
+# Real shallow Git fetch proves the event base is obtained even with depth 1.
+git clone -q --depth=1 "file://$tmp/repo" "$tmp/shallow"
+mv "$tmp/repo" "$tmp/origin"
+mv "$tmp/shallow" "$tmp/repo"
+git -C "$tmp/repo" remote set-url origin "file://$tmp/origin"
+run_action "$tmp/shallow-output" "$tmp/shallow-summary" push "$base" >/dev/null
+test "$(git -C "$tmp/repo" rev-parse "$base^{commit}")" = "$base"
 test ! -s "$tmp/curl.log"
-jq -e '.revisionResolution.baseSource == "pullRequestBase" and .revisionResolution.successfulRunId == null' <(sed -n 's/^result=//p' "$tmp/pr-output") >/dev/null
-
-run_action "$tmp/merge-output" "$tmp/merge-summary" merge_group main >/dev/null
-test ! -s "$tmp/curl.log"
-jq -e '.revisionResolution.baseSource == "mergeGroupBase" and .revisionResolution.successfulRunId == null' <(sed -n 's/^result=//p' "$tmp/merge-output") >/dev/null
-
-export FAKE_CURL_RESPONSE='{"workflow_runs":[]}'
-if run_action "$tmp/missing-output" "$tmp/missing-summary" >/dev/null 2>&1; then
-  echo 'missing successful push unexpectedly succeeded' >&2
-  exit 1
-fi
-test ! -s "$tmp/nanoom.log"
-
-export FAKE_CURL_RESPONSE='not-json'
-if run_action "$tmp/malformed-output" "$tmp/malformed-summary" >/dev/null 2>&1; then
-  echo 'malformed API response unexpectedly succeeded' >&2
-  exit 1
-fi
-test ! -s "$tmp/nanoom.log"
-
-export FAKE_CURL_FAIL=1
-if run_action "$tmp/api-error-output" "$tmp/api-error-summary" >/dev/null 2>&1; then
-  echo 'API error unexpectedly succeeded' >&2
-  exit 1
-fi
-test ! -s "$tmp/nanoom.log"
-unset FAKE_CURL_FAIL
-
-unrelated=$(printf 'unrelated\n' | git -C "$tmp/repo" commit-tree "$(git -C "$tmp/repo" rev-parse HEAD^{tree})")
-export FAKE_CURL_RESPONSE="{\"workflow_runs\":[{\"id\":87,\"head_sha\":\"$unrelated\",\"conclusion\":\"success\",\"event\":\"push\",\"created_at\":\"2026-09-01T00:00:00Z\"}]}"
-if run_action "$tmp/nonancestor-output" "$tmp/nonancestor-summary" >/dev/null 2>&1; then
-  echo 'non-ancestor successful push unexpectedly succeeded' >&2
-  exit 1
-fi
-test ! -s "$tmp/nanoom.log"
-
-echo 'revision action contract passed'
+echo 'event revision and shallow fetch action contracts passed'

@@ -78,7 +78,12 @@ grep -q 'runner.environment.*self-hosted' .github/actions/{affected,run}/action.
 grep -q 'GITHUB_STEP_SUMMARY' .github/actions/status/run.sh
 grep -q '^  requiredJobs:' .github/actions/status/action.yml
 grep -q 'required jobs must succeed' .github/actions/status/run.sh
-! grep -q '^  version:' .github/actions/status/action.yml
+grep -q '^  version:' .github/actions/status/action.yml
+grep -q 'publish-history' .github/actions/status/action.yml
+grep -q '../history/run.sh' .github/actions/status/action.yml
+grep -q '^  assignment-file:' .github/actions/install/action.yml
+grep -q '^  assignmentId:' .github/actions/install/action.yml
+grep -q '../prepare/select.sh' .github/actions/install/action.yml
 ! grep -qE 'affectedJob|matrixJob|GROUP|AFFECTED|MATRIX|FORMAT' .github/actions/status/action.yml .github/actions/status/run.sh
 grep -q 'needs must contain at least one job result' .github/actions/status/run.sh
 grep -q 'all needed jobs succeeded or were skipped' .github/actions/status/run.sh

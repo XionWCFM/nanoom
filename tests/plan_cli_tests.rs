@@ -122,7 +122,10 @@ fn changed_fixture() -> Fixture {
     assert_eq!(compact["result"]["timingRunner"], "pnpm");
     assert_eq!(
         compact["groups"]["ci"]["include"][0],
-        json!({"group":"ci","assignmentId":"ci-0001"})
+        json!({
+            "assignmentId":"ci-0001", "group":"ci", "displayName":"pkg-a · test",
+            "checkout":{"ref":head,"sparseCheckout":"/*\n!/*/\n/packages/pkg-a"}
+        })
     );
     write_json(&reference, &compact["plan"]);
     Fixture {

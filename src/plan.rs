@@ -509,6 +509,33 @@ pub fn compact_output(plan: &Plan, reference: &PlanReference) -> Result<String> 
                     "assignmentId".into(),
                     Value::String(assignment.assignment_id.clone()),
                 );
+                let display_name = if assignment.items.len() == 1 {
+                    let item = &assignment.items[0];
+                    let shard = item.shard.map_or_else(String::new, |shard| {
+                        format!(" · shard {shard}/{}", item.total_shards.unwrap_or(1))
+                    });
+                    format!("{} · {}{shard}", item.name, item.task)
+                } else {
+                    let tasks: std::collections::BTreeSet<_> = assignment
+                        .items
+                        .iter()
+                        .map(|item| item.task.as_str())
+                        .collect();
+                    format!(
+                        "{group_name} · {} · {} tasks · {}",
+                        tasks.into_iter().collect::<Vec<_>>().join("/"),
+                        assignment.items.len(),
+                        assignment.assignment_id
+                    )
+                };
+                row.insert("displayName".into(), Value::String(display_name));
+                row.insert(
+                    "checkout".into(),
+                    serde_json::json!({
+                        "ref": plan.provenance.head,
+                        "sparseCheckout": assignment_sparse_checkout(&assignment.checkout_paths),
+                    }),
+                );
                 if let Some(labels) = &assignment.runner_labels {
                     row.insert("runnerLabels".into(), serde_json::json!(labels));
                 }
@@ -843,6 +870,24 @@ fn validate_assignment_prediction(
     }
 }
 
+fn assignment_sparse_checkout(paths: &[String]) -> String {
+    if paths.iter().any(|path| path == ".") {
+        return "/*".into();
+    }
+    let mut patterns = vec!["/*".to_string(), "!/*/".to_string()];
+    for path in paths {
+        let mut pattern = String::from("/");
+        for character in path.chars() {
+            if "*?[] ".contains(character) {
+                pattern.push('\\');
+            }
+            pattern.push(character);
+        }
+        patterns.push(pattern);
+    }
+    patterns.join("\n")
+}
+
 fn valid_relative_path(path: &str) -> bool {
     if path == "." {
         return true;
@@ -944,6 +989,38 @@ mod tests {
             assignment_count,
             item_count,
         }
+    }
+
+    #[test]
+    fn compact_matrix_provides_semantic_name_and_exact_sparse_checkout() {
+        let mut plan = plan_with_items(1, 1);
+        let assignment = &mut plan.groups.get_mut("ci").unwrap().assignments[0];
+        assignment.checkout_paths.push("tools/shared [dev]".into());
+        assignment.items[0].shard = Some(2);
+        assignment.items[0].total_shards = Some(4);
+        plan.validate().unwrap();
+        let bytes = serde_json::to_vec(&plan).unwrap();
+        let reference = PlanReference::for_plan(&plan, &bytes).unwrap();
+        let output: Value =
+            serde_json::from_str(&compact_output(&plan, &reference).unwrap()).unwrap();
+        let row = &output["groups"]["ci"]["include"][0];
+        assert_eq!(row["displayName"], "pkg-00000 · test · shard 2/4");
+        assert_eq!(row["checkout"]["ref"], plan.provenance.head);
+        assert_eq!(
+            row["checkout"]["sparseCheckout"],
+            "/*\n!/*/\n/packages/pkg-00000\n/tools/shared\\ \\[dev\\]"
+        );
+        assert_eq!(assignment_sparse_checkout(&[".".into()]), "/*");
+
+        let plan = plan_with_items(3, 1);
+        let bytes = serde_json::to_vec(&plan).unwrap();
+        let reference = PlanReference::for_plan(&plan, &bytes).unwrap();
+        let output: Value =
+            serde_json::from_str(&compact_output(&plan, &reference).unwrap()).unwrap();
+        assert_eq!(
+            output["groups"]["ci"]["include"][0]["displayName"],
+            "ci · test · 3 tasks · ci-0000"
+        );
     }
 
     #[test]

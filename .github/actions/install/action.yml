@@ -3,12 +3,17 @@ description: Focused dependency installation for a matrix entry
 inputs:
   plan: {description: "Original affected Plan reference used to anchor assignment-file validation", default: ''}
   assignmentFile: {description: "Validated assignment-file output from nanoom prepare for static work", default: ''}
+  group: {description: "Plan group selected for this assignment", default: ''}
+  assignmentId: {description: "Assignment ID provided by the affected matrix", default: ''}
   matrix: {description: "scheduler=http continuous agent only; static inline matrices are not accepted", default: ''}
   packageManager: {description: "Package manager override: auto, pnpm, or yarn", default: auto}
   cwd: {description: "Consumer working directory", default: .}
   version: {description: "Action ref (version tag or latest), explicit release tag, or local for repository tests", default: action}
   releaseBaseUrl: {description: "HTTPS origin hosting Nanoom release assets; use your GitHub Enterprise Server URL when it mirrors releases", default: "https://github.com"}
 outputs:
+  assignment-file:
+    description: Validated assignment for the run Action
+    value: ${{ steps.select.outputs.assignment-file || inputs.assignmentFile }}
   result:
     description: Canonical focused-install result JSON
     value: ${{ steps.install.outputs.result }}
@@ -25,18 +30,50 @@ runs:
         TOKEN: ${{ github.token }}
         BINARY: ${{ env.NANOOM_LOCAL_BINARY }}
       run: bash "$GITHUB_ACTION_PATH/../_setup/setup.sh"
+    - name: Download affected Plan
+      if: inputs.assignmentFile == '' && inputs.plan != ''
+      uses: actions/download-artifact@v4.3.0
+      with:
+        name: ${{ fromJSON(inputs.plan).artifactName }}
+        path: ${{ runner.temp }}/nanoom-install-plan-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}-${{ strategy.job-index || 0 }}
+    - name: Validate Plan and select installation targets
+      id: select
+      if: inputs.assignmentFile == '' && inputs.plan != ''
+      shell: bash
+      env:
+        PLAN: ${{ inputs.plan }}
+        PLAN_DIR: ${{ runner.temp }}/nanoom-install-plan-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}-${{ strategy.job-index || 0 }}
+        GROUP: ${{ inputs.group }}
+        ASSIGNMENT_ID: ${{ inputs.assignmentId }}
+        SELECT_CWD: ${{ inputs.cwd == '.' && github.workspace || inputs.cwd }}
+        REPOSITORY: ${{ github.repository }}
+        WORKFLOW_REF: ${{ github.workflow_ref }}
+        RUN_ID: ${{ github.run_id }}
+        RUN_ATTEMPT: ${{ github.run_attempt }}
+        GITHUB_SHA: ${{ github.sha }}
+        GITHUB_JOB: ${{ github.job }}
+        MATRIX_INDEX: ${{ strategy.job-index || 0 }}
+      run: bash "$GITHUB_ACTION_PATH/../prepare/select.sh"
+    - name: Activate the repository package manager
+      if: inputs.assignmentFile == '' && inputs.plan != ''
+      shell: bash
+      env:
+        CWD: ${{ steps.select.outputs.cwd || inputs.cwd }}
+      run: bash "$GITHUB_ACTION_PATH/activate.sh"
     - name: Install focused dependencies
       id: install
       shell: bash
       env:
         MATRIX: ${{ inputs.matrix }}
-        ASSIGNMENT_FILE: ${{ inputs.assignmentFile }}
+        ASSIGNMENT_FILE: ${{ steps.select.outputs.assignment-file || inputs.assignmentFile }}
         PLAN: ${{ inputs.plan }}
         PM: ${{ inputs.packageManager }}
-        CWD: ${{ inputs.cwd }}
+        CWD: ${{ steps.select.outputs.cwd || inputs.cwd }}
         GITHUB_SHA: ${{ github.sha }}
         REPOSITORY: ${{ github.repository }}
         WORKFLOW_REF: ${{ github.workflow_ref }}
         RUN_ID: ${{ github.run_id }}
         RUN_ATTEMPT: ${{ github.run_attempt }}
+        GITHUB_JOB: ${{ github.job }}
+        MATRIX_INDEX: ${{ strategy.job-index || 0 }}
       run: bash "$GITHUB_ACTION_PATH/run.sh"

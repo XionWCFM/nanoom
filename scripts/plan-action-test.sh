@@ -122,4 +122,46 @@ run_result=$(sed -n 's/^result=//p' "$GITHUB_OUTPUT")
 jq -e '.status == "success" and .plannedItemCount == 1 and .executedItemCount == 1 and has("detailFile")' <<<"$run_result" >/dev/null
 test -f "$RUNNER_TEMP/pkg-a-ran"
 
+# The four-step template checks out directly in the job workspace using the
+# producer's non-cone patterns, then install selects the authoritative Plan.
+direct="$tmp/direct-checkout"
+git clone -q --depth=1 --no-checkout "file://$repo" "$direct"
+jq -r '.ci.include[0].checkout.sparseCheckout' <<<"$groups" |
+  git -C "$direct" sparse-checkout set --no-cone --stdin
+git -C "$direct" checkout -q --detach "$(jq -r '.ci.include[0].checkout.ref' <<<"$groups")"
+test -f "$direct/package.json"
+test -f "$direct/pnpm-lock.yaml"
+test -f "$direct/packages/pkg-a/change.txt"
+test -f "$direct/packages/pkg-shared/package.json"
+test -f "$direct/tools/always/keep.txt"
+test ! -e "$direct/packages/pkg-b"
+test ! -e "$direct/tools/unrelated"
+export GITHUB_WORKSPACE="$direct" SELECT_CWD="$direct" GITHUB_JOB=run
+cat > "$tmp/bin/corepack" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" > "$RUNNER_TEMP/corepack-call"
+SH
+chmod +x "$tmp/bin/corepack"
+export CWD="$direct" GITHUB_PATH="$tmp/package-manager-path"
+bash "$root/.github/actions/install/activate.sh"
+grep -q 'enable --install-directory .* yarn pnpm' "$RUNNER_TEMP/corepack-call"
+test "$(cat "$GITHUB_PATH")" = "$RUNNER_TEMP/nanoom-package-manager"
+export GITHUB_ACTION_PATH="$root/.github/actions/install" GITHUB_OUTPUT="$tmp/direct-selection"
+bash "$root/.github/actions/prepare/select.sh" > "$tmp/direct-select.log"
+export ASSIGNMENT_FILE="$(sed -n 's/^assignment-file=//p' "$GITHUB_OUTPUT")" CWD="$direct"
+export GITHUB_OUTPUT="$tmp/direct-install"
+bash "$GITHUB_ACTION_PATH/run.sh" > "$tmp/direct-install.log"
+export INSTALL_RESULT="$(sed -n 's/^result=//p' "$GITHUB_OUTPUT")"
+export GITHUB_ACTION_PATH="$root/.github/actions/run" GITHUB_OUTPUT="$tmp/direct-run" CWD=''
+bash "$GITHUB_ACTION_PATH/run.sh" > "$tmp/direct-run.log"
+jq -e '.status == "success" and .executedItemCount == 1' <(sed -n 's/^result=//p' "$GITHUB_OUTPUT") >/dev/null
+
+# The current checkout must still match the exact Plan source.
+git -C "$direct" -c user.name=test -c user.email=test@example.com commit --allow-empty -qm tampered
+export GITHUB_ACTION_PATH="$root/.github/actions/install" CWD="$direct"
+if bash "$GITHUB_ACTION_PATH/run.sh" > "$tmp/direct-tamper.log" 2>&1; then
+  echo 'wrong source SHA unexpectedly installed' >&2; exit 1
+fi
+grep -q 'HEAD mismatch' "$tmp/direct-tamper.log"
+
 echo 'Plan producer, rerun selection, sparse checkout, focused install, and run contracts passed'

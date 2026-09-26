@@ -35,8 +35,8 @@ nanoom_validate_assignment_file() {
     return 1
   }
   cwd_real=$(cd "$cwd_path" && pwd -P)
-  [[ "$cwd_real" == "$workspace_real/.nanoom/"* ]] || {
-    echo "assignment checkout must be isolated below $workspace_real/.nanoom: $cwd_real" >&2
+  [[ "$cwd_real" == "$workspace_real" || "$cwd_real" == "$workspace_real/.nanoom/"* ]] || {
+    echo "assignment checkout must be the job workspace or isolated below $workspace_real/.nanoom: $cwd_real" >&2
     return 1
   }
 

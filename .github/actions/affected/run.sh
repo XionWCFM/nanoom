@@ -18,35 +18,7 @@ revision_source=explicit; successful_run_id=''
 [[ -n "$HEAD" ]] || HEAD=$EVENT_HEAD
 if [[ -z "$BASE" ]]; then
   case "$EVENT" in
-    push)
-      ACTION_PHASE=revision-resolution
-      workflow_file=${WORKFLOW_REF#*/}; workflow_file=${workflow_file#*/}; workflow_file=${workflow_file%@*}
-      [[ -n "$workflow_file" && -n "$REF_NAME" ]] || {
-        echo 'push revision resolution requires github.workflow_ref and github.ref_name; set the base input to bootstrap this run' >&2
-        false
-      }
-      encoded_workflow=$(jq -rn --arg value "$workflow_file" '$value | @uri')
-      encoded_branch=$(jq -rn --arg value "$REF_NAME" '$value | @uri')
-      runs_url="$API/repos/$REPOSITORY/actions/workflows/$encoded_workflow/runs?branch=$encoded_branch&event=push&status=success&per_page=20"
-      set +e
-      runs_json=$(curl --fail --silent --show-error -H "Authorization: Bearer $TOKEN" -H 'Accept: application/vnd.github+json' "$runs_url" 2>&1)
-      curl_status=$?
-      set -e
-      (( curl_status == 0 )) || {
-        echo "could not query successful push runs for workflow '$workflow_file' on branch '$REF_NAME' (GitHub API exit $curl_status); grant actions: read and contents: read, or set with.base to bootstrap" >&2
-        false
-      }
-      successful_run_id=$(jq -er --arg current "$RUN_ID" '[.workflow_runs[]? | select(.conclusion == "success") | select((.id | tostring) != $current)] | sort_by(.created_at, .id) | .[-1].id // empty' <<<"$runs_json" 2>/dev/null) || {
-        echo "GitHub API returned no valid successful push run for workflow '$workflow_file' on branch '$REF_NAME'; set with.base to bootstrap this run" >&2
-        false
-      }
-      BASE=$(jq -er --arg current "$RUN_ID" '[.workflow_runs[]? | select(.conclusion == "success") | select((.id | tostring) != $current)] | sort_by(.created_at, .id) | .[-1].head_sha // empty' <<<"$runs_json" 2>/dev/null) || {
-        echo "GitHub API returned no successful push SHA for workflow '$workflow_file' on branch '$REF_NAME'; set with.base to bootstrap this run" >&2
-        false
-      }
-      [[ "$BASE" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "successful workflow run $successful_run_id returned an invalid head SHA '$BASE'; set with.base to bootstrap this run" >&2; false; }
-      revision_source=lastSuccessfulPush
-      ;;
+    push) BASE=$EVENT_BASE; revision_source=pushBefore ;;
     pull_request) BASE=$EVENT_BASE; revision_source=pullRequestBase ;;
     merge_group) BASE=$EVENT_BASE; revision_source=mergeGroupBase ;;
     *) echo 'affected could not resolve a base revision from this event; set the base input explicitly' >&2; false ;;
@@ -54,12 +26,18 @@ if [[ -z "$BASE" ]]; then
 fi
 [[ -n "$BASE" ]] || { echo 'affected could not resolve a base revision from inputs or the GitHub event; set with.base to bootstrap this run' >&2; false; }
 ACTION_PHASE=revision-validation
-resolved_head=$(git -C "$CWD" rev-parse --verify "$HEAD^{commit}")
-resolved_base=$(git -C "$CWD" rev-parse --verify "$BASE^{commit}")
-git -C "$CWD" merge-base --is-ancestor "$resolved_base" "$resolved_head" || {
-  echo "resolved base $resolved_base is not an ancestor of head $resolved_head; set with.base to a reachable commit" >&2
+[[ "$BASE" != -* && "$HEAD" != -* && ! "$BASE" =~ ^0{40}$ && ! "$HEAD" =~ ^0{40}$ ]] || {
+  echo 'affected requires valid non-zero revisions; set with.base explicitly for an initial push' >&2
   false
 }
+resolved_head=$(git -C "$CWD" rev-parse --verify "$HEAD^{commit}")
+if ! resolved_base=$(git -C "$CWD" rev-parse --verify "$BASE^{commit}" 2>/dev/null); then
+  echo "Fetching comparison base $BASE without workspace contents"
+  git -C "$CWD" fetch --no-tags --filter=tree:0 --depth=1 origin "$BASE"
+  resolved_base=$(git -C "$CWD" rev-parse --verify "$BASE^{commit}")
+fi
+# The CLI resolves the merge base with bounded commit-only deepening. A depth-1
+# checkout cannot prove ancestry here, even when the event revisions are valid.
 
 history_status=disabled; history_fetch_ms=0; history_source_run_id=''; history_path=''
 
