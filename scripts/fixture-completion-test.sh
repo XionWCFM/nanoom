@@ -23,6 +23,12 @@ check_case() {
 }
 
 check_case plan-counted-positive "$positive_plan" "$positive_jobs" success
+semantic_jobs='{"name":"Plan affected work","conclusion":"success"}
+{"name":"scale · build/test · 2 tasks · scale-1","conclusion":"success","steps":["Checkout planned source","Set up Node.js","Focus install planned workspaces","Run planned work"]}
+{"name":"@fixture/app · test","conclusion":"success","steps":["Checkout planned source","Set up Node.js","Focus install planned workspaces","Run planned work"]}
+{"name":"CI status","conclusion":"success"}'
+check_case semantic-matrix-names "$positive_plan" "$semantic_jobs" success
+check_case semantic-missing-assignment "$positive_plan" "$(jq -c 'select(.name != "@fixture/app · test")' <<<"$semantic_jobs")" failure
 check_case missing-positive-assignment "$positive_plan" "$(jq -c 'select(.name != "run (scale-2)")' <<<"$positive_jobs")" failure
 check_case skipped-positive-assignment "$positive_plan" "$(jq -c 'if .name == "run (scale-2)" then .conclusion = "skipped" else . end' <<<"$positive_jobs")" failure
 check_case zero-positive-runs "$positive_plan" "$(jq -c 'select((.name | startswith("run")) | not)' <<<"$positive_jobs")" failure

@@ -257,6 +257,24 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@nanoom/ci-linux@workspace:tools/ci-linux":
+  version: 0.0.0-use.local
+  resolution: "@nanoom/ci-linux@workspace:tools/ci-linux"
+  languageName: unknown
+  linkType: soft
+
+"@nanoom/ci-macos@workspace:tools/ci-macos":
+  version: 0.0.0-use.local
+  resolution: "@nanoom/ci-macos@workspace:tools/ci-macos"
+  languageName: unknown
+  linkType: soft
+
+"@nanoom/ci-windows@workspace:tools/ci-windows":
+  version: 0.0.0-use.local
+  resolution: "@nanoom/ci-windows@workspace:tools/ci-windows"
+  languageName: unknown
+  linkType: soft
+
 "@nanoom/cli-linux-arm64@npm:0.7.0, @nanoom/cli-linux-arm64@workspace:packages/cli-linux-arm64":
   version: 0.0.0-use.local
   resolution: "@nanoom/cli-linux-arm64@workspace:packages/cli-linux-arm64"

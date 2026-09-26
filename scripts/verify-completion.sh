@@ -33,6 +33,6 @@ trap 'rm -rf "$plan_dir"' EXIT
 gh run download "$run_id" --repo "$repo" --name "$artifact_name" --dir "$plan_dir"
 plan_file="$plan_dir/plan-v1.json"
 test -s "$plan_file"
-jobs=$(gh api --paginate "repos/XionWCFM/nanoom-fixtures/actions/runs/$run_id/jobs?per_page=100" --jq '.jobs[] | {name,conclusion}')
+jobs=$(gh api --paginate "repos/XionWCFM/nanoom-fixtures/actions/runs/$run_id/jobs?per_page=100" --jq '.jobs[] | {name,conclusion,steps:[.steps[]?.name]}')
 jq -se --slurpfile plan "$plan_file" -f scripts/fixture-completion.jq <<<"$jobs" >/dev/null
 echo "hosted fixture completion gate passed: run $run_id"

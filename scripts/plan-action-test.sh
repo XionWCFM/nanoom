@@ -58,6 +58,8 @@ bash "$GITHUB_ACTION_PATH/run.sh" > "$tmp/affected.log"
 
 plan_ref=$(sed -n 's/^plan=//p' "$GITHUB_OUTPUT")
 groups=$(sed -n 's/^groups=//p' "$GITHUB_OUTPUT")
+matrix=$(sed -n 's/^matrix=//p' "$GITHUB_OUTPUT")
+test "$(jq -c .include <<<"$matrix")" = "$(jq -c '[.[] | .include[]]' <<<"$groups")"
 test -n "$plan_ref"
 jq -e '.artifactName == "nanoom-plan-v1-8675309-1-affected" and .provenance.head == $head' --arg head "$head" <<<"$plan_ref" >/dev/null
 jq -e '.ci.include | length == 1 and .[0].group == "ci" and (.[] | has("items") | not)' <<<"$groups" >/dev/null

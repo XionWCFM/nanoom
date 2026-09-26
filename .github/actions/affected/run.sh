@@ -289,12 +289,18 @@ if [[ "$SCHEDULER" != http ]]; then
   groups=$(jq -c '.groups' <<<"$compact")
   result=$(jq -c --arg source "$revision_source" --arg base "$resolved_base" --arg head "$resolved_head" --arg successful "$successful_run_id" --arg historyStatus "$history_status" --arg sourceRun "$history_source_run_id" --arg historyBackend "$HISTORY_BACKEND" --argjson fetchMs "$history_fetch_ms" '.result + {historyStatus:$historyStatus,revisionResolution:{baseSource:$source,baseCommit:$base,headCommit:$head,successfulRunId:(if $successful == "" then null else ($successful | tonumber) end)},scheduling:{historyBackend:$historyBackend,historyStatus:$historyStatus,historySourceRunId:(if $sourceRun == "" then null else ($sourceRun | tonumber) end),historyFetchMs:$fetchMs,reason:(if $historyStatus == "loaded" and $historyBackend == "server" then "bounded PredictionTable v3 snapshots loaded from the History Server" elif $historyStatus == "loaded" then "bounded PredictionArtifact v3 loaded; ModelState and measurements were not downloaded" elif $historyStatus == "history_not_needed" then "no affected assignment choice could be changed by history; no history metadata request was made" elif $historyStatus == "disabled" then "historical scheduling explicitly disabled; deterministic cold scheduling" elif $historyStatus == "corrupt" then "prediction history was invalid; using deterministic cold scheduling" else "no usable history; using deterministic cold scheduling" end)}}' <<<"$compact")
   has=$(jq -r '.has_change' <<<"$compact")
-  output_bytes=$(printf 'has_change=%s\nplan=%s\ngroups=%s\nresult=%s\n' "$has" "$plan_ref" "$groups" "$result" | iconv -f UTF-8 -t UTF-16LE | wc -c | tr -d ' ')
+  matrix=$(jq -c '{include:[.[] | .include[]]}' <<<"$groups")
+  jq -e '.include | length <= 256' >/dev/null <<<"$matrix" || {
+    echo 'combined assignment matrix exceeds GitHub limit of 256 jobs; reduce group concurrency' >&2
+    false
+  }
+  output_bytes=$(printf 'has_change=%s\nplan=%s\ngroups=%s\nmatrix=%s\nresult=%s\n' "$has" "$plan_ref" "$groups" "$matrix" "$result" | iconv -f UTF-8 -t UTF-16LE | wc -c | tr -d ' ')
   (( output_bytes <= 1048576 )) || { echo "Action outputs exceed GitHub's 1 MiB UTF-16 limit: $output_bytes bytes" >&2; false; }
   echo "has_change=$has" >> "$GITHUB_OUTPUT"
   echo "plan=$plan_ref" >> "$GITHUB_OUTPUT"
   echo "plan_artifact_path=$plan_dir" >> "$GITHUB_OUTPUT"
   echo "groups=$groups" >> "$GITHUB_OUTPUT"
+  echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
   echo "result=$result" >> "$GITHUB_OUTPUT"
   assignments=$(jq -r '.result.assignmentCount' <<<"$compact")
   items=$(jq -r '.result.itemCount' <<<"$compact")
@@ -328,9 +334,11 @@ fi
 compact_matrix=$(jq -c 'with_entries(.value.include |= map(if .items then {assignmentId,predictedDurationMs,checkoutPathCount,predictionSources,reason,checkout,runnerLabels,timingEnvironment,items:[.items[] | {group,name,task,shard,totalShards} | with_entries(select(.value != null))]} elif .mode == "continuous" then {agentId,runId,mode,checkout,runnerLabels,timingEnvironment} else {name,task,shard,totalShards,checkoutPathCount,runnerLabels,timingEnvironment} | with_entries(select(.value != null)) end))' <<<"$matrix")
 groups=$(jq -c 'with_entries(.value = {hasChange:((.value.include|length)>0),matrix:.value})' <<<"$compact_matrix"); has=$(jq -r 'any(to_entries[]; .value.include | length > 0)' <<<"$compact_matrix")
 result=$(jq -c --argjson groups "$groups" '. + {groups:($groups | with_entries(.value |= {hasChange,assignmentCount:(.matrix.include|length)}))}' <<<"$report")
-output_bytes=$(printf 'has_change=%s\ngroups=%s\nresult=%s\n' "$has" "$groups" "$result" | iconv -f UTF-8 -t UTF-16LE | wc -c | tr -d ' ')
+matrix=$(jq -c '{include:[.[] | (.include // .matrix.include // [])[]]}' <<<"$groups")
+output_bytes=$(printf 'has_change=%s\ngroups=%s\nmatrix=%s\nresult=%s\n' "$has" "$groups" "$matrix" "$result" | iconv -f UTF-8 -t UTF-16LE | wc -c | tr -d ' ')
 (( output_bytes <= 1048576 )) || { echo "Action outputs exceed GitHub's 1 MiB UTF-16 limit: $output_bytes bytes" >&2; false; }
 echo "has_change=$has" >> "$GITHUB_OUTPUT"; echo "groups=$groups" >> "$GITHUB_OUTPUT"; echo "result=$result" >> "$GITHUB_OUTPUT"
+echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
 assignments=$(jq '[to_entries[].value.include[]] | length' <<<"$matrix"); items=$(jq '[.affected.group[].workspaces[]] | length' <<<"$report"); elapsed=$(( $(date +%s) - started ))
 printf '  Resolved revisions\n    source: %s\n    base: %s\n    head: %s\n    successful run: %s\n  Result\n    ✓ affected work items=%s; assignments=%s; history=%s; elapsed=%ss\n  Final JSON\n    %s\n' "$revision_source" "$resolved_base" "$resolved_head" "${successful_run_id:-none}" "$items" "$assignments" "$history_status" "$elapsed" "$result"
 { echo '### nanoom affected'; echo; echo "**Revision:** \`$revision_source\` $resolved_base → $resolved_head (successful run: ${successful_run_id:-none})"; echo; echo "**Result:** $items work items in $assignments assignments; history \`$history_status\`."; echo; echo '| Group | Total | Affected | Percent | Tier | Concurrency |'; echo '|---|---:|---:|---:|---|---:|'; jq -r '.affected.group | to_entries[] | "| \(.key) | \(.value.totalWorkspaces) | \(.value.affectedWorkspaces) | \(.value.affectedPercent) | \(.value.distribution.name // "legacy") | \(.value.distribution.concurrency // (.value.workspaces|length)) |"' <<<"$report"; } >> "$GITHUB_STEP_SUMMARY"

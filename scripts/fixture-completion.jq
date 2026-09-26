@@ -12,10 +12,10 @@ def valid_plan:
 
 ($plan | length) == 1
 and ($plan[0] | valid_plan)
-and ([.[] | select(.name == "affected" and .conclusion == "success")] | length) == 1
-and ([.[] | select(.name == "status" and .conclusion == "success")] | length) == 1
+and ([.[] | select((.name == "affected" or .name == "Plan affected work") and .conclusion == "success")] | length) == 1
+and ([.[] | select((.name == "status" or .name == "CI status") and .conclusion == "success")] | length) == 1
 and (
-  [.[] | select(.name == "run" or (.name | startswith("run (")))] as $runs
+  [.[] | select(.name == "run" or (.name | startswith("run (")) or ((.steps // []) | index("Run planned work") != null))] as $runs
   | if $plan[0].hasChange then
       ($runs | length) == $plan[0].assignmentCount and all($runs[]; .conclusion == "success")
     else

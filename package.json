@@ -3,7 +3,8 @@
   "private": true,
   "packageManager": "yarn@4.11.0",
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "tools/*"
   ],
   "scripts": {
     "check": "cargo fmt --all --check && cargo clippy --locked --all-targets --all-features -- -D warnings && cargo test --locked --all --all-features"

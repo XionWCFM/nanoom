@@ -86,6 +86,8 @@ root-only non-cone checkout하고, 그 assignment의 paths 파일로 cone checko
 
 정적 Action workflow는 상세 Plan 대신 짧은 reference와 group/assignmentId matrix를 전달합니다.
 matrix의 `displayName`은 workspace·task·shard 또는 묶음 작업을 설명합니다.
+여러 group을 하나의 run job에서 실행하려면 affected의 `matrix` 출력을
+`strategy.matrix`에 그대로 전달합니다. group별 출력은 `groups`에도 유지됩니다.
 `checkout.ref`와 `checkout.sparseCheckout`에는 Plan head와 non-cone 경로를 넣습니다.
 루트 파일, assignment workspace·내부 dependency closure·추가 필수 경로가 포함됩니다.
 공식 checkout 후 install에 Plan·group·assignmentId를 전달하면 install이 Plan을 검증하고
