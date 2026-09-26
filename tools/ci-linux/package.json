@@ -1,0 +1,7 @@
+{
+  "name": "@nanoom/ci-linux",
+  "private": true,
+  "scripts": {
+    "check": "bash ../../scripts/ci-task.sh check"
+  }
+}

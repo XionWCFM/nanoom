@@ -53,20 +53,22 @@ nanoom schema [--output <file>]
 
 GitHub Actions의 `affected`는 명시적인 `base`/`head`가 없을 때 이벤트별 revision을
 해석합니다. pull request와 merge queue는 대상 revision을 사용하고, `push`는 현재
-workflow·branch의 마지막 성공한 push SHA부터 비교합니다. 따라서 main CI가 연속
-실패해도 그 사이의 변경이 다음 실행에서 빠지지 않습니다. 최초 실행이거나
-`actions: read` 권한이 없으면 Action은 축소 실행하지 않고 실패하므로, `actions: read`
-와 `contents: read`를 부여하거나 `base: <commit>`을 명시해 bootstrap합니다.
+이벤트의 `before`/`after` SHA부터 비교합니다. 이전 실패 실행의 변경을 자동으로
+누적하지 않습니다. 최초 push의 zero SHA는 명확하게 실패하므로 `base: <commit>`을
+명시해 bootstrap합니다. depth 1 checkout에서 누락된 base는 Action이 가져오며,
+공통 조상 계산에 필요한 이력은 CLI가 제한된 깊이로 가져옵니다.
 
 `affected` Action의 canonical `result.revisionResolution`에는 `baseSource`, 실제
-full SHA의 `baseCommit`/`headCommit`, push일 때 `successfulRunId`가 포함됩니다.
+full SHA의 `baseCommit`/`headCommit`이 포함됩니다. push의 `baseSource`는 `pushBefore`이고,
+기존 `successfulRunId` 필드는 `null`입니다.
 로그와 Step Summary에도 같은 값이 출력됩니다. CLI는 계속 명시적인
 `nanoom affected --base ... --head ...`만 받아 플랫폼 독립적으로 동작합니다.
 
 ## Sparse checkout
 
 공개 workflow는 `@latest`를 사용합니다. 릴리스가 검증된 뒤 `latest` Action tag가 이동하고,
-setup은 GitHub 최신 Release의 실제 versioned asset과 checksum을 사용합니다.
+setup은 다운로드한 Action 소스의 버전에 해당하는 versioned asset과 checksum을 사용합니다.
+실행 중 새 릴리즈가 나와도 Action 소스와 binary 버전을 섞지 않습니다.
 
 `affected` job은 non-cone으로 root `package.json`, `nanoom.config.json`, 그리고
 `workspace.include`에 해당하는 모든 workspace `package.json`만 checkout할 수 있습니다.
@@ -83,39 +85,51 @@ root-only non-cone checkout하고, 그 assignment의 paths 파일로 cone checko
 선택한 디렉터리와 root 파일이 포함되므로 lockfile과 root 설정도 유지됩니다.
 
 정적 Action workflow는 상세 Plan 대신 짧은 reference와 group/assignmentId matrix를 전달합니다.
-소비 job에서 `prepare`가 내보낸 assignment file과 원래 Plan reference를 install/run에
-함께 전달하세요.
+matrix의 `displayName`은 workspace·task·shard 또는 묶음 작업을 설명합니다.
+여러 group을 하나의 run job에서 실행하려면 affected의 `matrix` 출력을
+`strategy.matrix`에 그대로 전달합니다. group별 출력은 `groups`에도 유지됩니다.
+`checkout.ref`와 `checkout.sparseCheckout`에는 Plan head와 non-cone 경로를 넣습니다.
+루트 파일, assignment workspace·내부 dependency closure·추가 필수 경로가 포함됩니다.
+공식 checkout 후 install에 Plan·group·assignmentId를 전달하면 install이 Plan을 검증하고
+`assignment-file`을 내보냅니다. 이 파일과 `installResult`를 run에 전달하세요.
+기존 prepare 기반 격리 checkout도 계속 지원합니다.
 
 ```yaml
 jobs:
   run:
     needs: affected
     if: needs.affected.outputs.has_change == 'true'
+    name: ${{ matrix.displayName }}
     strategy:
-      matrix: ${{ fromJSON(needs.affected.outputs.groups).ci.include }}
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.affected.outputs.groups).ci.include }}
     runs-on: ${{ matrix.runnerLabels || 'ubuntu-latest' }}
     steps:
-      - id: prepare
-        uses: XionWCFM/nanoom/.github/actions/prepare@latest
+      - name: Checkout planned source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ matrix.checkout.ref }}
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: ${{ matrix.checkout.sparseCheckout }}
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Focus install planned workspaces
+        id: install
+        uses: XionWCFM/nanoom/.github/actions/install@latest
         with:
           plan: ${{ needs.affected.outputs.plan }}
           group: ${{ matrix.group }}
           assignmentId: ${{ matrix.assignmentId }}
-      - id: install
-        uses: XionWCFM/nanoom/.github/actions/install@latest
+      - name: Run planned work
+        uses: XionWCFM/nanoom/.github/actions/run@latest
         with:
           plan: ${{ needs.affected.outputs.plan }}
-          assignmentFile: ${{ steps.prepare.outputs.assignment-file }}
-          cwd: ${{ steps.prepare.outputs.cwd }}
-          packageManager: pnpm
-      - uses: XionWCFM/nanoom/.github/actions/run@latest
-        with:
-          plan: ${{ needs.affected.outputs.plan }}
-          assignmentFile: ${{ steps.prepare.outputs.assignment-file }}
-          cwd: ${{ steps.prepare.outputs.cwd }}
-          preparedAtMs: ${{ steps.prepare.outputs.prepared-at-ms }}
+          assignmentFile: ${{ steps.install.outputs.assignment-file }}
           installResult: ${{ steps.install.outputs.result }}
-          cleanupCheckout: true
 ```
 
 `cleanupCheckout`은 명시적으로 켠 경우에만 동작하며, `cwd`가 `.nanoom/` 아래의

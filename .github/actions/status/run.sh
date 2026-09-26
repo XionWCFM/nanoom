@@ -21,6 +21,19 @@ jq -e 'type == "array" and all(.[]; type == "string" and length > 0) and length 
   false
 }
 
+# The standard template exposes has_change on the planning job. Positive work
+# requires its execution dependency to succeed; a no-change skip is intentional.
+jq -e '[.[] | .outputs.has_change? | select(. != null)] | all(. == "true" or . == "false")' >/dev/null <<<"$NEEDS" || {
+  echo 'planning has_change output must be true or false' >&2
+  false
+}
+has_change=$(jq -r '[.[] | .outputs.has_change? | select(. != null)] | any(. == "true")' <<<"$NEEDS")
+if [[ "$has_change" == true ]]; then
+  REQUIRED_JOBS=$(jq -cn --argjson required "$REQUIRED_JOBS" --argjson needs "$NEEDS" \
+    '$required + ($needs | to_entries | map(select(.value.outputs.has_change? == null) | .key)) | unique')
+  [[ "$REQUIRED_JOBS" != '[]' ]] || REQUIRED_JOBS='["run"]'
+fi
+
 jobs=$(jq -c '[to_entries[] | {name: .key, result: .value.result}] | sort_by(.name)' <<<"$NEEDS")
 invalid=$(jq -r '[.[] | select(.result != "success" and .result != "skipped")] | length' <<<"$jobs")
 required_jobs=$(jq -c 'sort' <<<"$REQUIRED_JOBS")
@@ -47,6 +60,7 @@ printf '  Resolved values\n    jobs: %s\n    required jobs: %s\n  Why\n    %s\n 
 ACTION_PHASE=status-evaluation
 result=$(jq -cn --argjson jobs "$jobs" --argjson requiredJobs "$required_jobs" --arg status "$status" --arg reason "$reason" '{jobs:$jobs,requiredJobs:$requiredJobs,status:$status,reason:$reason}')
 echo "result=$result" >> "$GITHUB_OUTPUT"; status=$(jq -r .status <<<"$result"); symbol=$([[ "$status" == success ]] && echo '✓' || echo '✗')
+echo "publish-history=$([[ "$status" == success && "$has_change" == true ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
 printf '  Result\n    %s status=%s; %s\n  Action outputs\n    result=<same canonical JSON below>\n  Final JSON\n    %s\n' "$symbol" "$status" "$reason" "$result"
 {
   echo '### nanoom workflow status'

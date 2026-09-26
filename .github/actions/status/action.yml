@@ -4,6 +4,16 @@ inputs:
   needs: {description: "JSON from toJSON(needs) in the aggregate job", required: false}
   results: {description: "Optional newline-delimited job=result pairs; avoids passing large needs JSON", required: false}
   requiredJobs: {description: "Optional JSON array of job IDs that must exist and succeed", required: false, default: '[]'}
+  scheduler: {description: "Timing backend: artifact (default), off, or http", default: artifact}
+  historyBackend: {description: "History storage backend: artifact (default) or server", default: artifact}
+  historyServerUrl: {description: "HTTPS Nanoom History Server origin; loopback HTTP is allowed for local tests", default: ''}
+  historyServerToken: {description: "Bearer token for the Nanoom History Server; never logged", default: ''}
+  runIds: {description: "JSON array of HTTP coordinator run IDs", default: '[]'}
+  coordinatorUrl: {description: "HTTPS coordinator base URL for scheduler=http", default: ''}
+  historyArtifactName: {description: "PredictionArtifact v3 publish-marker artifact name", default: nanoom-prediction-v3}
+  modelArtifactName: {description: "ModelStateBundle v3 artifact name", default: nanoom-model-v3}
+  version: {description: "Action ref (version tag or latest), explicit release tag, or local for repository tests", default: action}
+  releaseBaseUrl: {description: "HTTPS origin hosting Nanoom release assets", default: "https://github.com"}
 outputs:
   result:
     description: Canonical aggregate status result JSON
@@ -19,3 +29,90 @@ runs:
         RESULTS: ${{ inputs.results }}
         REQUIRED_JOBS: ${{ inputs.requiredJobs }}
       run: bash "$GITHUB_ACTION_PATH/run.sh"
+
+    - name: Set up nanoom
+      continue-on-error: true
+      if: steps.status.outputs.publish-history == 'true' && (inputs.scheduler == 'artifact' || inputs.historyBackend == 'server')
+      shell: bash
+      env:
+        REQUESTED: ${{ inputs.version }}
+        ACTION_REF: ${{ github.action_ref }}
+        API: ${{ github.api_url }}
+        RELEASE_BASE_URL: ${{ inputs.releaseBaseUrl }}
+        TOKEN: ${{ github.token }}
+        HISTORY_ARTIFACT: ${{ inputs.historyArtifactName }}
+        BINARY: ${{ env.NANOOM_LOCAL_BINARY }}
+      run: bash "$GITHUB_ACTION_PATH/../_setup/setup.sh"
+    - name: Download current attempt measurements
+      continue-on-error: true
+      id: measurements
+      if: steps.status.outputs.publish-history == 'true' && (inputs.scheduler == 'artifact' || inputs.historyBackend == 'server')
+      uses: actions/download-artifact@v4.3.0
+      with:
+        pattern: nanoom-measurement-v3-${{ github.run_id }}-${{ github.run_attempt }}-*
+        path: ${{ runner.temp }}/nanoom-current-measurements
+        merge-multiple: true
+        if-no-files-found: ignore
+    - name: Merge history or complete runs
+      continue-on-error: true
+      if: steps.status.outputs.publish-history == 'true'
+      id: history
+      shell: bash
+      env:
+        SCHEDULER: ${{ inputs.scheduler }}
+        HISTORY_BACKEND: ${{ inputs.historyBackend }}
+        HISTORY_SERVER_URL: ${{ inputs.historyServerUrl }}
+        HISTORY_SERVER_TOKEN: ${{ inputs.historyServerToken }}
+        ARTIFACT_VERSION: v4
+        RUN_IDS: ${{ inputs.runIds }}
+        COORDINATOR_URL: ${{ inputs.coordinatorUrl }}
+        COORDINATOR_TOKEN: ${{ env.NANOOM_COORDINATOR_TOKEN }}
+        API: ${{ github.api_url }}
+        REPOSITORY: ${{ github.repository }}
+        TOKEN: ${{ github.token }}
+        HISTORY_ARTIFACT: ${{ inputs.historyArtifactName }}
+        MODEL_ARTIFACT: ${{ inputs.modelArtifactName }}
+        MEASUREMENT_DIR: ${{ runner.temp }}/nanoom-current-measurements
+        MEASUREMENT_DOWNLOAD_OUTCOME: ${{ steps.measurements.outcome }}
+        WORKFLOW_REF: ${{ github.workflow_ref }}
+        HISTORY_REF: ${{ github.head_ref || github.ref_name }}
+        GITHUB_EVENT_NAME: ${{ github.event_name }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        PR_HEAD_REPOSITORY_ID: ${{ github.event.pull_request.head.repo.id }}
+        PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+        RUN_ID: ${{ github.run_id }}
+        RUN_ATTEMPT: ${{ github.run_attempt }}
+        RUNNER_TEMP: ${{ runner.temp }}
+      run: bash "$GITHUB_ACTION_PATH/../history/run.sh"
+    - name: Upload PredictionState model
+      continue-on-error: true
+      id: model-upload
+      if: steps.status.outputs.publish-history == 'true' && (inputs.scheduler == 'artifact' && inputs.historyBackend == 'artifact' && steps.history.outputs.publish == 'true')
+      uses: actions/upload-artifact@v4.6.2
+      with:
+        name: ${{ steps.history.outputs.model-name }}
+        path: ${{ steps.history.outputs.model-path }}
+        retention-days: 30
+        if-no-files-found: error
+    - name: Publish PredictionArtifact v3 marker
+      continue-on-error: true
+      id: prediction-upload
+      if: steps.status.outputs.publish-history == 'true' && (inputs.scheduler == 'artifact' && inputs.historyBackend == 'artifact' && steps.history.outputs.publish == 'true' && steps.model-upload.outcome == 'success')
+      uses: actions/upload-artifact@v4.6.2
+      with:
+        name: ${{ steps.history.outputs.prediction-name }}
+        path: ${{ steps.history.outputs.prediction-path }}
+        retention-days: 30
+        if-no-files-found: error
+    - name: Record history upload cost
+      continue-on-error: true
+      id: final
+      if: steps.status.outputs.publish-history == 'true' && (always() && inputs.scheduler == 'artifact' && inputs.historyBackend == 'artifact' && steps.history.outputs.publish == 'true')
+      shell: bash
+      env:
+        BASE_RESULT: ${{ steps.history.outputs.result }}
+        UPLOAD_STARTED: ${{ steps.history.outputs.upload-started }}
+        MODEL_OUTCOME: ${{ steps.model-upload.outcome }}
+        PREDICTION_OUTCOME: ${{ steps.prediction-upload.outcome }}
+      run: echo "result=$(jq -c --argjson ms "$(( ($(date +%s) - UPLOAD_STARTED) * 1000 ))" --arg model "$MODEL_OUTCOME" --arg prediction "$PREDICTION_OUTCOME" '. + {uploadMs:$ms,publish:(.publish and $model == "success" and $prediction == "success"),status:(if $model == "success" and $prediction == "success" then .status else "degraded" end)}' <<<"$BASE_RESULT")" >> "$GITHUB_OUTPUT"

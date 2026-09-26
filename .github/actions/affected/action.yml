@@ -19,6 +19,7 @@ inputs:
 outputs:
   has_change: {description: "Whether any group has work", value: "${{ steps.out.outputs.has_change }}"}
   plan: {description: "Validated Plan v1 artifact reference for assignment consumers", value: "${{ steps.out.outputs.plan }}"}
+  matrix: {description: "Combined assignment matrix for all configured groups", value: "${{ steps.out.outputs.matrix }}"}
   groups: {description: "Per-group assignment matrices", value: "${{ steps.out.outputs.groups }}"}
   result: {description: "Canonical affected and scheduling report", value: "${{ steps.out.outputs.result }}"}
 runs:
@@ -45,7 +46,7 @@ runs:
         HEAD: ${{ inputs.head }}
         EVENT: ${{ github.event_name }}
         EVENT_BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before || github.base_ref }}
-        EVENT_HEAD: ${{ github.sha }}
+        EVENT_HEAD: ${{ github.event.merge_group.head_sha || github.event.after || github.sha }}
         REF_NAME: ${{ github.ref_name }}
         HISTORY_REF: ${{ github.head_ref || github.ref_name }}
         GITHUB_REF: ${{ github.ref }}

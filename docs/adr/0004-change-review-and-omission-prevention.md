@@ -10,7 +10,7 @@ Every non-trivial change gets two reviews before merge:
 1. `bash scripts/review-change.sh <base-ref>` checks the mechanical evidence shape.
 2. The independent Nanoom reviewer in `.codex/agents/nanoom-reviewer.md` checks the semantic path and reports `PASS` or `BLOCKED`.
 
-The reviewer must verify implementation, regression/edge tests, docs, Action/CLI contract tests, focused install and transitive dependency behavior, release/version evidence, and the real fixture consumer path. The completion gates in ADR-0002 remain authoritative; this review does not replace them.
+The reviewer must verify implementation, regression/edge tests, docs, Action/CLI contract tests, focused install and transitive dependency behavior, release/version evidence, and the real fixture consumer path. Root `AGENTS.md` and ADR-0015 define the current product principles and released-consumer completion gates; relevant feature ADRs add their specific checks. This review does not replace those gates.
 
 ## Required evidence
 

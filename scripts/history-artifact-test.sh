@@ -117,9 +117,16 @@ elapsed_ms=$(($(nanoom_now_ms) - started_ms))
 
 # A no-change plan avoids even the metadata call.
 : > "$FAKE_REQUESTS"
-head=$(git -C "$root" rev-parse HEAD)
-export ACTION_NAME=affected ACTION_CWD="$root" GITHUB_ACTION_PATH="$root/.github/actions/affected"
-export CWD="$root" CONFIG=nanoom.config.json BASE="$head" HEAD="$head" EVENT=push EVENT_BASE="$head" EVENT_HEAD="$head"
+mkdir -p "$tmp/no-change/packages/app"
+printf '%s\n' '{"private":true,"packageManager":"yarn@4.9.2","workspaces":["packages/*"]}' > "$tmp/no-change/package.json"
+printf '%s\n' '{"name":"app","scripts":{"test":"echo test"}}' > "$tmp/no-change/packages/app/package.json"
+printf '%s\n' '{"workspace":{"include":["packages/*"]},"group":{"ci":{"tasks":["test"]}}}' > "$tmp/no-change/nanoom.config.json"
+git -C "$tmp/no-change" init -q -b main
+git -C "$tmp/no-change" add .
+git -C "$tmp/no-change" -c user.name=fixture -c user.email=fixture@example.invalid commit -q -m fixture
+head=$(git -C "$tmp/no-change" rev-parse HEAD)
+export ACTION_NAME=affected ACTION_CWD="$tmp/no-change" GITHUB_ACTION_PATH="$root/.github/actions/affected"
+export CWD="$tmp/no-change" CONFIG=nanoom.config.json BASE="$head" HEAD="$head" EVENT=push EVENT_BASE="$head" EVENT_HEAD="$head"
 export REF_NAME=main HISTORY_REF=main WORKFLOW_REF=owner/repo/.github/workflows/ci.yml@refs/heads/main
 export SCHEDULER=artifact TIMING_RUNNER=auto TIMING_ENVIRONMENT=linux-x64-node24 COORDINATOR_URL='' COORDINATOR_TOKEN=''
 export GITHUB_REPOSITORY_ID=12345 GITHUB_SERVER_URL=https://github.com GITHUB_REF=refs/heads/main GITHUB_EVENT_NAME=push

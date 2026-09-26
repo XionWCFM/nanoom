@@ -62,7 +62,7 @@ grep -q 'preparationObservations' .github/actions/run/run.sh
 grep -q 'matrix_timing_environment' .github/actions/run/run.sh
 grep -q 'retention-days: 30' .github/actions/{affected,run,history}/action.yml
 test "$(grep -R -l 'actions/upload-artifact@v3.2.2' .github/actions/{affected-ghes,run-ghes,history-ghes} | wc -l | tr -d ' ')" -eq 3
-for file in .github/actions/{affected,history,run}/action.yml .github/workflows/{ci,history-server-e2e,release}.yml; do
+for file in .github/actions/{affected,history,run,status}/action.yml .github/workflows/release.yml; do
   grep -q 'actions/upload-artifact@v4.6.2' "$file"
 done
 test "$(grep -R -l 'actions/download-artifact@v3.1.0' .github/actions/prepare-ghes | wc -l | tr -d ' ')" -eq 1
@@ -78,7 +78,12 @@ grep -q 'runner.environment.*self-hosted' .github/actions/{affected,run}/action.
 grep -q 'GITHUB_STEP_SUMMARY' .github/actions/status/run.sh
 grep -q '^  requiredJobs:' .github/actions/status/action.yml
 grep -q 'required jobs must succeed' .github/actions/status/run.sh
-! grep -q '^  version:' .github/actions/status/action.yml
+grep -q '^  version:' .github/actions/status/action.yml
+grep -q 'publish-history' .github/actions/status/action.yml
+grep -q '../history/run.sh' .github/actions/status/action.yml
+grep -q '^  assignment-file:' .github/actions/install/action.yml
+grep -q '^  assignmentId:' .github/actions/install/action.yml
+grep -q '../prepare/select.sh' .github/actions/install/action.yml
 ! grep -qE 'affectedJob|matrixJob|GROUP|AFFECTED|MATRIX|FORMAT' .github/actions/status/action.yml .github/actions/status/run.sh
 grep -q 'needs must contain at least one job result' .github/actions/status/run.sh
 grep -q 'all needed jobs succeeded or were skipped' .github/actions/status/run.sh

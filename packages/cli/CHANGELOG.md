@@ -1,5 +1,13 @@
 # @nanoom/cli
 
+## 0.7.0
+
+- Provide semantic matrix names and exact source SHA/sparse checkout patterns from the affected Plan.
+- Select and validate focused-install assignments directly after official checkout; pass the validated assignment to run.
+- Resolve push comparisons from event.before/event.after and fetch missing comparison commits for shallow checkouts.
+- Require positive planned work to execute before status succeeds, and publish successful measurement history from status.
+- Match installed binaries to the downloaded Action source version.
+
 ## 0.6.0
 
 ### Minor Changes

@@ -23,7 +23,17 @@ if [[ "$requested" == action ]]; then
     echo "Cannot derive a release version from GitHub Action ref '$action_ref'. Use @latest, a versioned release ref, or set version explicitly." >&2
     exit 2
   }
-  version=$action_ref
+  source_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
+  source_version=$(sed -n 's/^version = "\([^"]*\)"/\1/p' "$source_root/Cargo.toml" | head -1)
+  [[ "$source_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+    echo 'Action source must declare a release version in Cargo.toml' >&2
+    exit 2
+  }
+  version="v$source_version"
+  [[ "$action_ref" == latest || "$action_ref" == "$version" ]] || {
+    echo "Action ref $action_ref does not match source version $version" >&2
+    exit 2
+  }
 else
   version=$requested
 fi

@@ -1,9 +1,12 @@
 # ADR-0010: 마지막 성공 push를 affected 기준으로 사용
 
-- 상태: Accepted
+- 상태: Superseded by ADR-0015 (2026-09-27)
 - 대상 릴리스: v0.4.0
 
 ## 결정
+
+아래 내용은 과거 결정의 기록이다. 현재 기본값은 이벤트 `before/after`이며
+마지막 성공 push 조회를 하지 않는다. 명시적 base/head는 계속 우선한다.
 
 GitHub `push` 이벤트에서 `.github/actions/affected`는 현재 workflow 파일과 branch의
 가장 최근 성공한 `push` run을 Actions API로 조회하고, 그 run의 `head_sha`부터

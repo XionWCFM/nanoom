@@ -1,0 +1,7 @@
+{
+  "name": "@nanoom/ci-macos",
+  "private": true,
+  "scripts": {
+    "test": "bash ../../scripts/ci-task.sh test"
+  }
+}

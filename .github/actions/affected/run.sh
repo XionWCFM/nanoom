@@ -18,35 +18,7 @@ revision_source=explicit; successful_run_id=''
 [[ -n "$HEAD" ]] || HEAD=$EVENT_HEAD
 if [[ -z "$BASE" ]]; then
   case "$EVENT" in
-    push)
-      ACTION_PHASE=revision-resolution
-      workflow_file=${WORKFLOW_REF#*/}; workflow_file=${workflow_file#*/}; workflow_file=${workflow_file%@*}
-      [[ -n "$workflow_file" && -n "$REF_NAME" ]] || {
-        echo 'push revision resolution requires github.workflow_ref and github.ref_name; set the base input to bootstrap this run' >&2
-        false
-      }
-      encoded_workflow=$(jq -rn --arg value "$workflow_file" '$value | @uri')
-      encoded_branch=$(jq -rn --arg value "$REF_NAME" '$value | @uri')
-      runs_url="$API/repos/$REPOSITORY/actions/workflows/$encoded_workflow/runs?branch=$encoded_branch&event=push&status=success&per_page=20"
-      set +e
-      runs_json=$(curl --fail --silent --show-error -H "Authorization: Bearer $TOKEN" -H 'Accept: application/vnd.github+json' "$runs_url" 2>&1)
-      curl_status=$?
-      set -e
-      (( curl_status == 0 )) || {
-        echo "could not query successful push runs for workflow '$workflow_file' on branch '$REF_NAME' (GitHub API exit $curl_status); grant actions: read and contents: read, or set with.base to bootstrap" >&2
-        false
-      }
-      successful_run_id=$(jq -er --arg current "$RUN_ID" '[.workflow_runs[]? | select(.conclusion == "success") | select((.id | tostring) != $current)] | sort_by(.created_at, .id) | .[-1].id // empty' <<<"$runs_json" 2>/dev/null) || {
-        echo "GitHub API returned no valid successful push run for workflow '$workflow_file' on branch '$REF_NAME'; set with.base to bootstrap this run" >&2
-        false
-      }
-      BASE=$(jq -er --arg current "$RUN_ID" '[.workflow_runs[]? | select(.conclusion == "success") | select((.id | tostring) != $current)] | sort_by(.created_at, .id) | .[-1].head_sha // empty' <<<"$runs_json" 2>/dev/null) || {
-        echo "GitHub API returned no successful push SHA for workflow '$workflow_file' on branch '$REF_NAME'; set with.base to bootstrap this run" >&2
-        false
-      }
-      [[ "$BASE" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "successful workflow run $successful_run_id returned an invalid head SHA '$BASE'; set with.base to bootstrap this run" >&2; false; }
-      revision_source=lastSuccessfulPush
-      ;;
+    push) BASE=$EVENT_BASE; revision_source=pushBefore ;;
     pull_request) BASE=$EVENT_BASE; revision_source=pullRequestBase ;;
     merge_group) BASE=$EVENT_BASE; revision_source=mergeGroupBase ;;
     *) echo 'affected could not resolve a base revision from this event; set the base input explicitly' >&2; false ;;
@@ -54,12 +26,18 @@ if [[ -z "$BASE" ]]; then
 fi
 [[ -n "$BASE" ]] || { echo 'affected could not resolve a base revision from inputs or the GitHub event; set with.base to bootstrap this run' >&2; false; }
 ACTION_PHASE=revision-validation
-resolved_head=$(git -C "$CWD" rev-parse --verify "$HEAD^{commit}")
-resolved_base=$(git -C "$CWD" rev-parse --verify "$BASE^{commit}")
-git -C "$CWD" merge-base --is-ancestor "$resolved_base" "$resolved_head" || {
-  echo "resolved base $resolved_base is not an ancestor of head $resolved_head; set with.base to a reachable commit" >&2
+[[ "$BASE" != -* && "$HEAD" != -* && ! "$BASE" =~ ^0{40}$ && ! "$HEAD" =~ ^0{40}$ ]] || {
+  echo 'affected requires valid non-zero revisions; set with.base explicitly for an initial push' >&2
   false
 }
+resolved_head=$(git -C "$CWD" rev-parse --verify "$HEAD^{commit}")
+if ! resolved_base=$(git -C "$CWD" rev-parse --verify "$BASE^{commit}" 2>/dev/null); then
+  echo "Fetching comparison base $BASE without workspace contents"
+  git -C "$CWD" fetch --no-tags --filter=tree:0 --depth=1 origin "$BASE"
+  resolved_base=$(git -C "$CWD" rev-parse --verify "$BASE^{commit}")
+fi
+# The CLI resolves the merge base with bounded commit-only deepening. A depth-1
+# checkout cannot prove ancestry here, even when the event revisions are valid.
 
 history_status=disabled; history_fetch_ms=0; history_source_run_id=''; history_path=''
 
@@ -311,12 +289,18 @@ if [[ "$SCHEDULER" != http ]]; then
   groups=$(jq -c '.groups' <<<"$compact")
   result=$(jq -c --arg source "$revision_source" --arg base "$resolved_base" --arg head "$resolved_head" --arg successful "$successful_run_id" --arg historyStatus "$history_status" --arg sourceRun "$history_source_run_id" --arg historyBackend "$HISTORY_BACKEND" --argjson fetchMs "$history_fetch_ms" '.result + {historyStatus:$historyStatus,revisionResolution:{baseSource:$source,baseCommit:$base,headCommit:$head,successfulRunId:(if $successful == "" then null else ($successful | tonumber) end)},scheduling:{historyBackend:$historyBackend,historyStatus:$historyStatus,historySourceRunId:(if $sourceRun == "" then null else ($sourceRun | tonumber) end),historyFetchMs:$fetchMs,reason:(if $historyStatus == "loaded" and $historyBackend == "server" then "bounded PredictionTable v3 snapshots loaded from the History Server" elif $historyStatus == "loaded" then "bounded PredictionArtifact v3 loaded; ModelState and measurements were not downloaded" elif $historyStatus == "history_not_needed" then "no affected assignment choice could be changed by history; no history metadata request was made" elif $historyStatus == "disabled" then "historical scheduling explicitly disabled; deterministic cold scheduling" elif $historyStatus == "corrupt" then "prediction history was invalid; using deterministic cold scheduling" else "no usable history; using deterministic cold scheduling" end)}}' <<<"$compact")
   has=$(jq -r '.has_change' <<<"$compact")
-  output_bytes=$(printf 'has_change=%s\nplan=%s\ngroups=%s\nresult=%s\n' "$has" "$plan_ref" "$groups" "$result" | iconv -f UTF-8 -t UTF-16LE | wc -c | tr -d ' ')
+  matrix=$(jq -c '{include:[.[] | .include[]]}' <<<"$groups")
+  jq -e '.include | length <= 256' >/dev/null <<<"$matrix" || {
+    echo 'combined assignment matrix exceeds GitHub limit of 256 jobs; reduce group concurrency' >&2
+    false
+  }
+  output_bytes=$(printf 'has_change=%s\nplan=%s\ngroups=%s\nmatrix=%s\nresult=%s\n' "$has" "$plan_ref" "$groups" "$matrix" "$result" | iconv -f UTF-8 -t UTF-16LE | wc -c | tr -d ' ')
   (( output_bytes <= 1048576 )) || { echo "Action outputs exceed GitHub's 1 MiB UTF-16 limit: $output_bytes bytes" >&2; false; }
   echo "has_change=$has" >> "$GITHUB_OUTPUT"
   echo "plan=$plan_ref" >> "$GITHUB_OUTPUT"
   echo "plan_artifact_path=$plan_dir" >> "$GITHUB_OUTPUT"
   echo "groups=$groups" >> "$GITHUB_OUTPUT"
+  echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
   echo "result=$result" >> "$GITHUB_OUTPUT"
   assignments=$(jq -r '.result.assignmentCount' <<<"$compact")
   items=$(jq -r '.result.itemCount' <<<"$compact")
@@ -350,9 +334,11 @@ fi
 compact_matrix=$(jq -c 'with_entries(.value.include |= map(if .items then {assignmentId,predictedDurationMs,checkoutPathCount,predictionSources,reason,checkout,runnerLabels,timingEnvironment,items:[.items[] | {group,name,task,shard,totalShards} | with_entries(select(.value != null))]} elif .mode == "continuous" then {agentId,runId,mode,checkout,runnerLabels,timingEnvironment} else {name,task,shard,totalShards,checkoutPathCount,runnerLabels,timingEnvironment} | with_entries(select(.value != null)) end))' <<<"$matrix")
 groups=$(jq -c 'with_entries(.value = {hasChange:((.value.include|length)>0),matrix:.value})' <<<"$compact_matrix"); has=$(jq -r 'any(to_entries[]; .value.include | length > 0)' <<<"$compact_matrix")
 result=$(jq -c --argjson groups "$groups" '. + {groups:($groups | with_entries(.value |= {hasChange,assignmentCount:(.matrix.include|length)}))}' <<<"$report")
-output_bytes=$(printf 'has_change=%s\ngroups=%s\nresult=%s\n' "$has" "$groups" "$result" | iconv -f UTF-8 -t UTF-16LE | wc -c | tr -d ' ')
+combined_matrix=$(jq -c '{include:[.[] | (.include // .matrix.include // [])[]]}' <<<"$groups")
+output_bytes=$(printf 'has_change=%s\ngroups=%s\nmatrix=%s\nresult=%s\n' "$has" "$groups" "$combined_matrix" "$result" | iconv -f UTF-8 -t UTF-16LE | wc -c | tr -d ' ')
 (( output_bytes <= 1048576 )) || { echo "Action outputs exceed GitHub's 1 MiB UTF-16 limit: $output_bytes bytes" >&2; false; }
 echo "has_change=$has" >> "$GITHUB_OUTPUT"; echo "groups=$groups" >> "$GITHUB_OUTPUT"; echo "result=$result" >> "$GITHUB_OUTPUT"
+echo "matrix=$combined_matrix" >> "$GITHUB_OUTPUT"
 assignments=$(jq '[to_entries[].value.include[]] | length' <<<"$matrix"); items=$(jq '[.affected.group[].workspaces[]] | length' <<<"$report"); elapsed=$(( $(date +%s) - started ))
 printf '  Resolved revisions\n    source: %s\n    base: %s\n    head: %s\n    successful run: %s\n  Result\n    ✓ affected work items=%s; assignments=%s; history=%s; elapsed=%ss\n  Final JSON\n    %s\n' "$revision_source" "$resolved_base" "$resolved_head" "${successful_run_id:-none}" "$items" "$assignments" "$history_status" "$elapsed" "$result"
 { echo '### nanoom affected'; echo; echo "**Revision:** \`$revision_source\` $resolved_base → $resolved_head (successful run: ${successful_run_id:-none})"; echo; echo "**Result:** $items work items in $assignments assignments; history \`$history_status\`."; echo; echo '| Group | Total | Affected | Percent | Tier | Concurrency |'; echo '|---|---:|---:|---:|---|---:|'; jq -r '.affected.group | to_entries[] | "| \(.key) | \(.value.totalWorkspaces) | \(.value.affectedWorkspaces) | \(.value.affectedPercent) | \(.value.distribution.name // "legacy") | \(.value.distribution.concurrency // (.value.workspaces|length)) |"' <<<"$report"; } >> "$GITHUB_STEP_SUMMARY"

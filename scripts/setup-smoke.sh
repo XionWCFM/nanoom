@@ -36,7 +36,10 @@ PATH="$tmp/bin:$PATH" RUNNER_TEMP="$tmp/runner" GITHUB_PATH="$tmp/github-path" \
   TOKEN=fixture-token FIXTURE_ARCHIVE="$tmp/nanoom-linux-x64.tar.gz" FIXTURE_REQUESTS="$tmp/requests" REQUESTED=action ACTION_REF=latest RELEASE_BASE_URL=https://github.example.test \
   bash "$root/.github/actions/_setup/setup.sh"
 grep -q '/nanoom-bin$' "$tmp/github-path"
-grep -Fq 'https://api.github.com/repos/XionWCFM/nanoom/releases/latest' "$tmp/requests"
-grep -Fq 'https://github.example.test/XionWCFM/nanoom/releases/download/v0.0.0/nanoom-' "$tmp/requests"
+version=$(sed -n 's/^version = "\([^"]*\)"/\1/p' "$root/Cargo.toml" | head -1)
+if grep -Fq '/releases/latest' "$tmp/requests"; then
+  echo 'Action source was combined with an independently resolved release' >&2; exit 1
+fi
+grep -Fq "https://github.example.test/XionWCFM/nanoom/releases/download/v$version/nanoom-" "$tmp/requests"
 "$tmp/runner/nanoom-bin/nanoom"
 echo 'setup authentication smoke passed'
