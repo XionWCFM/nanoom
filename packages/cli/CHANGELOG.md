@@ -1,5 +1,9 @@
 # @nanoom/cli
 
+## 0.7.4
+
+- Validate Windows native checkout paths as absolute paths while preserving workspace isolation.
+
 ## 0.7.3
 
 - Keep PR synchronize Plans on the GitHub merge SHA instead of the event branch head.
