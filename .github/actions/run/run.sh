@@ -157,11 +157,11 @@ if [[ "$static_plan" == true ]]; then
           esac
           if [[ -f "$lockfile" ]]; then
             if command -v sha256sum >/dev/null 2>&1; then
-              lockfile_digest=$(sha256sum "$lockfile" | awk '{print $1}')
+              lockfile_digest=$(sha256sum < "$lockfile" | awk '{print $1}')
               checkout_digest=$(jq -c '.checkoutPaths | unique | sort' "$ASSIGNMENT_FILE" | sha256sum | awk '{print $1}')
               workspace_set_digest=$(jq -c '[.items[].name] | unique | sort' "$ASSIGNMENT_FILE" | sha256sum | awk '{print $1}')
             elif command -v shasum >/dev/null 2>&1; then
-              lockfile_digest=$(shasum -a 256 "$lockfile" | awk '{print $1}')
+              lockfile_digest=$(shasum -a 256 < "$lockfile" | awk '{print $1}')
               checkout_digest=$(jq -c '.checkoutPaths | unique | sort' "$ASSIGNMENT_FILE" | shasum -a 256 | awk '{print $1}')
               workspace_set_digest=$(jq -c '[.items[].name] | unique | sort' "$ASSIGNMENT_FILE" | shasum -a 256 | awk '{print $1}')
             else

@@ -42,4 +42,22 @@ if grep -Fq '/releases/latest' "$tmp/requests"; then
 fi
 grep -Fq "https://github.example.test/XionWCFM/nanoom/releases/download/v$version/nanoom-" "$tmp/requests"
 "$tmp/runner/nanoom-bin/nanoom"
-echo 'setup authentication smoke passed'
+# Windows runner paths contain backslashes; checksum output must not include filename escaping.
+export FIXTURE_SHA256SUM="$(command -v sha256sum)"
+cat > "$tmp/bin/sha256sum" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+output=$("$FIXTURE_SHA256SUM" "$@")
+# Match GNU's escaped-filename marker on hosts with a different SHA utility.
+if [[ "$*" == *\\* && "$output" != \\* ]]; then
+  printf '\\%s\n' "$output"
+else
+  printf '%s\n' "$output"
+fi
+SH
+chmod +x "$tmp/bin/sha256sum"
+PATH="$tmp/bin:$PATH" RUNNER_TEMP="$tmp/runner\\with\\backslashes" GITHUB_PATH="$tmp/backslash-path" \
+  TOKEN=fixture-token FIXTURE_ARCHIVE="$tmp/nanoom-linux-x64.tar.gz" FIXTURE_REQUESTS="$tmp/backslash-requests" REQUESTED=action ACTION_REF=latest RELEASE_BASE_URL=https://github.example.test \
+  bash "$root/.github/actions/_setup/setup.sh"
+"$tmp/runner\\with\\backslashes/nanoom-bin/nanoom"
+echo 'setup authentication and backslash-path checksum smoke passed'

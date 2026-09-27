@@ -108,9 +108,9 @@ if [[ "$SCHEDULER" != http ]]; then
       preparation_pm_version=$declared_pm_version
       if [[ "$preparation_pm_version" =~ ^[A-Za-z0-9._+-]+$ ]]; then
         if command -v sha256sum >/dev/null 2>&1; then
-          preparation_lockfile_digest=$(sha256sum "$preparation_lockfile" | awk '{print $1}')
+          preparation_lockfile_digest=$(sha256sum < "$preparation_lockfile" | awk '{print $1}')
         elif command -v shasum >/dev/null 2>&1; then
-          preparation_lockfile_digest=$(shasum -a 256 "$preparation_lockfile" | awk '{print $1}')
+          preparation_lockfile_digest=$(shasum -a 256 < "$preparation_lockfile" | awk '{print $1}')
         else
           preparation_lockfile_digest=''
         fi
@@ -252,9 +252,9 @@ if [[ "$SCHEDULER" != http ]]; then
     if [[ -n "$history_path" ]]; then
       prediction_sha=''; prediction_metadata=''; model_name=''; model_sha=''
       if command -v sha256sum >/dev/null 2>&1; then
-        prediction_sha=$(nanoom_history_timeout sha256sum "$history_path" | awk '{print $1}') || history_path=''
+        prediction_sha=$(nanoom_history_timeout sha256sum < "$history_path" | awk '{print $1}') || history_path=''
       else
-        prediction_sha=$(nanoom_history_timeout shasum -a 256 "$history_path" | awk '{print $1}') || history_path=''
+        prediction_sha=$(nanoom_history_timeout shasum -a 256 < "$history_path" | awk '{print $1}') || history_path=''
       fi
       prediction_metadata=$(nanoom_prediction_model_metadata "$history_path") || history_path=''
       model_name=$(jq -r '.name // empty' <<<"$prediction_metadata")
@@ -306,7 +306,7 @@ if [[ "$SCHEDULER" != http ]]; then
   items=$(jq -r '.result.itemCount' <<<"$compact")
   elapsed=$(( $(date +%s) - started ))
   printf '  Resolved revisions\n    source: %s\n    base: %s\n    head: %s\n    successful run: %s\n  Result\n    ✓ affected work items=%s; assignments=%s; history=%s; elapsed=%ss\n  Final JSON\n    %s\n' "$revision_source" "$resolved_base" "$resolved_head" "${successful_run_id:-none}" "$items" "$assignments" "$history_status" "$elapsed" "$result"
-  { echo '### nanoom affected'; echo; echo "**Revision:** \`$revision_source\` $resolved_base → $resolved_head (successful run: ${successful_run_id:-none})"; echo; echo "**Result:** $items work items in $assignments assignments; history \`$history_status\`."; echo; echo '| Group | Assignments | Items |'; echo '|---|---:|---:|'; jq -r --slurpfile plan "$plan_path" '.groups | to_entries[] | .key as $group | [$group, .value.include | length, ($plan[0].groups[$group].assignments | map(.items | length) | add // 0)] | "| \(.[0]) | \(.[1]) | \(.[2]) |"' <<<"$compact"; } >> "$GITHUB_STEP_SUMMARY"
+  { echo '### nanoom affected'; echo; echo "**Revision:** \`$revision_source\` $resolved_base → $resolved_head"; echo; echo "**Result:** $items work items in $assignments assignments; history \`$history_status\`."; echo; echo '| Group | Assignments | Items |'; echo '|---|---:|---:|'; jq -r --slurpfile plan "$plan_path" '.groups | to_entries[] | .key as $group | [$group, .value.include | length, ($plan[0].groups[$group].assignments | map(.items | length) | add // 0)] | "| \(.[0]) | \(.[1]) | \(.[2]) |"' <<<"$compact"; } >> "$GITHUB_STEP_SUMMARY"
   exit 0
 fi
 
@@ -341,4 +341,4 @@ echo "has_change=$has" >> "$GITHUB_OUTPUT"; echo "groups=$groups" >> "$GITHUB_OU
 echo "matrix=$combined_matrix" >> "$GITHUB_OUTPUT"
 assignments=$(jq '[to_entries[].value.include[]] | length' <<<"$matrix"); items=$(jq '[.affected.group[].workspaces[]] | length' <<<"$report"); elapsed=$(( $(date +%s) - started ))
 printf '  Resolved revisions\n    source: %s\n    base: %s\n    head: %s\n    successful run: %s\n  Result\n    ✓ affected work items=%s; assignments=%s; history=%s; elapsed=%ss\n  Final JSON\n    %s\n' "$revision_source" "$resolved_base" "$resolved_head" "${successful_run_id:-none}" "$items" "$assignments" "$history_status" "$elapsed" "$result"
-{ echo '### nanoom affected'; echo; echo "**Revision:** \`$revision_source\` $resolved_base → $resolved_head (successful run: ${successful_run_id:-none})"; echo; echo "**Result:** $items work items in $assignments assignments; history \`$history_status\`."; echo; echo '| Group | Total | Affected | Percent | Tier | Concurrency |'; echo '|---|---:|---:|---:|---|---:|'; jq -r '.affected.group | to_entries[] | "| \(.key) | \(.value.totalWorkspaces) | \(.value.affectedWorkspaces) | \(.value.affectedPercent) | \(.value.distribution.name // "legacy") | \(.value.distribution.concurrency // (.value.workspaces|length)) |"' <<<"$report"; } >> "$GITHUB_STEP_SUMMARY"
+{ echo '### nanoom affected'; echo; echo "**Revision:** \`$revision_source\` $resolved_base → $resolved_head"; echo; echo "**Result:** $items work items in $assignments assignments; history \`$history_status\`."; echo; echo '| Group | Total | Affected | Percent | Tier | Concurrency |'; echo '|---|---:|---:|---:|---|---:|'; jq -r '.affected.group | to_entries[] | "| \(.key) | \(.value.totalWorkspaces) | \(.value.affectedWorkspaces) | \(.value.affectedPercent) | \(.value.distribution.name // "legacy") | \(.value.distribution.concurrency // (.value.workspaces|length)) |"' <<<"$report"; } >> "$GITHUB_STEP_SUMMARY"

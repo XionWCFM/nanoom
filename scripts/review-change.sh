@@ -44,7 +44,7 @@ if ((dependency_only)); then
   echo 'review-change: dependency-only update; existing regression and release-contract gates are authoritative'
 fi
 
-if ((!dependency_only)) && any '^(src/|packages/cli/)' && ! any '(^|/)(tests?|__tests__|.*test.*|smoke-test\.js)'; then
+if ((!dependency_only)) && any '^(src/|packages/cli/)' && ! any '(^|/)(tests?|__tests__|.*test.*|.*smoke\.sh)'; then
   echo 'BLOCKED: CLI/source change has no changed regression test.'; fail=1
 fi
 if ((!dependency_only)) && any '^\.github/actions/' && ! has 'scripts/action-contract.sh'; then
