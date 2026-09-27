@@ -495,3 +495,103 @@ fn affected_loads_v3_prediction_artifact_for_an_exact_task_estimate() {
     assert_eq!(exact["predictedDurationMs"], 250);
     assert_eq!(exact["predictionSources"]["exact"], 1);
 }
+
+#[test]
+fn planned_sparse_checkout_excludes_registry_collision_and_keeps_internal_closure() {
+    let dir = tempdir().unwrap();
+    write_json(
+        &dir.path().join("package.json"),
+        &json!({"name":"root","workspaces":["packages/*"]}),
+    );
+    write_json(
+        &dir.path().join("nanoom.config.json"),
+        &json!({"group":{"ci":{"tasks":["test"]}}}),
+    );
+    for name in ["app", "internal", "leaf", "registry"] {
+        let dependencies = match name {
+            "app" => json!({"internal":"workspace:*", "registry":"^2.0.0"}),
+            "internal" => json!({"leaf":"workspace:*"}),
+            _ => json!({}),
+        };
+        write_json(
+            &dir.path().join(format!("packages/{name}/package.json")),
+            &json!({"name":name,"version":"1.0.0","dependencies":dependencies}),
+        );
+        fs::write(dir.path().join(format!("packages/{name}/source.txt")), name).unwrap();
+    }
+    init_repo(dir.path());
+    let base = git(dir.path(), &["rev-parse", "HEAD"]);
+    fs::write(dir.path().join("packages/app/source.txt"), "changed").unwrap();
+    git(dir.path(), &["add", "."]);
+    git(dir.path(), &["commit", "-m", "change app", "--no-gpg-sign"]);
+    let head = git(dir.path(), &["rev-parse", "HEAD"]);
+    write_json(
+        &dir.path().join("context.json"),
+        &json!({
+            "repository":"owner/repo", "workflow":".github/workflows/ci.yml@refs/heads/main",
+            "runId":"12345", "producerAttempt":1, "planningJob":"affected",
+            "base":base, "head":head, "taskRunner":"pnpm", "predictionReason":"cold start"
+        }),
+    );
+    let output = run_cli(
+        dir.path(),
+        &[
+            "affected",
+            "--base",
+            &base,
+            "--head",
+            &head,
+            "--timing-runner",
+            "pnpm",
+            "--plan-output",
+            "plan.json",
+            "--plan-context",
+            "context.json",
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let compact: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let checkout = &compact["groups"]["ci"]["include"][0]["checkout"];
+    assert_eq!(checkout["ref"], head);
+    assert_eq!(
+        checkout["sparseCheckout"],
+        "/*\n!/*/\n/packages/app\n/packages/internal\n/packages/leaf"
+    );
+
+    let clone = tempdir().unwrap();
+    git(
+        clone.path(),
+        &["clone", "--no-checkout", dir.path().to_str().unwrap(), "."],
+    );
+    git(clone.path(), &["sparse-checkout", "init", "--no-cone"]);
+    let mut child = Command::new("git")
+        .arg("-C")
+        .arg(clone.path())
+        .args(["sparse-checkout", "set", "--no-cone", "--stdin"])
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    use std::io::Write;
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(checkout["sparseCheckout"].as_str().unwrap().as_bytes())
+        .unwrap();
+    assert!(child.wait().unwrap().success());
+    git(clone.path(), &["checkout", "--detach", &head]);
+    assert_eq!(git(clone.path(), &["rev-parse", "HEAD"]), head);
+    for name in ["app", "internal", "leaf"] {
+        assert!(clone
+            .path()
+            .join(format!("packages/{name}/source.txt"))
+            .is_file());
+    }
+    assert!(!clone.path().join("packages/registry").exists());
+    assert!(clone.path().join("package.json").is_file());
+    assert!(clone.path().join("nanoom.config.json").is_file());
+}

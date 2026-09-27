@@ -141,7 +141,7 @@ jobs:
 받지 않습니다. 기존 `scheduler: http` 연속 coordinator는 별도 continuous-agent matrix 입력을
 유지합니다.
 
-`run --json`은 성공 실행마다 `workspace`, 실제 `runner`, `durationMs`를 냅니다. 명시한 `--all --filter`가 workspace를 찾지 못하면 실패하며, run Action도 계획된 workspace 실행이 없으면 assignment를 실패시키고 후속 item을 시작하지 않습니다. `run --json`의 작업 실패 결과는 `completed`, `failed`, `pending`, `executions`를 남깁니다. 기본값은 첫 실패에서 중단하고 나머지를 `pending`으로 기록하며, `--continue-on-error`는 후속 workspace도 실행한 뒤 전체 실패 결과와 완료 목록을 출력합니다. shard 환경변수는 실행할 자식 프로세스에만 전달합니다. static assignment의 빈 install은 거부합니다. `install`은 assignment의 workspace union을 한 번에 focused install하며, standalone no-filter install과 continuous scheduler의 전체 install은 유지됩니다.
+`run --json`은 성공 실행마다 `workspace`, 실제 `runner`, `durationMs`를 냅니다. 명시한 `--all --filter`가 workspace를 찾지 못하면 실패하며, run Action도 계획된 workspace 실행이 없으면 assignment를 실패시키고 후속 item을 시작하지 않습니다. `run --json`의 작업 실패 결과는 `completed`, `failed`, `pending`, `executions`를 남깁니다. 기본값은 첫 실패에서 중단하고 나머지를 `pending`으로 기록하며, `--continue-on-error`는 후속 workspace도 실행한 뒤 전체 실패 결과와 완료 목록을 출력합니다. shard 환경변수는 실행할 자식 프로세스에만 전달합니다. checkout dependency closure는 affected 전파와 동일한 내부 링크 기준을 사용하며, 로컬 버전과 맞지 않는 registry dependency의 동명 workspace는 제외합니다. static assignment의 빈 install은 거부합니다. `install`은 assignment의 workspace union을 한 번에 focused install하며, standalone no-filter install과 continuous scheduler의 전체 install은 유지됩니다.
 
 ## 실행시간 기반 정적 배치
 

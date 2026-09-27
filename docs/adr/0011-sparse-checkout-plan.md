@@ -67,3 +67,5 @@ workspace를 현재 graph에서 놓치면 빠른 대신 잘못된 affected 결�
 run마다 checkout 요청은 남지만 ADR-0012부터 runtime makespan이 같은 후보에서는
 assignment 전체의 중복 closure path 수가 적은 배치를 선택한다. byte 전송량과 실제 GHES
 부하는 GHES 환경이 제공될 때 별도로 검증한다.
+
+checkout dependency closure와 affected 전파는 같은 내부 링크 판별 기준을 사용한다. plain semver 범위가 로컬 패키지 버전과 맞지 않으면 registry 의존성이므로 같은 이름의 workspace 및 그 하위 closure를 checkout하지 않는다. `workspace:`, `link:`, `file:`와 호환되는 semver 내부 링크는 기존 transitive closure를 유지한다. 버전을 선언하지 않은 패키지에 대한 기존 보수적 판별도 유지한다.

@@ -634,3 +634,48 @@ fn test_apply_rules_keeps_non_ignored() {
     let filtered = apply_rules(projects, &rules, &[]);
     assert_eq!(filtered.len(), 1);
 }
+
+#[test]
+fn checkout_closure_uses_internal_links_and_excludes_registry_name_collisions() {
+    for (spec, expected_internal) in [
+        ("^1.0.0", true),
+        ("^2.0.0", false),
+        ("workspace:*", true),
+        ("link:../lib", true),
+        ("file:../lib", true),
+    ] {
+        let dir = tempdir().unwrap();
+        write_json(
+            &dir.path().join("packages/app/package.json"),
+            &package_json("app", &[("lib", spec)]),
+        );
+        write_json(
+            &dir.path().join("packages/lib/package.json"),
+            &package_json("lib", &[("leaf", "workspace:*")]),
+        );
+        write_json(
+            &dir.path().join("packages/leaf/package.json"),
+            &package_json("leaf", &[]),
+        );
+        let workspace =
+            Workspace::discover(&simple_config(&["packages/*"], &[]), dir.path()).unwrap();
+        let expected = if expected_internal {
+            vec!["packages/app", "packages/leaf", "packages/lib"]
+        } else {
+            vec!["packages/app"]
+        };
+        assert_eq!(
+            workspace.dependency_closure_paths("app", dir.path()),
+            expected,
+            "spec={spec}"
+        );
+        assert_eq!(
+            workspace
+                .get_project_by_name("lib")
+                .unwrap()
+                .dependents
+                .contains(&"app".into()),
+            expected_internal
+        );
+    }
+}
