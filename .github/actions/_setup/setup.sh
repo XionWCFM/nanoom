@@ -70,7 +70,7 @@ actual=$( (command -v sha256sum >/dev/null && sha256sum < "$download_dir/$file" 
 if [[ "$extension" == zip ]]; then
   powershell -NoProfile -Command "Expand-Archive -Force '$download_dir/$file' '$bin_dir'"
 else
-  tar -xzf "$download_dir/$file" -C "$bin_dir"
+  (cd "$bin_dir" && tar -xzf "$download_dir/$file")
   chmod +x "$bin_dir/$executable"
 fi
 test -x "$bin_dir/$executable" || [[ "$os" == windows && -f "$bin_dir/$executable" ]]
