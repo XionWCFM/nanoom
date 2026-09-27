@@ -88,11 +88,11 @@ jobs:
       - name: Add Nanoom binary to PATH
         run: echo "$GITHUB_WORKSPACE/target/debug" >> "$GITHUB_PATH"
       - run: corepack enable
-      - uses: actions/download-artifact@v4.3.0
+      - uses: actions/download-artifact@v8.0.1
         with:
           name: ${{ fromJSON(needs.affected.outputs.plan).artifactName }}
           path: ${{ runner.temp }}/nanoom-plan
-      - uses: actions/download-artifact@v4.3.0
+      - uses: actions/download-artifact@v8.0.1
         with:
           name: nanoom-history-e2e-fixture
           path: ${{ runner.temp }}
@@ -213,7 +213,7 @@ jobs:
       - name: Add Nanoom binary to PATH
         run: echo "$GITHUB_WORKSPACE/target/debug" >> "$GITHUB_PATH"
       - run: corepack enable
-      - uses: actions/download-artifact@v4.3.0
+      - uses: actions/download-artifact@v8.0.1
         with:
           name: nanoom-history-e2e-fixture
           path: ${{ runner.temp }}
@@ -243,7 +243,7 @@ jobs:
           jq -e '.scheduling.historyStatus == "loaded"' <<< "$RESULT"
           assignment=$(jq -ce '[.ci.include[] | select((.predictionSources.sampleCount // 0) > 0)] | first // error("no warm assignment")' <<< "$GROUPS")
           echo "assignment=$assignment" >> "$GITHUB_OUTPUT"
-      - uses: actions/download-artifact@v4.3.0
+      - uses: actions/download-artifact@v8.0.1
         with:
           name: ${{ fromJSON(steps.affected.outputs.plan).artifactName }}
           path: ${{ runner.temp }}/nanoom-warm-plan
