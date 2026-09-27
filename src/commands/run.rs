@@ -327,7 +327,13 @@ async fn run_task(
     } else {
         std::env::current_dir()?.join(root)
     };
-    let executable = package_manager_executable(&program);
+    let executable = crate::commands::node_tool_executable(&program);
+    let local_executable = runner_root.join("node_modules/.bin").join(executable);
+    let executable = if matches!(detected_runner, "turbo" | "nx") && local_executable.is_file() {
+        local_executable
+    } else {
+        PathBuf::from(executable)
+    };
     let mut cmd = Command::new(executable);
     cmd.current_dir(if matches!(detected_runner, "turbo" | "nx") {
         &runner_root
@@ -383,21 +389,6 @@ async fn run_task(
         started_at_ms,
         duration_ms: started.elapsed().as_millis().try_into().unwrap_or(u64::MAX),
     })
-}
-
-fn package_manager_executable(program: &str) -> &str {
-    #[cfg(windows)]
-    {
-        return match program {
-            "npm" => "npm.cmd",
-            "pnpm" => "pnpm.cmd",
-            "yarn" => "yarn.cmd",
-            _ => program,
-        };
-    }
-
-    #[cfg(not(windows))]
-    program
 }
 
 fn resolve_script_runner(
