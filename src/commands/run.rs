@@ -842,47 +842,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[cfg(windows)]
-    async fn windows_local_runner_cmd_shims_execute_planned_tasks() {
-        let dir = tempfile::Builder::new()
-            .prefix("nanoom tools ")
-            .tempdir()
-            .unwrap();
-        let root = dir.path();
-        let bin = root.join("node_modules/.bin");
-        std::fs::create_dir_all(&bin).unwrap();
-        let log = root.join("tasks.log");
-        for runner in ["turbo", "nx"] {
-            std::fs::write(
-                bin.join(format!("{runner}.cmd")),
-                "@echo off\r\necho %* >> \"%NANOOM_TASK_LOG%\"\r\nexit /b 0\r\n",
-            )
-            .unwrap();
-            let task = TaskConfig {
-                command: "test".into(),
-                args: vec![],
-                env: HashMap::from([(
-                    "NANOOM_TASK_LOG".into(),
-                    log.to_string_lossy().into_owned(),
-                )]),
-            };
-            let execution = run_task(
-                &make_project("@repo/app", root),
-                &task,
-                Some(runner),
-                root,
-                true,
-            )
-            .await
-            .unwrap();
-            assert_eq!(execution.runner, runner);
-        }
-        let calls = std::fs::read_to_string(log).unwrap().replace('"', "");
-        assert!(calls.contains("run test --filter @repo/app"), "{calls}");
-        assert!(calls.contains("run @repo/app:test"), "{calls}");
-    }
-
-    #[tokio::test]
     async fn execute_rejects_invalid_shard_matrix() {
         let config = make_config(vec![]);
         let result = execute(

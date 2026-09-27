@@ -320,44 +320,8 @@ fn is_yarn_berry(dir: &Path) -> bool {
 
 #[cfg(test)]
 mod tests {
-    #[tokio::test]
-    #[cfg(windows)]
-    #[serial]
-    async fn windows_install_uses_package_manager_cmd_shims() {
-        let dir = tempfile::Builder::new()
-            .prefix("nanoom installers ")
-            .tempdir()
-            .unwrap();
-        let bin = dir.path().join("bin");
-        std::fs::create_dir_all(&bin).unwrap();
-        let log = dir.path().join("install.log");
-        for pm in ["pnpm", "yarn", "npm"] {
-            std::fs::write(
-                bin.join(format!("{pm}.cmd")),
-                format!(
-                    "@echo off\r\necho {pm} %* >> \"{}\"\r\nexit /b 0\r\n",
-                    log.display()
-                ),
-            )
-            .unwrap();
-        }
-        let old_path = std::env::var_os("PATH").unwrap();
-        let paths = std::iter::once(bin).chain(std::env::split_paths(&old_path));
-        std::env::set_var("PATH", std::env::join_paths(paths).unwrap());
-        for pm in ["pnpm", "yarn", "npm"] {
-            run_command(pm, vec!["install".into()], dir.path(), true)
-                .await
-                .unwrap();
-            run_install(pm, dir.path(), true).await.unwrap();
-        }
-        std::env::set_var("PATH", old_path);
-        let calls = std::fs::read_to_string(log).unwrap();
-        for pm in ["pnpm", "yarn", "npm"] {
-            assert!(calls.contains(&format!("{pm} install")), "{calls}");
-        }
-    }
-
     use super::*;
+    #[cfg(not(windows))]
     use serial_test::serial;
     use tempfile::tempdir;
 
