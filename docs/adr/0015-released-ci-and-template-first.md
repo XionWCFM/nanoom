@@ -37,3 +37,7 @@ affected의 compact matrix에는 Plan에서 계산한 `checkout.ref`와 `checkou
 공개 binary의 checksum은 파일명 표기가 아닌 파일 바이트로 검증한다. Windows runner의 역슬래시 경로가 GNU checksum 출력의 escape marker를 만들더라도 digest에 포함되지 않아야 한다. 설치와 이력의 파일 digest 계산은 같은 기준을 유지하고, 역슬래시 경로의 실제 다운로드·검증·실행을 회귀 검사한다.
 
 이 ADR은 작업 기준의 확정이다. 기존 워크플로와 공개 인터페이스가 이미 준수한다고 주장하지 않는다. 워크플로 정리와 관심사별 Action의 사용자 경로 개선은 제품·테스트 준비 및 워크플로 diff 승인 후 수행한다.
+
+PR synchronize의 `after`는 branch HEAD이므로 Plan의 head로 사용하지 않는다. PR 실행의 merge SHA와 matrix checkout·install 검증의 소스 정체성이 같아야 한다. merge_group은 head_sha를 사용한다.
+
+명시적 workspace.include가 없으면 pnpm-workspace.yaml의 packages 또는 package.json의 workspaces 선언에서 범위를 자동 판별한다. 제외 패턴과 명시적 override를 보존하고, 잘못된 선언을 기존 기본 경로로 조용히 대체하지 않는다.
