@@ -25,7 +25,7 @@ nanoom_validate_assignment_file() {
   local workspace workspace_real cwd_path cwd_real
   workspace=${GITHUB_WORKSPACE:?GITHUB_WORKSPACE is required}
   workspace_real=$(cd "$workspace" && pwd -P)
-  if [[ "$cwd" == /* ]]; then
+  if [[ "$cwd" == /* || "$cwd" == [[:alpha:]]:[\\/]* ]]; then
     cwd_path=$cwd
   else
     cwd_path="$workspace_real/$cwd"
