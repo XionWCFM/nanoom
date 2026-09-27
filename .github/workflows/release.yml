@@ -12,6 +12,7 @@ on:
         type: string
 
 permissions:
+  actions: read
   contents: write
   id-token: write
 
