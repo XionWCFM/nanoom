@@ -12,7 +12,7 @@ Nanoom은 무엇을 가져오고 설치하고 실행할지 계산한다. 사용�
 
 ## 목표 템플릿
 
-`ci`는 Nanoom 설정의 실행 그룹이고 Node 22는 이 예시의 프로젝트 선택이다. 버전 숫자나 모든 입력 이름을 영구 고정하는 것이 목적은 아니다. 핵심 책임과 사용자 경험을 바꾸려면 먼저 사용자 승인을 받는다.
+matrix에는 Nanoom 설정의 모든 실행 그룹이 포함되고 Node 22는 이 예시의 프로젝트 선택이다. 버전 숫자나 모든 입력 이름을 영구 고정하는 것이 목적은 아니다. 핵심 책임과 사용자 경험을 바꾸려면 먼저 사용자 승인을 받는다.
 
 ```yaml
 name: CI
@@ -34,7 +34,7 @@ jobs:
     outputs:
       has_change: ${{ steps.affected.outputs.has_change }}
       plan: ${{ steps.affected.outputs.plan }}
-      groups: ${{ steps.affected.outputs.groups }}
+      matrix: ${{ steps.affected.outputs.matrix }}
     steps:
       - name: Checkout workspace manifests
         uses: actions/checkout@v7
@@ -56,8 +56,7 @@ jobs:
     runs-on: ${{ matrix.runnerLabels || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
-      matrix:
-        include: ${{ fromJSON(needs.affected.outputs.groups).ci.include }}
+      matrix: ${{ fromJSON(needs.affected.outputs.matrix) }}
     steps:
       - name: Checkout planned source
         uses: actions/checkout@v7
@@ -68,7 +67,7 @@ jobs:
           sparse-checkout: ${{ matrix.checkout.sparseCheckout }}
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '22'
 
