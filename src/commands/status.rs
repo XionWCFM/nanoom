@@ -83,12 +83,17 @@ pub async fn execute(args: StatusArgs, _config: &crate::Config) -> Result<()> {
 }
 
 fn read_job_result(job_name: &str, results: &str) -> Result<JobResult> {
-    if let Some((_, status)) = results
+    let mut matching = results
         .split(',')
         .map(str::trim)
         .filter_map(|entry| entry.split_once('='))
-        .find(|(name, _)| name.trim() == job_name)
-    {
+        .filter(|(name, _)| name.trim() == job_name);
+    if let Some((_, status)) = matching.next() {
+        if matching.next().is_some() {
+            return Err(crate::error::Error::StatusAggregation(format!(
+                "duplicate result for job '{job_name}'"
+            )));
+        }
         let status = match status.trim() {
             "success" => JobStatus::Success,
             "failure" => JobStatus::Failure,

@@ -65,4 +65,11 @@ if NEEDS='{"run":{"result":"success"}}' REQUIRED_JOBS='["run","run"]' GITHUB_OUT
   echo 'duplicate requiredJobs unexpectedly succeeded' >&2; exit 1
 fi
 
+for duplicate in $'run=failure\nrun=success' $'run=success\nrun=failure' $'run=success\nrun=success'; do
+  if RESULTS="$duplicate" REQUIRED_JOBS='[]' NEEDS= GITHUB_OUTPUT="$tmp/duplicate.output" GITHUB_STEP_SUMMARY="$tmp/duplicate.summary" GITHUB_ACTION_PATH="$root/.github/actions/status" bash "$action" >"$tmp/duplicate.log" 2>&1; then
+    echo 'duplicate job results unexpectedly succeeded' >&2; exit 1
+  fi
+  grep -q 'results must contain unique job IDs' "$tmp/duplicate.log"
+done
+
 echo 'status action tests passed'

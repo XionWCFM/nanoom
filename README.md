@@ -141,7 +141,7 @@ jobs:
 받지 않습니다. 기존 `scheduler: http` 연속 coordinator는 별도 continuous-agent matrix 입력을
 유지합니다.
 
-`run --json`은 성공 실행마다 `workspace`, 실제 `runner`, `durationMs`를 냅니다. 명시한 `--all --filter`가 workspace를 찾지 못하면 실패하며, run Action도 계획된 workspace 실행이 없으면 assignment를 실패시키고 후속 item을 시작하지 않습니다. 첫 작업 실패 뒤에는 `completed`, `failed`, `pending`을 남깁니다. static assignment의 빈 install은 거부합니다. `install`은 assignment의 workspace union을 한 번에 focused install하며, standalone no-filter install과 continuous scheduler의 전체 install은 유지됩니다.
+`run --json`은 성공 실행마다 `workspace`, 실제 `runner`, `durationMs`를 냅니다. 명시한 `--all --filter`가 workspace를 찾지 못하면 실패하며, run Action도 계획된 workspace 실행이 없으면 assignment를 실패시키고 후속 item을 시작하지 않습니다. `run --json`의 작업 실패 결과는 `completed`, `failed`, `pending`, `executions`를 남깁니다. 기본값은 첫 실패에서 중단하고 나머지를 `pending`으로 기록하며, `--continue-on-error`는 후속 workspace도 실행한 뒤 전체 실패 결과와 완료 목록을 출력합니다. shard 환경변수는 실행할 자식 프로세스에만 전달합니다. static assignment의 빈 install은 거부합니다. `install`은 assignment의 workspace union을 한 번에 focused install하며, standalone no-filter install과 continuous scheduler의 전체 install은 유지됩니다.
 
 ## 실행시간 기반 정적 배치
 
@@ -234,7 +234,7 @@ Planned install은 `nanoom install --filter-file FILE`로 non-empty JSON string 
 - uses: XionWCFM/nanoom/.github/actions/history@latest
 ```
 
-history job은 run 성공 뒤 실행하고 aggregate `status`의 dependency에 포함합니다. 작은 workflow는 `${{ toJSON(needs) }}`를 그대로 전달할 수 있습니다. 대규모 matrix에서는 outputs까지 포함한 JSON이 runner process 한도를 넘을 수 있으므로 `results`에 필요한 job 결과만 `job=${{ needs.job.result }}` 형식으로 전달합니다.
+history job은 run 성공 뒤 실행하고 aggregate `status`의 dependency에 포함합니다. 작은 workflow는 `${{ toJSON(needs) }}`를 그대로 전달할 수 있습니다. 명시적 `results`는 job ID마다 하나의 결과만 허용하며 중복은 실패합니다. 대규모 matrix에서는 outputs까지 포함한 JSON이 runner process 한도를 넘을 수 있으므로 `results`에 필요한 job 결과만 `job=${{ needs.job.result }}` 형식으로 전달합니다.
 
 기본 `affected`, `run`, `history`, `prepare`는 GitHub.com용 artifact v4 Action을 사용합니다. GHES에서는 `affected-ghes`, `prepare-ghes`, `run-ghes`, `history-ghes`가 upload v3.2.2/download v3.1.0을 사용합니다. composite Action의 `uses:`는 파라미터화할 수 없고 조건부 step도 사전 다운로드되므로 진입점을 분리했으며 서버를 자동 감지하지 않습니다. v3는 Actions Runner `2.327.1` 이상이 필요합니다. GitHub-hosted timing environment는 OS/architecture, self-hosted는 OS/architecture/runner name으로 분리됩니다. autoscaled pool은 안정적인 pool 또는 image revision을 `timingEnvironment`로 지정하세요.
 

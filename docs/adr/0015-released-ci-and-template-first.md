@@ -47,3 +47,7 @@ PR synchronize의 `after`는 branch HEAD이므로 Plan의 head로 사용하지 �
 assignment 검증은 Git Bash의 Windows drive 절대 경로를 상대 경로로 취급하지 않는다. 경로 표기와 무관하게 canonical checkout은 job workspace 또는 그 아래의 .nanoom 격리 경로로 제한한다.
 
 Windows에서는 Node 도구의 .cmd shim을 실제 호출한다. run·focused install·full install의 도구명 변환은 공통 경로를 사용하며, Turbo·Nx는 설치된 repository의 node_modules/.bin 실행 파일을 우선한다. Windows 소스 CI에서 실제 .cmd 실행 회귀를 확인하고 공개 릴리즈 소비와 구분한다.
+
+실행의 JSON 실패 보고는 중단 여부와 무관하게 `completed`, `failed`, `pending`, `executions`를 보존한다. `--continue-on-error`는 후속 workspace 실행 뒤에도 실패 exit code와 단일 JSON 결과를 유지한다. shard 환경변수는 해당 자식 작업에만 설정하여 같은 프로세스의 후속 실행에 전파하지 않는다.
+
+status의 명시적 `results` 입력은 job별 결과를 하나만 허용한다. CLI의 comma-separated 결과와 Action의 line-separated 결과 모두 중복 job ID를 거부한다. 실패 결과를 먼저 또는 나중에 쓰더라도 성공으로 덮어쓸 수 없어야 한다. 정상 생략과 필수 실행 판단은 기존 계약을 유지한다.
