@@ -147,7 +147,18 @@ impl Workspace {
                 project
                     .dependencies
                     .iter()
-                    .filter(|dependency| self.get_project_by_name(dependency).is_some())
+                    .filter(|dependency| {
+                        self.get_project_by_name(dependency).is_some_and(|local| {
+                            is_internal_link(
+                                project
+                                    .dependency_specs
+                                    .get(*dependency)
+                                    .map(String::as_str)
+                                    .unwrap_or(""),
+                                local.package_json_version.as_deref(),
+                            )
+                        })
+                    })
                     .cloned(),
             );
         }

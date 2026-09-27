@@ -4,6 +4,9 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
 
+# Status results must not overwrite a failed job with a duplicate success.
+grep -q "results must contain unique job IDs" .github/actions/status/run.sh
+
 for action in affected install run status history; do
   test -f ".github/actions/$action/action.yml"
   test -f ".github/actions/$action/run.sh"

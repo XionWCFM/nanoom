@@ -148,3 +148,65 @@ fn test_resolve_base_commit_tip_mode() {
     let base = resolve_base_commit(&repo, &event, ComparisonMode::Tip, 2048).unwrap();
     assert!(!base.is_empty());
 }
+
+#[test]
+fn shallow_linked_worktree_fetches_missing_base_history() {
+    let origin = tempdir().unwrap();
+    init_git_repo(origin.path());
+    commit_file(origin.path(), "base.txt", "base", "base");
+    let base_output = std::process::Command::new("git")
+        .arg("-C")
+        .arg(origin.path())
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .unwrap();
+    let base = String::from_utf8(base_output.stdout)
+        .unwrap()
+        .trim()
+        .to_owned();
+    commit_file(origin.path(), "next.txt", "next", "next");
+    let clone = tempdir().unwrap();
+    let checkout = clone.path().join("checkout");
+    let output = std::process::Command::new("git")
+        .args(["clone", "--no-local", "--depth=1"])
+        .arg(origin.path())
+        .arg(&checkout)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let linked = clone.path().join("linked");
+    let output = std::process::Command::new("git")
+        .arg("-C")
+        .arg(&checkout)
+        .args(["worktree", "add", "--detach"])
+        .arg(&linked)
+        .arg("HEAD")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(linked.join(".git").is_file());
+    let repo = GitRepo::open(&linked).unwrap();
+    assert!(repo.is_shallow().unwrap());
+    let event = GitEvent::PullRequest {
+        base_ref: base.clone(),
+        head_ref: "HEAD".into(),
+    };
+    assert_eq!(
+        resolve_base_commit(&repo, &event, ComparisonMode::MergeBase, 32).unwrap(),
+        base
+    );
+    assert!(!repo.is_shallow().unwrap());
+    assert_eq!(
+        repo.get_changed_files_from_tip(&base, Some("HEAD"))
+            .unwrap(),
+        vec![linked.join("next.txt")]
+    );
+}

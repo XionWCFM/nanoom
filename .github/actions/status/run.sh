@@ -8,6 +8,8 @@ if [[ -n "${RESULTS:-}" ]]; then
     split("\n") | map(select(length > 0) | split("=")) |
     if any(.[]; length != 2 or .[0] == "" or .[1] == "")
     then error("results must contain non-empty job=result lines")
+    elif (map(.[0]) | length != (unique | length))
+    then error("results must contain unique job IDs")
     else map({key: .[0], value: {result: .[1]}}) | from_entries
     end
   ' <<<"$RESULTS")

@@ -151,16 +151,19 @@ pub async fn execute(args: RunArgs, config: &Config, cwd: &std::path::Path) -> R
         );
     }
 
-    let task_config = TaskConfig {
+    let mut task_config = TaskConfig {
         command: args.task.clone(),
         args: vec![],
         env: HashMap::new(),
     };
 
     if args.shard.is_some() || args.total_shards.is_some() {
-        std::env::set_var("NANOOM_SHARD_INDEX", args.shard.unwrap_or(1).to_string());
-        std::env::set_var(
-            "NANOOM_SHARD_TOTAL",
+        task_config.env.insert(
+            "NANOOM_SHARD_INDEX".into(),
+            args.shard.unwrap_or(1).to_string(),
+        );
+        task_config.env.insert(
+            "NANOOM_SHARD_TOTAL".into(),
             args.total_shards.unwrap_or(1).to_string(),
         );
     }
@@ -193,28 +196,30 @@ pub async fn execute(args: RunArgs, config: &Config, cwd: &std::path::Path) -> R
                             .iter()
                             .map(|project| project.name.clone()),
                     );
-                    if args.json {
-                        println!(
-                            "{}",
-                            serde_json::json!({
-                                "status": "failure", "group": args.group, "task": args.task,
-                                "completed": executions.iter().map(|execution: &TaskExecution| &execution.workspace).collect::<Vec<_>>(),
-                                "failed": failed, "pending": pending, "executions": executions,
-                                "error": error.to_string()
-                            })
-                        );
-                        return Err(Error::ReportedFailure(error.to_string()));
-                    }
-                    return Err(error);
                 }
                 if first_error.is_none() {
                     first_error = Some(error);
+                }
+                if !args.continue_on_error {
+                    break;
                 }
             }
         }
     }
 
     if let Some(error) = first_error {
+        if args.json {
+            println!(
+                "{}",
+                serde_json::json!({
+                    "status": "failure", "group": args.group, "task": args.task,
+                    "completed": executions.iter().map(|execution| &execution.workspace).collect::<Vec<_>>(),
+                    "failed": failed, "pending": pending, "executions": executions,
+                    "error": error.to_string()
+                })
+            );
+            return Err(Error::ReportedFailure(error.to_string()));
+        }
         return Err(error);
     }
 
@@ -469,6 +474,48 @@ mod tests {
             "packages:\n  - \"packages/*\"\n",
         )
         .unwrap();
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    #[serial]
+    async fn sharded_execution_does_not_change_parent_environment() {
+        let dir = tempdir().unwrap();
+        setup_workspace(dir.path());
+        let mut config = make_config(vec!["packages/*".into()]);
+        config.group.get_mut("ci").unwrap().rules =
+            vec![serde_json::from_value(serde_json::json!({
+                "name": "app", "shard": [{"task": "true", "shard": 2}]
+            }))
+            .unwrap()];
+        let before = (
+            std::env::var_os("NANOOM_SHARD_INDEX"),
+            std::env::var_os("NANOOM_SHARD_TOTAL"),
+        );
+        execute(
+            RunArgs {
+                group: "ci".into(),
+                task: "true".into(),
+                runner: None,
+                filter: None,
+                shard: Some(1),
+                total_shards: Some(2),
+                all: true,
+                continue_on_error: false,
+                json: true,
+            },
+            &config,
+            dir.path(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            (
+                std::env::var_os("NANOOM_SHARD_INDEX"),
+                std::env::var_os("NANOOM_SHARD_TOTAL")
+            ),
+            before
+        );
     }
 
     #[tokio::test]

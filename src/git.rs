@@ -20,8 +20,7 @@ impl GitRepo {
     }
 
     pub fn is_shallow(&self) -> Result<bool> {
-        let shallow_file = self.workdir.join(".git/shallow");
-        Ok(shallow_file.exists())
+        Ok(self.repo.is_shallow())
     }
 
     pub fn get_merge_base(&self, base: &str, head: &str) -> Result<String> {
@@ -419,6 +418,12 @@ mod tests {
         let repo = GitRepo::open(dir.path()).unwrap();
         assert!(!repo.is_shallow().unwrap());
         std::fs::write(dir.path().join(".git/shallow"), "").unwrap();
+        assert!(!repo.is_shallow().unwrap());
+        std::fs::write(
+            dir.path().join(".git/shallow"),
+            format!("{}\n", rev_parse(dir.path(), "HEAD")),
+        )
+        .unwrap();
         assert!(repo.is_shallow().unwrap());
     }
 
@@ -661,7 +666,11 @@ mod tests {
     fn test_resolve_base_commit_shallow_fetch_failure_is_explicit() {
         let dir = init_repo();
         make_orphan_branch(dir.path());
-        std::fs::write(dir.path().join(".git/shallow"), "").unwrap();
+        std::fs::write(
+            dir.path().join(".git/shallow"),
+            format!("{}\n", rev_parse(dir.path(), "HEAD")),
+        )
+        .unwrap();
         let repo = GitRepo::open(dir.path()).unwrap();
         let event = GitEvent::PullRequest {
             base_ref: "main".to_string(),

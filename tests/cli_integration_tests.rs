@@ -1190,3 +1190,71 @@ fn test_run_shards_execute_distinct_shard_contexts_end_to_end() {
     assert!(!first_output.contains("pkg-b"));
     assert!(!second_output.contains("pkg-b"));
 }
+
+#[test]
+fn run_json_preserves_progress_after_failure_with_or_without_continuation() {
+    for continue_on_error in [false, true] {
+        let dir = tempdir().unwrap();
+        setup_monorepo(dir.path());
+        for (name, code) in [("pkg-a", 7), ("pkg-b", 0)] {
+            write_json(
+                &dir.path().join(format!("packages/{name}/package.json")),
+                &serde_json::json!({
+                    "name": name,
+                    "version": "1.0.0",
+                    "dependencies": if name == "pkg-b" { serde_json::json!({"pkg-a": "workspace:*"}) } else { serde_json::json!({}) },
+                    "scripts": {"test": format!("node -e \"require('fs').writeFileSync('executed', 'yes'); process.exit({code})\"")}
+                }),
+            );
+        }
+        let mut args = vec!["run", "ci", "test", "--all", "--json"];
+        if continue_on_error {
+            args.push("--continue-on-error");
+        }
+        let (success, stdout, stderr) = run_cli_parts(dir.path(), &args, &[]);
+        assert!(!success, "failed workspace must fail the run: {stderr}");
+        let result: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+        assert_eq!(result["status"], "failure");
+        assert_eq!(result["failed"], serde_json::json!(["pkg-a"]));
+        assert_eq!(result["group"], "ci");
+        assert_eq!(result["task"], "test");
+        assert!(dir.path().join("packages/pkg-a/executed").exists());
+        assert_eq!(
+            dir.path().join("packages/pkg-b/executed").exists(),
+            continue_on_error
+        );
+        if continue_on_error {
+            assert_eq!(result["completed"], serde_json::json!(["pkg-b"]));
+            assert_eq!(result["pending"], serde_json::json!([]));
+            assert_eq!(result["executions"][0]["workspace"], "pkg-b");
+        } else {
+            assert_eq!(result["completed"], serde_json::json!([]));
+            assert_eq!(result["pending"], serde_json::json!(["pkg-b"]));
+            assert_eq!(result["executions"], serde_json::json!([]));
+        }
+    }
+}
+
+#[test]
+fn status_cli_rejects_duplicate_results_in_any_order() {
+    let dir = tempdir().unwrap();
+    setup_monorepo(dir.path());
+    for results in [
+        "run=success,run=failure",
+        "run=failure,run=success",
+        "run=success, run=success",
+    ] {
+        let (success, stdout, stderr) = run_cli_parts(
+            dir.path(),
+            &["status", "run", "--results", results, "--json"],
+            &[],
+        );
+        assert!(!success, "duplicate job result passed: {stderr}");
+        let result: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+        assert_eq!(result["status"], "failure");
+        assert!(result["error"]
+            .as_str()
+            .unwrap()
+            .contains("duplicate result for job 'run'"));
+    }
+}
