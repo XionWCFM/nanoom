@@ -128,6 +128,34 @@ impl Default for WorkspaceConfig {
     }
 }
 
+fn repository_workspace_patterns(cwd: &Path) -> Result<Option<Vec<String>>> {
+    let pnpm = cwd.join("pnpm-workspace.yaml");
+    if pnpm.is_file() {
+        #[derive(Deserialize)]
+        struct PnpmWorkspace {
+            packages: Vec<String>,
+        }
+        let workspace: PnpmWorkspace = serde_yaml::from_str(&std::fs::read_to_string(pnpm)?)?;
+        return Ok(Some(workspace.packages));
+    }
+    let package = cwd.join("package.json");
+    if !package.is_file() {
+        return Ok(None);
+    }
+    let package: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(package)?)?;
+    match package.get("workspaces") {
+        None => Ok(None),
+        Some(workspaces) => {
+            let patterns = workspaces.get("packages").unwrap_or(workspaces);
+            serde_json::from_value(patterns.clone())
+                .map(Some)
+                .map_err(|error| {
+                    Error::InvalidConfig(format!("Invalid package.json workspaces: {error}"))
+                })
+        }
+    }
+}
+
 impl Config {
     pub fn load(config_path: &Path, cwd: &Path) -> Result<Self> {
         let config_file = cwd.join(config_path);
@@ -136,9 +164,32 @@ impl Config {
         }
 
         let content = std::fs::read_to_string(&config_file)?;
-        let config: Config = serde_json::from_str(&content)
+        let value: serde_json::Value = serde_json::from_str(&content)
+            .map_err(|e| Error::InvalidConfig(format!("Failed to parse JSON: {}", e)))?;
+        let mut config: Config = serde_json::from_value(value.clone())
             .map_err(|e| Error::InvalidConfig(format!("Failed to parse JSON: {}", e)))?;
 
+        if value
+            .get("workspace")
+            .and_then(|w| w.get("include"))
+            .is_none()
+        {
+            if let Some(patterns) = repository_workspace_patterns(cwd)? {
+                config.workspace.include.clear();
+                for pattern in patterns {
+                    if let Some(exclude) = pattern.strip_prefix('!') {
+                        config.workspace.exclude.push(exclude.to_string());
+                    } else {
+                        config.workspace.include.push(pattern);
+                    }
+                }
+                if config.workspace.include.is_empty() {
+                    return Err(Error::InvalidConfig(
+                        "workspace manifest must declare a positive workspace pattern".into(),
+                    ));
+                }
+            }
+        }
         config.validate()?;
         Ok(config)
     }

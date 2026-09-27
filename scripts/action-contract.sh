@@ -109,6 +109,7 @@ grep -q 'sparse-checkout set --cone --stdin' .github/actions/prepare/checkout.sh
 bash scripts/history-artifact-test.sh
 bash scripts/setup-smoke.sh
 bash scripts/plan-action-test.sh
+# Includes opened/synchronize/push/merge_group expression checks and shallow base fetch.
 bash scripts/revision-action-test.sh
 bash scripts/cleanup-checkout-test.sh
 bash scripts/fixture-completion-test.sh
