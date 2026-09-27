@@ -88,3 +88,19 @@ run_action "$tmp/shallow-output" "$tmp/shallow-summary" push "$base" >/dev/null
 test "$(git -C "$tmp/repo" rev-parse "$base^{commit}")" = "$base"
 test ! -s "$tmp/curl.log"
 echo 'event revision and shallow fetch action contracts passed'
+
+# Evaluate the actual Action expression against opened, synchronize, push, and merge queue payloads.
+python3 - <<'PYTEST'
+from pathlib import Path
+from types import SimpleNamespace as N
+for action in ['affected', 'affected-ghes']:
+    line = next(line for line in Path(f'.github/actions/{action}/action.yml').read_text().splitlines() if 'EVENT_HEAD:' in line)
+    expression = line.split('${{', 1)[1].split('}}', 1)[0].replace('||', 'or')
+    for event, expected in [
+        (N(merge_group=N(head_sha=''), after=''), 'merge'),
+        (N(merge_group=N(head_sha=''), after='branch'), 'merge'),
+        (N(merge_group=N(head_sha=''), after='merge'), 'merge'),
+        (N(merge_group=N(head_sha='queue'), after=''), 'queue'),
+    ]:
+        assert eval(expression, {'github': N(event=event, sha='merge')}) == expected
+PYTEST
