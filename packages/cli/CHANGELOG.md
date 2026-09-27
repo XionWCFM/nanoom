@@ -1,5 +1,10 @@
 # @nanoom/cli
 
+## 0.7.2
+
+- Verify checksums from file contents without filename escaping, including Windows runner paths.
+- Remove obsolete successful-push lookup wording from affected summaries.
+
 ## 0.7.1
 
 - Allow release artifact listing without a history lookup budget while retaining bounded history reads.

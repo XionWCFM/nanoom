@@ -114,9 +114,9 @@ else
         scope_id=${scope_id%.json}
         [[ "$scope_id" =~ ^[a-f0-9]{64}$ ]] || { server_degraded=true; continue; }
         if command -v sha256sum >/dev/null 2>&1; then
-          idempotency_key=$(sha256sum "$batch_path" | awk '{print $1}')
+          idempotency_key=$(sha256sum < "$batch_path" | awk '{print $1}')
         else
-          idempotency_key=$(shasum -a 256 "$batch_path" | awk '{print $1}')
+          idempotency_key=$(shasum -a 256 < "$batch_path" | awk '{print $1}')
         fi
         repository_key=$(jq -er '.scope.repositoryKey' "$batch_path") || { server_degraded=true; continue; }
         if ! nanoom_history_server_trusted_event; then

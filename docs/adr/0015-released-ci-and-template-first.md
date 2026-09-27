@@ -34,4 +34,6 @@ affected의 compact matrix에는 Plan에서 계산한 `checkout.ref`와 `checkou
 
 릴리즈 워크플로는 artifact archive 다운로드에 필요한 `actions: read` 권한을 명시한다. 2026-09-27 사용자는 전체 CI 전환과 이 릴리즈 권한 수정을 승인하고, 목표 달성에 필요한 후속 작업도 추가 승인 없이 진행하도록 허용했다.
 
+공개 binary의 checksum은 파일명 표기가 아닌 파일 바이트로 검증한다. Windows runner의 역슬래시 경로가 GNU checksum 출력의 escape marker를 만들더라도 digest에 포함되지 않아야 한다. 설치와 이력의 파일 digest 계산은 같은 기준을 유지하고, 역슬래시 경로의 실제 다운로드·검증·실행을 회귀 검사한다.
+
 이 ADR은 작업 기준의 확정이다. 기존 워크플로와 공개 인터페이스가 이미 준수한다고 주장하지 않는다. 워크플로 정리와 관심사별 Action의 사용자 경로 개선은 제품·테스트 준비 및 워크플로 diff 승인 후 수행한다.

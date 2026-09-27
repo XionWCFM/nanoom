@@ -64,7 +64,7 @@ url="$release_base_url/$repository/releases/download/$version/$file"
 curl -fsSL "$url" -o "$download_dir/$file"
 curl -fsSL "$url.sha256" -o "$download_dir/$file.sha256"
 expected=$(awk '{print $1}' "$download_dir/$file.sha256")
-actual=$( (command -v sha256sum >/dev/null && sha256sum "$download_dir/$file" || shasum -a 256 "$download_dir/$file") | awk '{print $1}')
+actual=$( (command -v sha256sum >/dev/null && sha256sum < "$download_dir/$file" || shasum -a 256 < "$download_dir/$file") | awk '{print $1}')
 [[ "$expected" == "$actual" ]] || { echo "Checksum mismatch for $file" >&2; exit 1; }
 
 if [[ "$extension" == zip ]]; then
