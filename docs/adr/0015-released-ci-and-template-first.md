@@ -38,6 +38,8 @@ affected의 compact matrix에는 Plan에서 계산한 `checkout.ref`와 `checkou
 
 이 ADR은 작업 기준의 확정이다. 기존 워크플로와 공개 인터페이스가 이미 준수한다고 주장하지 않는다. 워크플로 정리와 관심사별 Action의 사용자 경로 개선은 제품·테스트 준비 및 워크플로 diff 승인 후 수행한다.
 
+승인된 대표 CI는 모든 그룹을 포함하는 `matrix` 출력으로 세 OS의 실행을 연결한다. 기존 Action 계약·서버 E2E·Rust 테스트·커버리지·릴리즈 빌드 검증은 `tools/ci-*`의 작업으로 유지하고, 별도 중복 워크플로는 제거한다. 운영의 계획·설치·실행·집계는 공개 `@latest` Action을 사용하며, 이 내부 개발 검증을 릴리즈 소비 증거로 대신하지 않는다.
+
 PR synchronize의 `after`는 branch HEAD이므로 Plan의 head로 사용하지 않는다. PR 실행의 merge SHA와 matrix checkout·install 검증의 소스 정체성이 같아야 한다. merge_group은 head_sha를 사용한다.
 
 명시적 workspace.include가 없으면 pnpm-workspace.yaml의 packages 또는 package.json의 workspaces 선언에서 범위를 자동 판별한다. 제외 패턴과 명시적 override를 보존하고, 잘못된 선언을 기존 기본 경로로 조용히 대체하지 않는다.

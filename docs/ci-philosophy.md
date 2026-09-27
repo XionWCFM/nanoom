@@ -12,7 +12,7 @@ Nanoom은 무엇을 가져오고 설치하고 실행할지 계산한다. 사용�
 
 ## 목표 템플릿
 
-`ci`는 Nanoom 설정의 실행 그룹이고 Node 22는 이 예시의 프로젝트 선택이다. 버전 숫자나 모든 입력 이름을 영구 고정하는 것이 목적은 아니다. 핵심 책임과 사용자 경험을 바꾸려면 먼저 사용자 승인을 받는다.
+matrix에는 Nanoom 설정의 모든 실행 그룹이 포함되고 Node 22는 이 예시의 프로젝트 선택이다. 버전 숫자나 모든 입력 이름을 영구 고정하는 것이 목적은 아니다. 핵심 책임과 사용자 경험을 바꾸려면 먼저 사용자 승인을 받는다.
 
 ```yaml
 name: CI
@@ -34,7 +34,7 @@ jobs:
     outputs:
       has_change: ${{ steps.affected.outputs.has_change }}
       plan: ${{ steps.affected.outputs.plan }}
-      groups: ${{ steps.affected.outputs.groups }}
+      matrix: ${{ steps.affected.outputs.matrix }}
     steps:
       - name: Checkout workspace manifests
         uses: actions/checkout@v7
@@ -50,14 +50,13 @@ jobs:
         uses: XionWCFM/nanoom/.github/actions/affected@latest
 
   run:
-    name: ${{ matrix.displayName }}
+    name: Run affected work (${{ matrix.displayName }})
     needs: affected
     if: needs.affected.outputs.has_change == 'true'
     runs-on: ${{ matrix.runnerLabels || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
-      matrix:
-        include: ${{ fromJSON(needs.affected.outputs.groups).ci.include }}
+      matrix: ${{ fromJSON(needs.affected.outputs.matrix) }}
     steps:
       - name: Checkout planned source
         uses: actions/checkout@v7
@@ -68,7 +67,7 @@ jobs:
           sparse-checkout: ${{ matrix.checkout.sparseCheckout }}
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '22'
 
@@ -110,6 +109,6 @@ jobs:
 
 ## 구현 검토 기준
 
-현재 부족한 계약은 displayName·checkout 메타데이터, install의 Plan 선택과 출력 연결, status의 필수 실행 판단과 이력 처리다. 이를 사용자 커스텀 로직으로 우회하지 않고 제품에서 해결한다.
+반드시 확인할 계약은 displayName·checkout 메타데이터, install의 Plan 선택과 출력 연결, status의 필수 실행 판단과 이력 처리다. 이를 사용자 커스텀 로직으로 우회하지 않고 제품에서 해결한다.
 
 실제 checkout 파일 집합과 SHA, 집중 설치 대상과 dependency closure, 모든 assignment 실행, no-change 생략, 실패·취소·필수 실행 생략의 status 실패를 검증한다. 로컬 테스트와 공개 릴리즈 소비 증거는 구분한다. 최신 릴리즈로 두 저장소 CI와 양성 변경 fixture가 통과하기 전에는 제품이 이상향을 충족했다고 선언하지 않는다.
