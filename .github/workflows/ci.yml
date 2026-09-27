@@ -33,7 +33,7 @@ jobs:
         uses: XionWCFM/nanoom/.github/actions/affected@latest
 
   run:
-    name: ${{ matrix.displayName }}
+    name: Run affected work (${{ matrix.displayName }})
     needs: affected
     if: needs.affected.outputs.has_change == 'true'
     runs-on: ${{ matrix.runnerLabels || 'ubuntu-latest' }}

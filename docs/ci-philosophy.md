@@ -50,7 +50,7 @@ jobs:
         uses: XionWCFM/nanoom/.github/actions/affected@latest
 
   run:
-    name: ${{ matrix.displayName }}
+    name: Run affected work (${{ matrix.displayName }})
     needs: affected
     if: needs.affected.outputs.has_change == 'true'
     runs-on: ${{ matrix.runnerLabels || 'ubuntu-latest' }}
@@ -109,6 +109,6 @@ jobs:
 
 ## 구현 검토 기준
 
-현재 부족한 계약은 displayName·checkout 메타데이터, install의 Plan 선택과 출력 연결, status의 필수 실행 판단과 이력 처리다. 이를 사용자 커스텀 로직으로 우회하지 않고 제품에서 해결한다.
+반드시 확인할 계약은 displayName·checkout 메타데이터, install의 Plan 선택과 출력 연결, status의 필수 실행 판단과 이력 처리다. 이를 사용자 커스텀 로직으로 우회하지 않고 제품에서 해결한다.
 
 실제 checkout 파일 집합과 SHA, 집중 설치 대상과 dependency closure, 모든 assignment 실행, no-change 생략, 실패·취소·필수 실행 생략의 status 실패를 검증한다. 로컬 테스트와 공개 릴리즈 소비 증거는 구분한다. 최신 릴리즈로 두 저장소 CI와 양성 변경 fixture가 통과하기 전에는 제품이 이상향을 충족했다고 선언하지 않는다.
