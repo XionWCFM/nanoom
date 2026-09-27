@@ -1,6 +1,9 @@
 # @nanoom/cli
 
-## 0.7.6
+## 0.7.7
+
+- Resolve annotated base/head tags to commit identities for affected comparisons.
+- Preserve Unicode and embedded separators in Git file-list APIs.
 
 - Preserve completed, failed, pending, and execution details in JSON failures with `--continue-on-error`.
 - Scope shard environment variables to the executed child process.

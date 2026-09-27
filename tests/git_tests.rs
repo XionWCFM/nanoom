@@ -210,3 +210,47 @@ fn shallow_linked_worktree_fetches_missing_base_history() {
         vec![linked.join("next.txt")]
     );
 }
+
+#[test]
+fn git_file_lists_preserve_unicode_and_embedded_separators() {
+    let dir = tempdir().unwrap();
+    init_git_repo(dir.path());
+    commit_file(dir.path(), "base.txt", "base", "base");
+    let names = vec!["한글 파일.txt"];
+    #[cfg(not(windows))]
+    let names = [names, vec!["line\nbreak.txt", "quote\"tab\t.txt"]].concat();
+    for name in &names {
+        fs::write(dir.path().join(name), "change").unwrap();
+    }
+    let git = |args: &[&str]| {
+        let result = std::process::Command::new("git")
+            .arg("-C")
+            .arg(dir.path())
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+    };
+    git(&["add", "."]);
+    git(&["commit", "-m", "unusual names", "--no-gpg-sign"]);
+    let repo = GitRepo::open(dir.path()).unwrap();
+    let mut expected: Vec<_> = names.iter().map(|name| dir.path().join(name)).collect();
+    expected.sort();
+    for mut changed in [
+        repo.get_changed_files("HEAD~1", Some("HEAD")).unwrap(),
+        repo.get_changed_files_from_tip("HEAD~1", Some("HEAD"))
+            .unwrap(),
+    ] {
+        changed.sort();
+        assert_eq!(changed, expected);
+    }
+    let mut all = repo.get_all_files().unwrap();
+    expected.push(dir.path().join("base.txt"));
+    all.sort();
+    expected.sort();
+    assert_eq!(all, expected);
+}

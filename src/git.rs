@@ -26,11 +26,11 @@ impl GitRepo {
     pub fn get_merge_base(&self, base: &str, head: &str) -> Result<String> {
         let base_id = self
             .repo
-            .rev_parse_single(base)
+            .rev_parse_single(format!("{base}^{{commit}}").as_str())
             .map_err(|e| Error::GitError(e.to_string()))?;
         let head_id = self
             .repo
-            .rev_parse_single(head)
+            .rev_parse_single(format!("{head}^{{commit}}").as_str())
             .map_err(|e| Error::GitError(e.to_string()))?;
 
         match self.repo.merge_base(base_id, head_id) {
@@ -44,7 +44,7 @@ impl GitRepo {
 
     pub fn resolve_commit(&self, revision: &str) -> Result<String> {
         self.repo
-            .rev_parse_single(revision)
+            .rev_parse_single(format!("{revision}^{{commit}}").as_str())
             .map(|id| id.to_string())
             .map_err(|error| Error::GitError(error.to_string()))
     }
@@ -124,6 +124,7 @@ impl GitRepo {
             .arg(&self.workdir)
             .arg("diff")
             .arg("--name-only")
+            .arg("-z")
             .arg(range)
             .output()?;
 
@@ -134,7 +135,7 @@ impl GitRepo {
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let files: Vec<PathBuf> = stdout
-            .lines()
+            .split('\0')
             .filter(|l| !l.is_empty())
             .map(|l| self.workdir.join(l))
             .collect();
@@ -146,7 +147,7 @@ impl GitRepo {
         let output = Command::new("git")
             .arg("-C")
             .arg(&self.workdir)
-            .arg("ls-files")
+            .args(["ls-files", "-z"])
             .output()?;
 
         if !output.status.success() {
@@ -156,7 +157,7 @@ impl GitRepo {
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let files: Vec<PathBuf> = stdout
-            .lines()
+            .split('\0')
             .filter(|l| !l.is_empty())
             .map(|l| self.workdir.join(l))
             .collect();
@@ -220,13 +221,7 @@ pub fn resolve_base_commit(
     let head_ref = event.head_ref();
 
     match mode {
-        ComparisonMode::Tip => {
-            let base_id = repo
-                .repo
-                .rev_parse_single(base_ref)
-                .map_err(|e| Error::GitError(e.to_string()))?;
-            Ok(base_id.to_string())
-        }
+        ComparisonMode::Tip => repo.resolve_commit(base_ref),
         ComparisonMode::MergeBase => {
             try_merge_base_with_deepen(repo, base_ref, head_ref, max_fetch_depth)
         }
