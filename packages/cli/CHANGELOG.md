@@ -1,5 +1,10 @@
 # @nanoom/cli
 
+## 0.7.5
+
+- Resolve installed Turbo/Nx command shims from the repository on Windows.
+- Share Windows Node-tool executable resolution across run, focused install, and full install.
+
 ## 0.7.4
 
 - Validate Windows native checkout paths as absolute paths while preserving workspace isolation.

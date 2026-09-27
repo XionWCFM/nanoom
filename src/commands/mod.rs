@@ -10,6 +10,24 @@ use std::process::{ExitStatus, Stdio};
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 
+pub(crate) fn node_tool_executable(program: &str) -> &str {
+    #[cfg(windows)]
+    {
+        match program {
+            "npm" => "npm.cmd",
+            "pnpm" => "pnpm.cmd",
+            "yarn" => "yarn.cmd",
+            "turbo" => "turbo.cmd",
+            "nx" => "nx.cmd",
+            _ => program,
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        program
+    }
+}
+
 pub(crate) fn display_command(program: &str, args: &[String]) -> String {
     std::iter::once(program.to_string())
         .chain(args.iter().cloned())

@@ -327,7 +327,13 @@ async fn run_task(
     } else {
         std::env::current_dir()?.join(root)
     };
-    let executable = package_manager_executable(&program);
+    let executable = crate::commands::node_tool_executable(&program);
+    let local_executable = runner_root.join("node_modules/.bin").join(executable);
+    let executable = if matches!(detected_runner, "turbo" | "nx") && local_executable.is_file() {
+        local_executable
+    } else {
+        PathBuf::from(executable)
+    };
     let mut cmd = Command::new(executable);
     cmd.current_dir(if matches!(detected_runner, "turbo" | "nx") {
         &runner_root
@@ -383,21 +389,6 @@ async fn run_task(
         started_at_ms,
         duration_ms: started.elapsed().as_millis().try_into().unwrap_or(u64::MAX),
     })
-}
-
-fn package_manager_executable(program: &str) -> &str {
-    #[cfg(windows)]
-    {
-        return match program {
-            "npm" => "npm.cmd",
-            "pnpm" => "pnpm.cmd",
-            "yarn" => "yarn.cmd",
-            _ => program,
-        };
-    }
-
-    #[cfg(not(windows))]
-    program
 }
 
 fn resolve_script_runner(
@@ -848,6 +839,47 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(execution.runner, "nx");
+    }
+
+    #[tokio::test]
+    #[cfg(windows)]
+    async fn windows_local_runner_cmd_shims_execute_planned_tasks() {
+        let dir = tempfile::Builder::new()
+            .prefix("nanoom tools ")
+            .tempdir()
+            .unwrap();
+        let root = dir.path();
+        let bin = root.join("node_modules/.bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let log = root.join("tasks.log");
+        for runner in ["turbo", "nx"] {
+            std::fs::write(
+                bin.join(format!("{runner}.cmd")),
+                "@echo off\r\necho %* >> \"%NANOOM_TASK_LOG%\"\r\nexit /b 0\r\n",
+            )
+            .unwrap();
+            let task = TaskConfig {
+                command: "test".into(),
+                args: vec![],
+                env: HashMap::from([(
+                    "NANOOM_TASK_LOG".into(),
+                    log.to_string_lossy().into_owned(),
+                )]),
+            };
+            let execution = run_task(
+                &make_project("@repo/app", root),
+                &task,
+                Some(runner),
+                root,
+                true,
+            )
+            .await
+            .unwrap();
+            assert_eq!(execution.runner, runner);
+        }
+        let calls = std::fs::read_to_string(log).unwrap().replace('"', "");
+        assert!(calls.contains("run test --filter @repo/app"), "{calls}");
+        assert!(calls.contains("run @repo/app:test"), "{calls}");
     }
 
     #[tokio::test]
