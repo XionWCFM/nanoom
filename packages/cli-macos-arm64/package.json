@@ -1,6 +1,6 @@
 {
   "name": "@nanoom/cli-macos-arm64",
-  "version": "0.7.4",
+  "version": "0.7.5",
   "description": "nanoom binary for macOS arm64",
   "license": "MIT",
   "os": [

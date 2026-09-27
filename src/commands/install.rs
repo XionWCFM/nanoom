@@ -199,7 +199,7 @@ async fn run_command(cmd: &str, args: Vec<String>, dir: &Path, json: bool) -> Re
         dir.display(),
         crate::commands::display_command(cmd, &args)
     );
-    let mut command = Command::new(package_manager_executable(cmd));
+    let mut command = Command::new(crate::commands::node_tool_executable(cmd));
     command.current_dir(dir).args(&args);
     let status = if json {
         crate::commands::run_streamed(&mut command).await?
@@ -214,21 +214,6 @@ async fn run_command(cmd: &str, args: Vec<String>, dir: &Path, json: bool) -> Re
             args,
             code: status.code().unwrap_or(-1),
         })
-    }
-}
-
-fn package_manager_executable(cmd: &str) -> &str {
-    #[cfg(windows)]
-    {
-        if cmd == "yarn" {
-            "yarn.cmd"
-        } else {
-            cmd
-        }
-    }
-    #[cfg(not(windows))]
-    {
-        cmd
     }
 }
 
@@ -295,12 +280,7 @@ async fn run_install(pm: &str, dir: &Path, json: bool) -> Result<()> {
         _ => return Err(Error::PackageManagerNotFound(pm.to_string())),
     };
 
-    #[cfg(windows)]
-    let executable = if cmd == "npm" { "npm.cmd" } else { cmd };
-    #[cfg(not(windows))]
-    let executable = cmd;
-
-    let mut command = Command::new(executable);
+    let mut command = Command::new(crate::commands::node_tool_executable(cmd));
     command.current_dir(dir);
     command.args(&args);
     eprintln!(
