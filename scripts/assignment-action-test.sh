@@ -91,6 +91,23 @@ export FAKE_PACKAGE_MANAGER_CWD="$cwd"
 export GITHUB_OUTPUT="$tmp/output" FAKE_RUN_CALLS="$tmp/run-calls" FAKE_INSTALL_CALLS="$tmp/install-calls" FAKE_FILTER_FILE="$tmp/filter-file.json"
 export MATRIX='' GROUP= PM=pnpm TOOL=auto CWD="$cwd" SCHEDULER=off TIMING_ENVIRONMENT=linux-x64 COORDINATOR_URL='' COORDINATOR_TOKEN=''
 
+# Native Windows absolute paths must not be prefixed with the workspace again.
+# On Unix these symlinks model Git Bash's native-path directory resolution.
+source "$root/.github/actions/_setup/assignment.sh"
+mkdir -p "$tmp/native/D:"
+ln -s "$cwd" "$tmp/native/D:\checkout"
+ln -s "$cwd" "$tmp/native/D:/checkout"
+ln -s "$tmp" "$tmp/native/D:\outside"
+(
+  cd "$tmp/native"
+  nanoom_validate_assignment_file "$ASSIGNMENT_FILE" 'D:\checkout'
+  nanoom_validate_assignment_file "$ASSIGNMENT_FILE" 'D:/checkout'
+  if nanoom_validate_assignment_file "$ASSIGNMENT_FILE" 'D:\outside' >"$tmp/native-outside.log" 2>&1; then
+    echo 'native path escaped workspace validation' >&2; exit 1
+  fi
+  grep -q 'must be the job workspace or isolated below' "$tmp/native-outside.log"
+)
+
 : > "$FAKE_RUN_CALLS"
 if bash "$GITHUB_ACTION_PATH/run.sh" >/dev/null 2>&1; then echo 'failed assignment unexpectedly succeeded' >&2; exit 1; fi
 result=$(sed -n 's/^result=//p' "$GITHUB_OUTPUT")

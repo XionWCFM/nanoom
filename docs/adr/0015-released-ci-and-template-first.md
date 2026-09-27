@@ -43,3 +43,5 @@ affected의 compact matrix에는 Plan에서 계산한 `checkout.ref`와 `checkou
 PR synchronize의 `after`는 branch HEAD이므로 Plan의 head로 사용하지 않는다. PR 실행의 merge SHA와 matrix checkout·install 검증의 소스 정체성이 같아야 한다. merge_group은 head_sha를 사용한다.
 
 명시적 workspace.include가 없으면 pnpm-workspace.yaml의 packages 또는 package.json의 workspaces 선언에서 범위를 자동 판별한다. 제외 패턴과 명시적 override를 보존하고, 잘못된 선언을 기존 기본 경로로 조용히 대체하지 않는다.
+
+assignment 검증은 Git Bash의 Windows drive 절대 경로를 상대 경로로 취급하지 않는다. 경로 표기와 무관하게 canonical checkout은 job workspace 또는 그 아래의 .nanoom 격리 경로로 제한한다.
