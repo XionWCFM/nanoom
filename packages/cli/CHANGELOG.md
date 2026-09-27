@@ -5,6 +5,7 @@
 - Preserve completed, failed, pending, and execution details in JSON failures with `--continue-on-error`.
 - Scope shard environment variables to the executed child process.
 - Reject duplicate job results in the status CLI and Action.
+- Detect shallow history correctly in linked Git worktrees.
 - Exclude incompatible registry dependencies from sparse checkout's internal workspace closure.
 
 ## 0.7.5
