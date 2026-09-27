@@ -107,6 +107,7 @@ grep -q 'actions/checkout@v4' .github/actions/prepare/action.yml
 grep -q 'sparse-checkout set --cone --stdin' .github/actions/prepare/checkout.sh
 # Cover both unbudgeted release artifact listing and bounded history reads.
 bash scripts/history-artifact-test.sh
+bash scripts/setup-smoke.sh
 bash scripts/plan-action-test.sh
 bash scripts/revision-action-test.sh
 bash scripts/cleanup-checkout-test.sh
