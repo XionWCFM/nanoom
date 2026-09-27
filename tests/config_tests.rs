@@ -1,5 +1,6 @@
 use nanoom::{config::Config, error::Result};
 use std::fs;
+use std::path::Path;
 use tempfile::tempdir;
 
 #[test]
@@ -384,4 +385,111 @@ fn checkout_paths_are_cone_directories_and_history_depth_is_bounded() {
             .validate()
             .is_err());
     }
+}
+
+#[test]
+fn workspace_defaults_follow_repository_manifests() {
+    for (name, manifest) in [
+        (
+            "package.json",
+            r#"{"workspaces":["services/*","!services/ignored"]}"#,
+        ),
+        (
+            "package.json",
+            r#"{"workspaces":{"packages":["services/*","!services/ignored"]}}"#,
+        ),
+        (
+            "pnpm-workspace.yaml",
+            "packages:\n  - services/*\n  - '!services/ignored'\n",
+        ),
+    ] {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join(name), manifest).unwrap();
+        fs::write(
+            dir.path().join("nanoom.config.json"),
+            r#"{"group":{"ci":{"tasks":["test"]}}}"#,
+        )
+        .unwrap();
+        let config = Config::load(Path::new("nanoom.config.json"), dir.path()).unwrap();
+        assert_eq!(config.workspace.include, ["services/*"]);
+        assert_eq!(config.workspace.exclude, ["services/ignored"]);
+        for (path, name) in [
+            ("services/app", "selected"),
+            ("services/ignored", "excluded"),
+            ("packages/app", "unrelated"),
+        ] {
+            fs::create_dir_all(dir.path().join(path)).unwrap();
+            fs::write(
+                dir.path().join(path).join("package.json"),
+                format!(r#"{{"name":"{name}"}}"#),
+            )
+            .unwrap();
+        }
+        let workspace = nanoom::workspace::Workspace::discover(&config, dir.path()).unwrap();
+        assert!(workspace.get_project_by_name("selected").is_some());
+        assert!(workspace.get_project_by_name("excluded").is_none());
+        assert!(workspace.get_project_by_name("unrelated").is_none());
+    }
+}
+
+#[test]
+fn workspace_override_and_invalid_manifest_contract() {
+    let dir = tempdir().unwrap();
+    let config_path = Path::new("nanoom.config.json");
+    fs::write(
+        dir.path().join(config_path),
+        r#"{"group":{"ci":{"tasks":["test"]}}}"#,
+    )
+    .unwrap();
+    for manifest in [
+        "packages: []",
+        "packages: 42",
+        "packages: ['!services/*']",
+        "packages: ['[']",
+    ] {
+        fs::write(dir.path().join("pnpm-workspace.yaml"), manifest).unwrap();
+        assert!(Config::load(config_path, dir.path()).is_err(), "{manifest}");
+    }
+    fs::write(
+        dir.path().join(config_path),
+        r#"{"group":{"ci":{"tasks":["test"]}},"workspace":{"include":["tools/*"]}}"#,
+    )
+    .unwrap();
+    let config = Config::load(config_path, dir.path()).unwrap();
+    assert_eq!(config.workspace.include, ["tools/*"]);
+}
+
+#[test]
+fn invalid_package_workspace_and_pnpm_precedence() {
+    let dir = tempdir().unwrap();
+    let path = Path::new("nanoom.config.json");
+    fs::write(
+        dir.path().join(path),
+        r#"{"group":{"ci":{"tasks":["test"]}}}"#,
+    )
+    .unwrap();
+    for manifest in [r#"{"workspaces":42}"#, r#"{"workspaces":[]}"#, "{"] {
+        fs::write(dir.path().join("package.json"), manifest).unwrap();
+        assert!(Config::load(path, dir.path()).is_err());
+    }
+    fs::write(
+        dir.path().join("package.json"),
+        r#"{"workspaces":["wrong/*"]}"#,
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("pnpm-workspace.yaml"),
+        "packages: ['services/*']",
+    )
+    .unwrap();
+    assert_eq!(
+        Config::load(path, dir.path()).unwrap().workspace.include,
+        ["services/*"]
+    );
+    fs::remove_file(dir.path().join("pnpm-workspace.yaml")).unwrap();
+    fs::write(dir.path().join("package.json"), "{}").unwrap();
+    assert_eq!(
+        Config::load(path, dir.path()).unwrap().workspace.include,
+        ["packages/*", "apps/*"]
+    );
 }

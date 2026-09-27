@@ -46,7 +46,7 @@ runs:
         HEAD: ${{ inputs.head }}
         EVENT: ${{ github.event_name }}
         EVENT_BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before || github.base_ref }}
-        EVENT_HEAD: ${{ github.event.merge_group.head_sha || github.event.after || github.sha }}
+        EVENT_HEAD: ${{ github.event.merge_group.head_sha || github.sha }}
         REF_NAME: ${{ github.ref_name }}
         HISTORY_REF: ${{ github.head_ref || github.ref_name }}
         GITHUB_REF: ${{ github.ref }}

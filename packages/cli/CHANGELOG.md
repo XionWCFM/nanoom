@@ -1,5 +1,10 @@
 # @nanoom/cli
 
+## 0.7.3
+
+- Keep PR synchronize Plans on the GitHub merge SHA instead of the event branch head.
+- Infer workspace paths from pnpm-workspace.yaml or package.json workspaces, preserving explicit overrides and exclusions.
+
 ## 0.7.2
 
 - Verify checksums from file contents without filename escaping, including Windows runner paths.

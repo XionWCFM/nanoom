@@ -72,6 +72,10 @@ setup은 다운로드한 Action 소스의 버전에 해당하는 versioned asset
 
 `affected` job은 non-cone으로 root `package.json`, `nanoom.config.json`, 그리고
 `workspace.include`에 해당하는 모든 workspace `package.json`만 checkout할 수 있습니다.
+명시적인 include가 없으면 `pnpm-workspace.yaml`의 packages 또는 root `package.json`의
+workspaces(배열과 packages 객체)를 자동 사용하며 `!` 제외 패턴도 반영합니다.
+선언이 없을 때만 기존 `packages/*`, `apps/*` 기본값을 사용합니다. 잘못된 선언은 실패합니다.
+PR synchronize의 after는 branch SHA이므로 비교 head는 GitHub 실행 merge SHA를 사용합니다.
 Nanoom은 Nx/Turbo 설정을 읽지 않고 이 manifest들로 graph를 만들며, 빠진 manifest가
 있으면 불완전한 결과를 내지 않고 실패합니다. shallow history가 부족하면 tree와 blob 없이
 32 → 128 → 512 → `affected.maxFetchDepth` 순서로만 가져옵니다.
