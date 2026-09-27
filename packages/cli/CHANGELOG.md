@@ -1,5 +1,12 @@
 # @nanoom/cli
 
+## 0.7.6
+
+- Preserve completed, failed, pending, and execution details in JSON failures with `--continue-on-error`.
+- Scope shard environment variables to the executed child process.
+- Reject duplicate job results in the status CLI and Action.
+- Exclude incompatible registry dependencies from sparse checkout's internal workspace closure.
+
 ## 0.7.5
 
 - Resolve installed Turbo/Nx command shims from the repository on Windows.

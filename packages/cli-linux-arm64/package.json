@@ -1,6 +1,6 @@
 {
   "name": "@nanoom/cli-linux-arm64",
-  "version": "0.7.5",
+  "version": "0.7.6",
   "description": "nanoom binary for Linux arm64",
   "license": "MIT",
   "os": [
