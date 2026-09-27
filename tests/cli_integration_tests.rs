@@ -1258,3 +1258,72 @@ fn status_cli_rejects_duplicate_results_in_any_order() {
             .contains("duplicate result for job 'run'"));
     }
 }
+
+#[test]
+fn affected_peels_annotated_tag_revisions_to_commit_identity() {
+    let dir = tempdir().unwrap();
+    setup_monorepo(dir.path());
+    init_git_repo(dir.path());
+    let git = |args: &[&str]| {
+        let result = Command::new("git")
+            .arg("-C")
+            .arg(dir.path())
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        String::from_utf8(result.stdout).unwrap().trim().to_owned()
+    };
+    let base = git(&["rev-parse", "HEAD"]);
+    git(&["tag", "--no-sign", "-a", "base-tag", "-m", "base"]);
+    fs::write(dir.path().join("packages/pkg-a/change.txt"), "change").unwrap();
+    git(&["add", "."]);
+    git(&["commit", "-m", "change", "--no-gpg-sign"]);
+    let head = git(&["rev-parse", "HEAD"]);
+    git(&["tag", "--no-sign", "-a", "head-tag", "-m", "head"]);
+    for mode in ["merge-base", "tip"] {
+        let (success, stdout, stderr) = run_cli_parts(
+            dir.path(),
+            &[
+                "affected", "--base", "base-tag", "--head", "head-tag", "--json",
+            ],
+            &[("COMPARISON", mode)],
+        );
+        assert!(success, "annotated tags failed in {mode}: {stderr}");
+        let result: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+        assert_eq!(
+            result["affected"]["diagnostics"]["comparison"]["baseCommit"],
+            base
+        );
+        assert_eq!(
+            result["affected"]["diagnostics"]["comparison"]["headCommit"],
+            head
+        );
+        assert_eq!(result["affected"]["has_change"], true);
+        assert_eq!(
+            result["affected"]["group"]["ci"]["workspaces"][0]["name"],
+            "pkg-a"
+        );
+    }
+    let (success, stdout, _) = run_cli_parts(
+        dir.path(),
+        &[
+            "affected",
+            "--base",
+            "base-tag",
+            "--head",
+            "HEAD^{tree}",
+            "--json",
+        ],
+        &[],
+    );
+    assert!(!success);
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&stdout).unwrap()["status"],
+        "failure"
+    );
+}

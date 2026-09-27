@@ -310,3 +310,5 @@ jobs:
 ## License
 
 MIT
+
+명시적 `affected --base` / `--head`에 annotated tag를 사용할 수 있습니다. 비교 diagnostics의 `baseCommit`과 `headCommit`은 tag object가 아닌 실제 commit SHA입니다. tree/blob revision은 commit 입력으로 사용할 수 없습니다.

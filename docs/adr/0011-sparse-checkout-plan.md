@@ -71,3 +71,5 @@ assignment 전체의 중복 closure path 수가 적은 배치를 선택한다. b
 checkout dependency closure와 affected 전파는 같은 내부 링크 판별 기준을 사용한다. plain semver 범위가 로컬 패키지 버전과 맞지 않으면 registry 의존성이므로 같은 이름의 workspace 및 그 하위 closure를 checkout하지 않는다. `workspace:`, `link:`, `file:`와 호환되는 semver 내부 링크는 기존 transitive closure를 유지한다. 버전을 선언하지 않은 패키지에 대한 기존 보수적 판별도 유지한다.
 
 shallow 이력 판별은 gix의 repository API를 사용한다. linked worktree의 `.git`이 파일인 경우에도 공용 shallow 상태를 읽고 기존 commit-only origin fetch 예산 안에서 누락된 base 이력을 확보해야 한다. 실제 depth-1 clone에서 linked worktree를 생성하고 base 복원과 변경 파일 계산까지 검증한다.
+
+CLI에서 explicit base/head가 annotated tag인 경우 commit으로 peel하여 비교와 Plan provenance의 정확한 소스 정체성을 유지한다. merge-base와 tip 비교가 동일한 commit SHA를 보고해야 하며 tree/blob은 commit 입력으로 거부한다. Git 파일 목록 API는 NUL 구분 출력을 읽어 Unicode, 공백, 탭 및 newline이 포함된 파일명을 Git의 quote 표기나 여러 파일로 오해하지 않는다.
