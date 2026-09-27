@@ -5,6 +5,7 @@ export CARGO_TERM_COLOR=always RUSTFLAGS='-D warnings'
 case "${1:-}" in
   test)
     cargo test --locked --all --all-features
+    node packages/cli/smoke-test.js
     cargo build --locked --release
     ;;
   check)

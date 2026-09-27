@@ -10,11 +10,12 @@ const root = fs.mkdtempSync(path.join(os.tmpdir(), 'nanoom-npm-smoke-'));
 const platformName = process.platform === 'darwin' ? 'macos' : process.platform === 'win32' ? 'windows' : 'linux';
 const archName = process.arch === 'x64' ? 'x64' : 'arm64';
 const packageName = `@nanoom/cli-${platformName}-${archName}`;
+const executableName = process.platform === 'win32' ? 'nanoom.exe' : 'nanoom';
 const packageRoot = path.join(root, 'node_modules', packageName);
 fs.mkdirSync(packageRoot, { recursive: true });
 fs.writeFileSync(path.join(packageRoot, 'package.json'), JSON.stringify({ name: packageName }));
-fs.copyFileSync(path.join(__dirname, '../../target/debug/nanoom'), path.join(packageRoot, 'nanoom'));
-if (process.platform !== 'win32') fs.chmodSync(path.join(packageRoot, 'nanoom'), 0o644);
+fs.copyFileSync(path.join(__dirname, '../../target/debug', executableName), path.join(packageRoot, executableName));
+if (process.platform !== 'win32') fs.chmodSync(path.join(packageRoot, executableName), 0o644);
 
 const wrapperRoot = path.join(root, 'node_modules', '@nanoom', 'cli');
 fs.mkdirSync(path.join(wrapperRoot, 'bin'), { recursive: true });
@@ -27,7 +28,7 @@ const output = execFileSync(process.execPath, [path.join(wrapperRoot, 'bin/nanoo
 });
 const expectedVersion = JSON.parse(fs.readFileSync(path.join(wrapperRoot, 'package.json'), 'utf8')).version;
 if (output.trim() !== `nanoom ${expectedVersion}`) throw new Error(`unexpected version output: ${output}`);
-if (process.platform !== 'win32' && !(fs.statSync(path.join(packageRoot, 'nanoom')).mode & 0o100))
+if (process.platform !== 'win32' && !(fs.statSync(path.join(packageRoot, executableName)).mode & 0o100))
   throw new Error('wrapper did not restore the packaged binary executable bit');
 fs.rmSync(root, { recursive: true, force: true });
 console.log('npm wrapper smoke test passed');
