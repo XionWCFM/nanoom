@@ -21,3 +21,6 @@ immutable install, 실제 Git hook의 성공과 실패, formatter 비수정 검�
 전체 test/typecheck/build, cache hit의 산출물 복원을 확인한다. 로컬 검증과
 공개 최신 릴리즈를 사용하는 두 저장소 CI는 별도의 증거로 기록한다.
 운영 workflow 변경은 AGENTS.md의 승인 절차를 유지한다.
+
+Windows에서도 checkout과 formatter가 같은 LF를 사용하도록 .gitattributes로
+줄바꿈을 고정한다. editor 설정만으로 Git autocrlf 변환을 막을 수는 없다.
