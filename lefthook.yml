@@ -1,3 +1,5 @@
+lefthook: mise exec -- yarn exec lefthook
+
 pre-commit:
   commands:
     format:
