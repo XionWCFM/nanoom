@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 100
-      
+
       - name: Calculate affected workspaces and matrix
         id: calculate
         uses: XionWCFM/nanoom/.github/actions/affected@v0.3.0
@@ -36,14 +36,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 1
-          
+
       - name: Enable Yarn 4
         run: corepack enable
 
       - name: Install fixture dependencies
         uses: XionWCFM/nanoom/.github/actions/install@v0.3.0
         with:
-          packageManager: yarn 
+          packageManager: yarn
           matrix: ${{ toJSON(matrix) }}
 
       - name: run
@@ -53,7 +53,6 @@ jobs:
           monorepoTool: turbo
           matrix: ${{ toJSON(matrix) }}
           group: ci
-
 
   status:
     name: status
@@ -67,4 +66,3 @@ jobs:
       - uses: XionWCFM/nanoom/.github/actions/status@v0.3.0
         with:
           needs: ${{ toJSON(needs) }}
-        

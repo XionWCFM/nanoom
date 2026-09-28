@@ -3,13 +3,13 @@
   "version": "0.7.7",
   "description": "nanoom binary for macOS x64",
   "license": "MIT",
+  "files": [
+    "nanoom"
+  ],
   "os": [
     "darwin"
   ],
   "cpu": [
     "x64"
-  ],
-  "files": [
-    "nanoom"
   ]
 }

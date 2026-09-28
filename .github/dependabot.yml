@@ -15,7 +15,7 @@ updates:
       - 'dependencies'
 
   - package-ecosystem: 'npm'
-    directory: '/packages/cli'
+    directory: '/'
     schedule:
       interval: 'weekly'
     labels:

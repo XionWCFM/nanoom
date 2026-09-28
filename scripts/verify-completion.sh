@@ -5,7 +5,7 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
 
 git diff --check
-cargo fmt --all --check
+yarn format:check
 cargo clippy --locked --all-targets --all-features -- -D warnings
 cargo test --locked --all --all-features
 cargo llvm-cov --locked --workspace --all-features --fail-under-lines 96 --summary-only

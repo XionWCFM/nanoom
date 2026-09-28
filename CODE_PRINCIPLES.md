@@ -11,13 +11,14 @@ This document serves as the constitution for the nanoom codebase. All contributo
 - **Performance first**: O(n) algorithms, minimal allocations, streaming where possible
 - **Type safety**: Leverage Rust type system, no `unwrap()` in production code
 - **Testability**: Pure functions, dependency injection, no global state
+- **Minimal configuration**: Reuse existing tools and native defaults; declare only needed differences. Share repeated settings and keep generated files out of source control.
 
 ---
 
 ## 2. Rust Edition & Toolchain
 
 - **Edition**: 2021
-- **Minimum Rust Version (MSRV)**: Latest stable - 2 versions
+- **Development Rust version**: The exact version in `rust-toolchain.toml`, synchronized with `mise.toml`
 - **Toolchain**: Managed via `rust-toolchain.toml`
 
 ---
@@ -25,7 +26,7 @@ This document serves as the constitution for the nanoom codebase. All contributo
 ## 3. Code Style & Formatting
 
 - **Formatter**: `cargo fmt` (default style)
-- **Linter**: `cargo clippy` with all lints enabled (`-D warnings`)
+- **Linter**: `cargo clippy --locked --all-targets --all-features -- -D warnings`
 - **Max line width**: 100 characters
 - **Import grouping**: std → external → local
 - **No trailing whitespace**
@@ -196,11 +197,12 @@ mod tests {
 
 ## 16. CI Pipeline Requirements
 
-- **Matrix**: `ubuntu-latest`, `macos-latest`, `windows-latest`
-- **Rust toolchain**: stable, beta (optional)
-- **Steps**: `fmt` → `clippy` → `test` → `coverage` → `build` → `audit`
-- **Cache**: cargo registry, target dir
-- **Security**: dependabot, cargo-audit, SBOM generation
+- **Operating path**: Released public Nanoom Actions `@latest`, with the binary matching the Action source.
+- **Jobs**: `affected` → `run` → `status`; see `AGENTS.md` and `docs/ci-philosophy.md`.
+- **Platforms**: Linux runs the complete local gate; macOS and Windows run native tests, npm wrapper smoke and release builds.
+- **Formatting**: `yarn format:check` is also part of the existing native CI tasks.
+- **Evidence**: Source tests, released fixture execution and aggregate status are reported separately.
+- **Workflow changes**: Present the completed diff and execution impact, then obtain the approval required by `AGENTS.md`.
 
 ---
 

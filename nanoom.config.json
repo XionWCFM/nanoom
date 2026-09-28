@@ -1,9 +1,7 @@
 {
   "$schema": "nanoom.schema.json",
   "workspace": {
-    "include": [
-      "tools/*"
-    ]
+    "include": ["tools/*"]
   },
   "checkout": {
     "always": [
@@ -20,12 +18,8 @@
   },
   "group": {
     "linux": {
-      "tasks": [
-        "check"
-      ],
-      "runnerLabels": [
-        "ubuntu-latest"
-      ],
+      "tasks": ["check"],
+      "runnerLabels": ["ubuntu-latest"],
       "rules": [
         {
           "name": "@nanoom/ci-macos",
@@ -38,12 +32,8 @@
       ]
     },
     "macos": {
-      "tasks": [
-        "test"
-      ],
-      "runnerLabels": [
-        "macos-latest"
-      ],
+      "tasks": ["test"],
+      "runnerLabels": ["macos-latest"],
       "rules": [
         {
           "name": "@nanoom/ci-linux",
@@ -56,12 +46,8 @@
       ]
     },
     "windows": {
-      "tasks": [
-        "test"
-      ],
-      "runnerLabels": [
-        "windows-latest"
-      ],
+      "tasks": ["test"],
+      "runnerLabels": ["windows-latest"],
       "rules": [
         {
           "name": "@nanoom/ci-linux",
@@ -74,7 +60,5 @@
       ]
     }
   },
-  "globalDependencies": [
-    "**"
-  ]
+  "globalDependencies": ["**"]
 }

@@ -3,13 +3,13 @@
   "version": "0.7.7",
   "description": "nanoom binary for Linux arm64",
   "license": "MIT",
+  "files": [
+    "nanoom"
+  ],
   "os": [
     "linux"
   ],
   "cpu": [
     "arm64"
-  ],
-  "files": [
-    "nanoom"
   ]
 }

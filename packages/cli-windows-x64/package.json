@@ -3,13 +3,13 @@
   "version": "0.7.7",
   "description": "nanoom binary for Windows x64",
   "license": "MIT",
+  "files": [
+    "nanoom.exe"
+  ],
   "os": [
     "win32"
   ],
   "cpu": [
     "x64"
-  ],
-  "files": [
-    "nanoom.exe"
   ]
 }
