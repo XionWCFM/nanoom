@@ -1,0 +1,23 @@
+name: Bug report
+description: 재현 가능한 문제를 제보합니다.
+body:
+  - type: textarea
+    id: environment
+    attributes:
+      label: 환경과 버전
+      description: Nanoom 버전, OS, 패키지 매니저·실행 도구 버전을 적어 주세요.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 최소 재현
+      description: 실행 명령과 입력, 또는 공개 CI 실행 링크를 적어 주세요.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: 예상 결과와 실제 결과
+    validations:
+      required: true

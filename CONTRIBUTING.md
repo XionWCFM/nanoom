@@ -6,6 +6,7 @@
 `package.json`의 `packageManager`를 기준으로 선택합니다.
 
 ```sh
+mise trust
 mise install
 mise exec -- corepack enable
 mise exec -- yarn install --immutable
