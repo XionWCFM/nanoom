@@ -1,0 +1,8 @@
+pre-commit:
+  commands:
+    format:
+      glob: "*.{js,cjs,mjs,jsx,ts,tsx,json,jsonc,yml,yaml,md,css}"
+      run: mise exec -- yarn exec oxfmt --check --no-error-on-unmatched-pattern {staged_files}
+    rust-format:
+      glob: "*.rs"
+      run: mise exec -- cargo fmt --all --check

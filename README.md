@@ -15,13 +15,11 @@ npm install --save-dev @nanoom/cli
     "ci": {
       "tasks": ["lint", "test", "build"],
       "distribution": {
-        "small":  { "maxAffectedPercent": 25,  "concurrency": 3 },
-        "medium": { "maxAffectedPercent": 60,  "concurrency": 6 },
-        "full":   { "maxAffectedPercent": 100, "concurrency": 12 }
+        "small": { "maxAffectedPercent": 25, "concurrency": 3 },
+        "medium": { "maxAffectedPercent": 60, "concurrency": 6 },
+        "full": { "maxAffectedPercent": 100, "concurrency": 12 }
       },
-      "rules": [
-        { "name": "@repo/e2e", "shard": [{ "task": "test", "shard": 2 }] }
-      ]
+      "rules": [{ "name": "@repo/e2e", "shard": [{ "task": "test", "shard": 2 }] }]
     }
   },
   "globalDependencies": ["yarn.lock", "tsconfig.json"],
@@ -120,7 +118,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: "22"
       - name: Focus install planned workspaces
         id: install
         uses: XionWCFM/nanoom/.github/actions/install@latest
@@ -312,3 +310,5 @@ jobs:
 MIT
 
 명시적 `affected --base` / `--head`에 annotated tag를 사용할 수 있습니다. 비교 diagnostics의 `baseCommit`과 `headCommit`은 tag object가 아닌 실제 commit SHA입니다. tree/blob revision은 commit 입력으로 사용할 수 없습니다.
+
+개발 환경 설치와 로컬 검증은 [기여 가이드](CONTRIBUTING.md)를 참고하세요.

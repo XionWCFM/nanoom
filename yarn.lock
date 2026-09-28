@@ -275,31 +275,31 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@nanoom/cli-linux-arm64@npm:0.7.5, @nanoom/cli-linux-arm64@workspace:packages/cli-linux-arm64":
+"@nanoom/cli-linux-arm64@npm:0.7.7, @nanoom/cli-linux-arm64@workspace:packages/cli-linux-arm64":
   version: 0.0.0-use.local
   resolution: "@nanoom/cli-linux-arm64@workspace:packages/cli-linux-arm64"
   languageName: unknown
   linkType: soft
 
-"@nanoom/cli-linux-x64@npm:0.7.5, @nanoom/cli-linux-x64@workspace:packages/cli-linux-x64":
+"@nanoom/cli-linux-x64@npm:0.7.7, @nanoom/cli-linux-x64@workspace:packages/cli-linux-x64":
   version: 0.0.0-use.local
   resolution: "@nanoom/cli-linux-x64@workspace:packages/cli-linux-x64"
   languageName: unknown
   linkType: soft
 
-"@nanoom/cli-macos-arm64@npm:0.7.5, @nanoom/cli-macos-arm64@workspace:packages/cli-macos-arm64":
+"@nanoom/cli-macos-arm64@npm:0.7.7, @nanoom/cli-macos-arm64@workspace:packages/cli-macos-arm64":
   version: 0.0.0-use.local
   resolution: "@nanoom/cli-macos-arm64@workspace:packages/cli-macos-arm64"
   languageName: unknown
   linkType: soft
 
-"@nanoom/cli-macos-x64@npm:0.7.5, @nanoom/cli-macos-x64@workspace:packages/cli-macos-x64":
+"@nanoom/cli-macos-x64@npm:0.7.7, @nanoom/cli-macos-x64@workspace:packages/cli-macos-x64":
   version: 0.0.0-use.local
   resolution: "@nanoom/cli-macos-x64@workspace:packages/cli-macos-x64"
   languageName: unknown
   linkType: soft
 
-"@nanoom/cli-windows-x64@npm:0.7.5, @nanoom/cli-windows-x64@workspace:packages/cli-windows-x64":
+"@nanoom/cli-windows-x64@npm:0.7.7, @nanoom/cli-windows-x64@workspace:packages/cli-windows-x64":
   version: 0.0.0-use.local
   resolution: "@nanoom/cli-windows-x64@workspace:packages/cli-windows-x64"
   languageName: unknown
@@ -309,11 +309,11 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@nanoom/cli@workspace:packages/cli"
   dependencies:
-    "@nanoom/cli-linux-arm64": "npm:0.7.5"
-    "@nanoom/cli-linux-x64": "npm:0.7.5"
-    "@nanoom/cli-macos-arm64": "npm:0.7.5"
-    "@nanoom/cli-macos-x64": "npm:0.7.5"
-    "@nanoom/cli-windows-x64": "npm:0.7.5"
+    "@nanoom/cli-linux-arm64": "npm:0.7.7"
+    "@nanoom/cli-linux-x64": "npm:0.7.7"
+    "@nanoom/cli-macos-arm64": "npm:0.7.7"
+    "@nanoom/cli-macos-x64": "npm:0.7.7"
+    "@nanoom/cli-windows-x64": "npm:0.7.7"
   dependenciesMeta:
     "@nanoom/cli-linux-arm64":
       optional: true
@@ -329,6 +329,139 @@ __metadata:
     nanoom: ./bin/nanoom.js
   languageName: unknown
   linkType: soft
+
+"@oxfmt/binding-android-arm-eabi@npm:0.67.0":
+  version: 0.67.0
+  resolution: "@oxfmt/binding-android-arm-eabi@npm:0.67.0"
+  conditions: os=android & cpu=arm
+  languageName: node
+  linkType: hard
+
+"@oxfmt/binding-android-arm64@npm:0.67.0":
+  version: 0.67.0
+  resolution: "@oxfmt/binding-android-arm64@npm:0.67.0"
+  conditions: os=android & cpu=arm64
+  languageName: node
+  linkType: hard
+
+"@oxfmt/binding-darwin-arm64@npm:0.67.0":
+  version: 0.67.0
+  resolution: "@oxfmt/binding-darwin-arm64@npm:0.67.0"
+  conditions: os=darwin & cpu=arm64
+  languageName: node
+  linkType: hard
+
+"@oxfmt/binding-darwin-x64@npm:0.67.0":
+  version: 0.67.0
+  resolution: "@oxfmt/binding-darwin-x64@npm:0.67.0"
+  conditions: os=darwin & cpu=x64
+  languageName: node
+  linkType: hard
+
+"@oxfmt/binding-freebsd-x64@npm:0.67.0":
+  version: 0.67.0
+  resolution: "@oxfmt/binding-freebsd-x64@npm:0.67.0"
+  conditions: os=freebsd & cpu=x64
+  languageName: node
+  linkType: hard
+
+"@oxfmt/binding-linux-arm-gnueabihf@npm:0.67.0":
+  version: 0.67.0
+  resolution: "@oxfmt/binding-linux-arm-gnueabihf@npm:0.67.0"
+  conditions: os=linux & cpu=arm
+  languageName: node
+  linkType: hard
+
+"@oxfmt/binding-linux-arm-musleabihf@npm:0.67.0":
+  version: 0.67.0
+  resolution: "@oxfmt/binding-linux-arm-musleabihf@npm:0.67.0"
+  conditions: os=linux & cpu=arm
+  languageName: node
+  linkType: hard
+
+"@oxfmt/binding-linux-arm64-gnu@npm:0.67.0":
+  version: 0.67.0
+  resolution: "@oxfmt/binding-linux-arm64-gnu@npm:0.67.0"
+  conditions: os=linux & cpu=arm64 & libc=glibc
+  languageName: node
+  linkType: hard
+
+"@oxfmt/binding-linux-arm64-musl@npm:0.67.0":
+  version: 0.67.0
+  resolution: "@oxfmt/binding-linux-arm64-musl@npm:0.67.0"
+  conditions: os=linux & cpu=arm64 & libc=musl
+  languageName: node
+  linkType: hard
+
+"@oxfmt/binding-linux-ppc64-gnu@npm:0.67.0":
+  version: 0.67.0
+  resolution: "@oxfmt/binding-linux-ppc64-gnu@npm:0.67.0"
+  conditions: os=linux & cpu=ppc64 & libc=glibc
+  languageName: node
+  linkType: hard
+
+"@oxfmt/binding-linux-riscv64-gnu@npm:0.67.0":
+  version: 0.67.0
+  resolution: "@oxfmt/binding-linux-riscv64-gnu@npm:0.67.0"
+  conditions: os=linux & cpu=riscv64 & libc=glibc
+  languageName: node
+  linkType: hard
+
+"@oxfmt/binding-linux-riscv64-musl@npm:0.67.0":
+  version: 0.67.0
+  resolution: "@oxfmt/binding-linux-riscv64-musl@npm:0.67.0"
+  conditions: os=linux & cpu=riscv64 & libc=musl
+  languageName: node
+  linkType: hard
+
+"@oxfmt/binding-linux-s390x-gnu@npm:0.67.0":
+  version: 0.67.0
+  resolution: "@oxfmt/binding-linux-s390x-gnu@npm:0.67.0"
+  conditions: os=linux & cpu=s390x & libc=glibc
+  languageName: node
+  linkType: hard
+
+"@oxfmt/binding-linux-x64-gnu@npm:0.67.0":
+  version: 0.67.0
+  resolution: "@oxfmt/binding-linux-x64-gnu@npm:0.67.0"
+  conditions: os=linux & cpu=x64 & libc=glibc
+  languageName: node
+  linkType: hard
+
+"@oxfmt/binding-linux-x64-musl@npm:0.67.0":
+  version: 0.67.0
+  resolution: "@oxfmt/binding-linux-x64-musl@npm:0.67.0"
+  conditions: os=linux & cpu=x64 & libc=musl
+  languageName: node
+  linkType: hard
+
+"@oxfmt/binding-openharmony-arm64@npm:0.67.0":
+  version: 0.67.0
+  resolution: "@oxfmt/binding-openharmony-arm64@npm:0.67.0"
+  conditions: os=openharmony & cpu=arm64
+  languageName: node
+  linkType: hard
+
+"@oxfmt/binding-win32-arm64-msvc@npm:0.67.0":
+  version: 0.67.0
+  resolution: "@oxfmt/binding-win32-arm64-msvc@npm:0.67.0"
+  conditions: os=win32 & cpu=arm64
+  languageName: node
+  linkType: hard
+
+"@oxfmt/binding-win32-ia32-msvc@npm:0.67.0":
+  version: 0.67.0
+  resolution: "@oxfmt/binding-win32-ia32-msvc@npm:0.67.0"
+  conditions: os=win32 & cpu=ia32
+  languageName: node
+  linkType: hard
+
+"@oxfmt/binding-win32-x64-msvc@npm:0.67.0":
+  version: 0.67.0
+  resolution: "@oxfmt/binding-win32-x64-msvc@npm:0.67.0"
+  conditions: os=win32 & cpu=x64
+  languageName: node
+  linkType: hard
 
 "@pnpm/deps.graph-sequencer@npm:^1100.0.1":
   version: 1100.0.1
@@ -470,15 +603,205 @@ __metadata:
   languageName: node
   linkType: hard
 
+"lefthook-darwin-arm64@npm:2.1.14":
+  version: 2.1.14
+  resolution: "lefthook-darwin-arm64@npm:2.1.14"
+  conditions: os=darwin & cpu=arm64
+  languageName: node
+  linkType: hard
+
+"lefthook-darwin-x64@npm:2.1.14":
+  version: 2.1.14
+  resolution: "lefthook-darwin-x64@npm:2.1.14"
+  conditions: os=darwin & cpu=x64
+  languageName: node
+  linkType: hard
+
+"lefthook-freebsd-arm64@npm:2.1.14":
+  version: 2.1.14
+  resolution: "lefthook-freebsd-arm64@npm:2.1.14"
+  conditions: os=freebsd & cpu=arm64
+  languageName: node
+  linkType: hard
+
+"lefthook-freebsd-x64@npm:2.1.14":
+  version: 2.1.14
+  resolution: "lefthook-freebsd-x64@npm:2.1.14"
+  conditions: os=freebsd & cpu=x64
+  languageName: node
+  linkType: hard
+
+"lefthook-linux-arm64@npm:2.1.14":
+  version: 2.1.14
+  resolution: "lefthook-linux-arm64@npm:2.1.14"
+  conditions: os=linux & cpu=arm64
+  languageName: node
+  linkType: hard
+
+"lefthook-linux-x64@npm:2.1.14":
+  version: 2.1.14
+  resolution: "lefthook-linux-x64@npm:2.1.14"
+  conditions: os=linux & cpu=x64
+  languageName: node
+  linkType: hard
+
+"lefthook-openbsd-arm64@npm:2.1.14":
+  version: 2.1.14
+  resolution: "lefthook-openbsd-arm64@npm:2.1.14"
+  conditions: os=openbsd & cpu=arm64
+  languageName: node
+  linkType: hard
+
+"lefthook-openbsd-x64@npm:2.1.14":
+  version: 2.1.14
+  resolution: "lefthook-openbsd-x64@npm:2.1.14"
+  conditions: os=openbsd & cpu=x64
+  languageName: node
+  linkType: hard
+
+"lefthook-windows-arm64@npm:2.1.14":
+  version: 2.1.14
+  resolution: "lefthook-windows-arm64@npm:2.1.14"
+  conditions: os=win32 & cpu=arm64
+  languageName: node
+  linkType: hard
+
+"lefthook-windows-x64@npm:2.1.14":
+  version: 2.1.14
+  resolution: "lefthook-windows-x64@npm:2.1.14"
+  conditions: os=win32 & cpu=x64
+  languageName: node
+  linkType: hard
+
+"lefthook@npm:2.1.14":
+  version: 2.1.14
+  resolution: "lefthook@npm:2.1.14"
+  dependencies:
+    lefthook-darwin-arm64: "npm:2.1.14"
+    lefthook-darwin-x64: "npm:2.1.14"
+    lefthook-freebsd-arm64: "npm:2.1.14"
+    lefthook-freebsd-x64: "npm:2.1.14"
+    lefthook-linux-arm64: "npm:2.1.14"
+    lefthook-linux-x64: "npm:2.1.14"
+    lefthook-openbsd-arm64: "npm:2.1.14"
+    lefthook-openbsd-x64: "npm:2.1.14"
+    lefthook-windows-arm64: "npm:2.1.14"
+    lefthook-windows-x64: "npm:2.1.14"
+  dependenciesMeta:
+    lefthook-darwin-arm64:
+      optional: true
+    lefthook-darwin-x64:
+      optional: true
+    lefthook-freebsd-arm64:
+      optional: true
+    lefthook-freebsd-x64:
+      optional: true
+    lefthook-linux-arm64:
+      optional: true
+    lefthook-linux-x64:
+      optional: true
+    lefthook-openbsd-arm64:
+      optional: true
+    lefthook-openbsd-x64:
+      optional: true
+    lefthook-windows-arm64:
+      optional: true
+    lefthook-windows-x64:
+      optional: true
+  bin:
+    lefthook: bin/index.js
+  checksum: 10c0/383ea7cabe445f6130ddc2ead36b966a32d0ffb0db37c2e4baf36fd3622b673c61e7fa1c4ab8ff2f074b37eb5eb9efab95ea1be37913ff82e51d987887311da8
+  languageName: node
+  linkType: hard
+
 "nanoom-workspace@workspace:.":
   version: 0.0.0-use.local
   resolution: "nanoom-workspace@workspace:."
   dependencies:
     "@changesets/changelog-github": "npm:^1.0.0"
     "@changesets/cli": "npm:^3.0.1"
+    lefthook: "npm:2.1.14"
+    oxfmt: "npm:0.67.0"
     turbo: "npm:^2.5.6"
   languageName: unknown
   linkType: soft
+
+"oxfmt@npm:0.67.0":
+  version: 0.67.0
+  resolution: "oxfmt@npm:0.67.0"
+  dependencies:
+    "@oxfmt/binding-android-arm-eabi": "npm:0.67.0"
+    "@oxfmt/binding-android-arm64": "npm:0.67.0"
+    "@oxfmt/binding-darwin-arm64": "npm:0.67.0"
+    "@oxfmt/binding-darwin-x64": "npm:0.67.0"
+    "@oxfmt/binding-freebsd-x64": "npm:0.67.0"
+    "@oxfmt/binding-linux-arm-gnueabihf": "npm:0.67.0"
+    "@oxfmt/binding-linux-arm-musleabihf": "npm:0.67.0"
+    "@oxfmt/binding-linux-arm64-gnu": "npm:0.67.0"
+    "@oxfmt/binding-linux-arm64-musl": "npm:0.67.0"
+    "@oxfmt/binding-linux-ppc64-gnu": "npm:0.67.0"
+    "@oxfmt/binding-linux-riscv64-gnu": "npm:0.67.0"
+    "@oxfmt/binding-linux-riscv64-musl": "npm:0.67.0"
+    "@oxfmt/binding-linux-s390x-gnu": "npm:0.67.0"
+    "@oxfmt/binding-linux-x64-gnu": "npm:0.67.0"
+    "@oxfmt/binding-linux-x64-musl": "npm:0.67.0"
+    "@oxfmt/binding-openharmony-arm64": "npm:0.67.0"
+    "@oxfmt/binding-win32-arm64-msvc": "npm:0.67.0"
+    "@oxfmt/binding-win32-ia32-msvc": "npm:0.67.0"
+    "@oxfmt/binding-win32-x64-msvc": "npm:0.67.0"
+    tinypool: "npm:2.1.2"
+  peerDependencies:
+    svelte: ^5.0.0
+    vite-plus: "*"
+  dependenciesMeta:
+    "@oxfmt/binding-android-arm-eabi":
+      optional: true
+    "@oxfmt/binding-android-arm64":
+      optional: true
+    "@oxfmt/binding-darwin-arm64":
+      optional: true
+    "@oxfmt/binding-darwin-x64":
+      optional: true
+    "@oxfmt/binding-freebsd-x64":
+      optional: true
+    "@oxfmt/binding-linux-arm-gnueabihf":
+      optional: true
+    "@oxfmt/binding-linux-arm-musleabihf":
+      optional: true
+    "@oxfmt/binding-linux-arm64-gnu":
+      optional: true
+    "@oxfmt/binding-linux-arm64-musl":
+      optional: true
+    "@oxfmt/binding-linux-ppc64-gnu":
+      optional: true
+    "@oxfmt/binding-linux-riscv64-gnu":
+      optional: true
+    "@oxfmt/binding-linux-riscv64-musl":
+      optional: true
+    "@oxfmt/binding-linux-s390x-gnu":
+      optional: true
+    "@oxfmt/binding-linux-x64-gnu":
+      optional: true
+    "@oxfmt/binding-linux-x64-musl":
+      optional: true
+    "@oxfmt/binding-openharmony-arm64":
+      optional: true
+    "@oxfmt/binding-win32-arm64-msvc":
+      optional: true
+    "@oxfmt/binding-win32-ia32-msvc":
+      optional: true
+    "@oxfmt/binding-win32-x64-msvc":
+      optional: true
+  peerDependenciesMeta:
+    svelte:
+      optional: true
+    vite-plus:
+      optional: true
+  bin:
+    oxfmt: bin/oxfmt
+  checksum: 10c0/a5e6f0dc5c892a0451ba0312af005f51ae6edd4670cb1d9938434bb0c869bac981573a5616ec078dda88c38bb9c50498e5fcc9047d9dbb08a2976428d7a07860
+  languageName: node
+  linkType: hard
 
 "package-manager-detector@npm:^1.6.0, package-manager-detector@npm:^1.8.0":
   version: 1.8.0
@@ -538,6 +861,13 @@ __metadata:
     fdir: "npm:^6.5.0"
     picomatch: "npm:^4.0.4"
   checksum: 10c0/7f7bb0f197c88bc4b20c231e0deca4240ca3bf313a88f5a7fee93a872b84966a4d50220947c0455ad07a60b3b360961c5b7fd979222aeb716a9f99b412002e4c
+  languageName: node
+  linkType: hard
+
+"tinypool@npm:2.1.2":
+  version: 2.1.2
+  resolution: "tinypool@npm:2.1.2"
+  checksum: 10c0/4d8c0cf2d9710eff4aa9cb4318fecaac09d847f1d7dce3eb314d36bea35ed23f754315592a3c00c1d0aa21d9eb4a1f69e84c69feb8517b4cd769e1e0a7ee308e
   languageName: node
   linkType: hard
 
