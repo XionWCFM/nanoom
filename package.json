@@ -12,7 +12,7 @@
     "format:check": "cargo fmt --all --check && oxfmt --check ."
   },
   "devDependencies": {
-    "@changesets/changelog-github": "^1.0.0",
+    "@changesets/changelog-github": "^1.0.1",
     "@changesets/cli": "^3.0.1",
     "lefthook": "2.1.14",
     "oxfmt": "0.67.0",
