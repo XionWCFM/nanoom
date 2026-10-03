@@ -64,6 +64,8 @@ Plan에서 cwd를 복원한다. 다른 하위 디렉터리와 symlink redirect�
 
 공식 checkout이 기본 경로다. prepare 기반 .nanoom/ 격리 checkout도 지원한다.
 선택적 cleanup은 검증된 격리 경로만 삭제한다.
+하위 프로젝트 cwd의 cleanup도 격리 checkout 전체를 삭제하며 기본 저장소를
+가리키는 하위 폴더는 거부한다.
 
 ## 실행과 상태
 

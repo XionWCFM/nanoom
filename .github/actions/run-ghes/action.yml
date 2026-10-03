@@ -11,7 +11,7 @@ inputs:
   monorepoTool: {description: "Runner override: auto, turbo, nx, pnpm, yarn, or npm", default: auto}
   scheduler: {description: "Timing backend selected by affected: artifact (default), off, or http", default: artifact}
   timingEnvironment: {description: "Stable hardware identity used for timing history", default: ''}
-  cleanupCheckout: {description: "Delete cwd after the run when it is an isolated .nanoom/ checkout", default: 'false'}
+  cleanupCheckout: {description: "Delete the isolated .nanoom/ checkout containing cwd after the run", default: 'false'}
   coordinatorUrl: {description: "HTTPS coordinator base URL for scheduler=http", default: ''}
   cwd: {description: "Prepared checkout path; defaults to the run/job/matrix isolated checkout when assignmentFile is set", default: ''}
   version: {description: "Action ref, explicit release tag, or local for repository tests", default: action}

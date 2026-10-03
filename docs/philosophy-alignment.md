@@ -102,3 +102,7 @@ configPath와 설치·실행은 프로젝트 기준이다. 공식 sparse checkou
 cold fallback, assignment 2개 실행, D1 병합, duplicate no-op, warm sample 8개
 재사용과 후속 실행이 통과했다. 이 하위 프로젝트 수정의 hosted producer 및
 공개 릴리즈 소비 검증은 별도로 필요하다.
+하위 프로젝트 cleanup이 프로젝트 폴더만 삭제하고 .git과 checkout 메타데이터를
+남기는 후속 오류도 회귀로 재현했다. 소속 Git 루트를 정리 대상으로 사용하고
+.nanoom 아래인지 검증한다. 기본 저장소를 가리키는 하위 폴더는 거부한다.
+정리 회귀 및 전체 Action 계약(native focused install 포함)이 통과했다.

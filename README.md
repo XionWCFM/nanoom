@@ -153,8 +153,9 @@ jobs:
           installResult: ${{ steps.install.outputs.result }}
 ```
 
-`cleanupCheckout`은 명시적으로 켠 경우에만 동작하며, `cwd`가 `.nanoom/` 아래의
-격리 경로가 아니면 삭제를 거부합니다. 정적 install/run Action은 legacy inline matrix를
+`cleanupCheckout`은 명시적으로 켠 경우에만 동작하며 `.nanoom/` 아래의 검증된
+격리 checkout만 삭제합니다. 하위 프로젝트 cwd도 해당 Git checkout 전체를 정리하며
+기본 저장소는 삭제하지 않습니다. 정적 install/run Action은 legacy inline matrix를
 받지 않습니다. 기존 `scheduler: http` 연속 coordinator는 별도 continuous-agent matrix 입력을
 유지합니다.
 

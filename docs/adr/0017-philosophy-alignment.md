@@ -59,6 +59,8 @@ AGENTS.md와 ADR-0015의 두 원칙을 유지한다. 사용자 보조 단계나 
 필요한 프로젝트 메타데이터를 포함한다. install/run에 cwd 재계산을 요구하지 않는다.
 공백을 포함한 하위 프로젝트의 실제 Git/CLI/Action 경로와 안전하지 않은 디렉터리,
 다른 cwd 및 symlink redirect 거부를 회귀 검증한다.
+cleanup은 하위 프로젝트 폴더만 남기지 않고 소속 격리 checkout 전체를 제거한다.
+실제 Git 루트가 기본 저장소이거나 .nanoom 밖이면 삭제를 거부한다.
 
 실제 sparse checkout, root 도구·실행 workspace의 양쪽 dependency closure,
 production 환경의 개발 도구, 무관한 workspace 제외를 검증한다. native pnpm·npm·Yarn Berry 검증은 `bash scripts/focused-install-test.sh`로 재현한다. Action 계약은 기존
