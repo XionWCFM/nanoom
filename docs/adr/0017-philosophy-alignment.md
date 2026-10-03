@@ -39,7 +39,9 @@ AGENTS.md와 ADR-0015의 두 원칙을 유지한다. 사용자 보조 단계나 
 
 - 사용자 지정 설정 경로를 Plan/assignment에 보존하고 install/run에 전달한다.
   manifest-only 계획에서 누락된 설정 blob은 정확한 head에서 확보한다.
-  cwd 밖 또는 안전하지 않은 경로와 checkout에 포함되지 않은 설정은 거부한다.
+  cwd 밖 또는 안전하지 않은 경로는 거부한다. 공식 checkout에는 설정 파일의
+  정확한 패턴을 제공하고 prepare는 같은 SHA의 설정 blob만 확보한다.
+  설정 부모 전체를 선택해 무관한 workspace 소스를 가져오지 않는다.
 - 표준 history/status와 GHES history 모두 같은 bounded API downloader로 현재
   attempt 측정만 수집한다. 임시 디렉터리는 run/attempt로 분리한다.
 - 명시된 npm 버전은 Corepack의 npm shim도 활성화하고, 선언 없는 npm은 Node의

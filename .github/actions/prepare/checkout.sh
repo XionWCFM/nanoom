@@ -21,6 +21,17 @@ while IFS= read -r path; do
   }
 done < "$PATHS_FILE"
 
+# A selected configuration is a file, never a reason to checkout its whole parent.
+config_path=$(jq -r '.configPath // empty' "$ASSIGNMENT_FILE")
+if [[ -n "$config_path" ]]; then
+  ACTION_PHASE=configuration-checkout
+  prefix=$(git -C "$CWD" rev-parse --show-prefix)
+  [[ $(git -C "$CWD" cat-file -t "$actual_head:$prefix$config_path") == blob ]] || {
+    echo 'planned configuration must select a tracked file' >&2; false
+  }
+  git --literal-pathspecs -C "$CWD" restore --ignore-skip-worktree-bits --source="$actual_head" --worktree -- "$config_path"
+fi
+
 printf 'head=%s\n' "$actual_head" >> "$GITHUB_OUTPUT"
 printf 'result={"status":"success","head":"%s","checkoutPathCount":%s}\n' \
   "$actual_head" "$(jq -r '.checkoutPaths | length' "$ASSIGNMENT_FILE")" >> "$GITHUB_OUTPUT"

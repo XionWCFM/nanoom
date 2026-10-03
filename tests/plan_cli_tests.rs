@@ -667,10 +667,16 @@ fn custom_configuration_is_global_checked_out_and_preserved_by_plan_selection() 
         serde_json::from_slice(&fs::read(root.join("custom-plan.json")).unwrap()).unwrap();
     assert_eq!(plan["configPath"], "settings/[team].json");
     let assignment = &plan["groups"]["ci"]["assignments"][0];
-    assert!(assignment["checkoutPaths"]
+    assert!(!assignment["checkoutPaths"]
         .as_array()
         .unwrap()
         .contains(&json!("settings")));
+    assert!(
+        compact["groups"]["ci"]["include"][0]["checkout"]["sparseCheckout"]
+            .as_str()
+            .unwrap()
+            .contains("/settings/\\[team\\].json")
+    );
     let selected = run_cli(
         root,
         &[
@@ -725,13 +731,7 @@ fn custom_configuration_is_global_checked_out_and_preserved_by_plan_selection() 
     assert!(String::from_utf8_lossy(&external.stderr).contains("inside the checkout"));
     assert!(!root.join("external-plan.json").exists());
     // A valid SHA-256 cannot make an unsafe configuration path executable.
-    for unsafe_path in [
-        "../outside.json",
-        "/outside.json",
-        "C:/outside.json",
-        ".",
-        "unselected/config.json",
-    ] {
+    for unsafe_path in ["../outside.json", "/outside.json", "C:/outside.json", "."] {
         let mut tampered = plan.clone();
         tampered["configPath"] = json!(unsafe_path);
         let bytes = serde_json::to_vec(&tampered).unwrap();

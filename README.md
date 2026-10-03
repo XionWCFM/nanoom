@@ -337,7 +337,9 @@ workspace 선언, 패키지 매니저 설정 및 지원 lockfile의 bytes로 키
 
 사용자 지정 `affected.config`는 Plan의 `configPath`에 보존하고 install/run에도
 전달합니다. manifest-only planning에서 빠진 설정은 계획한 SHA의 blob을 확보합니다.
-Plan 설정 경로는 cwd 내부여야 하며 해당 경로는 assignment checkout에 포함됩니다.
+Plan 설정 경로는 cwd 내부여야 합니다. 공식 checkout 패턴은 설정 파일 자체를
+포함하며 부모 디렉터리 전체를 추가하지 않습니다. prepare도 정확한 Plan SHA에서
+설정 파일만 확보하므로 같은 상위 경로의 무관한 workspace 소스는 제외합니다.
 
 npm 준비 예측과 실행 측정은 `npm-shrinkwrap.json`이 있으면 해당 파일을 우선합니다.
 측정 artifact 이름은 잘린 표시 이름에 원래 job/assignment identity의 digest를

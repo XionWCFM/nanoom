@@ -162,20 +162,11 @@ pub async fn calculate_with_override(
         .cloned()
         .chain(installation_paths.iter().map(|path| format!("{path}/**")))
         .collect();
-    let mut config_checkout_paths = Vec::new();
     if let Some(source) = &config.source_path {
         if let Ok(relative) = source.strip_prefix(git_root.canonicalize()?) {
             global_dependencies.push(globset::escape(
                 &relative.to_string_lossy().replace('\\', "/"),
             ));
-        }
-        if let Ok(relative) = source.strip_prefix(cwd.canonicalize()?) {
-            if let Some(parent) = relative
-                .parent()
-                .filter(|parent| !parent.as_os_str().is_empty())
-            {
-                config_checkout_paths.push(parent.to_string_lossy().replace('\\', "/"));
-            }
         }
     }
     let reasons = explain_affected(
@@ -231,7 +222,6 @@ pub async fn calculate_with_override(
                         .dependency_closure_paths(&project.name, cwd)
                         .into_iter()
                         .chain(installation_paths.iter().cloned())
-                        .chain(config_checkout_paths.iter().cloned())
                         .chain(config.checkout.always.iter().cloned())
                         .collect::<Vec<_>>(),
                 )

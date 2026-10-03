@@ -319,17 +319,6 @@ impl Plan {
                     assignment.scheduling_mode.as_deref(),
                 )?;
                 validate_sorted_paths(group_name, &assignment.checkout_paths)?;
-                if let Some(path) = self.config_path.as_ref().filter(|path| path.contains('/')) {
-                    if !assignment
-                        .checkout_paths
-                        .iter()
-                        .any(|checkout| checkout == "." || Path::new(path).starts_with(checkout))
-                    {
-                        return Err(invalid(
-                            "Plan checkout paths omit the selected configuration",
-                        ));
-                    }
-                }
                 for item in &assignment.items {
                     items += 1;
                     if item.group != *group_name
@@ -573,7 +562,7 @@ pub fn compact_output(plan: &Plan, reference: &PlanReference) -> Result<String> 
                     "checkout".into(),
                     serde_json::json!({
                         "ref": plan.provenance.head,
-                        "sparseCheckout": assignment_sparse_checkout(&assignment.checkout_paths),
+                        "sparseCheckout": assignment_sparse_checkout(&assignment.checkout_paths, plan.config_path.as_deref()),
                     }),
                 );
                 if let Some(labels) = &assignment.runner_labels {
@@ -910,12 +899,12 @@ fn validate_assignment_prediction(
     }
 }
 
-fn assignment_sparse_checkout(paths: &[String]) -> String {
+fn assignment_sparse_checkout(paths: &[String], config_path: Option<&str>) -> String {
     if paths.iter().any(|path| path == ".") {
         return "/*".into();
     }
     let mut patterns = vec!["/*".to_string(), "!/*/".to_string()];
-    for path in paths {
+    for path in paths.iter().map(String::as_str).chain(config_path) {
         let mut pattern = String::from("/");
         for character in path.chars() {
             if "*?[] ".contains(character) {
@@ -1055,7 +1044,7 @@ mod tests {
             row["checkout"]["sparseCheckout"],
             "/*\n!/*/\n/packages/pkg-00000\n/tools/shared\\ \\[dev\\]"
         );
-        assert_eq!(assignment_sparse_checkout(&[".".into()]), "/*");
+        assert_eq!(assignment_sparse_checkout(&[".".into()], None), "/*");
 
         let plan = plan_with_items(3, 1);
         let bytes = serde_json::to_vec(&plan).unwrap();

@@ -186,9 +186,9 @@ grep -q 'HEAD mismatch' "$tmp/direct-tamper.log"
 
 # A custom configuration outside root files is restored from the planned SHA
 # during manifest-only planning, then carried through the authoritative Plan.
-mkdir -p "$repo/settings"
-git -C "$repo" mv nanoom.config.json settings/custom.json
-printf '%s\n' '{"group":{"custom":{"tasks":["test"],"rules":[{"name":"pkg-b","ignore":true},{"name":"pkg-shared","ignore":true},{"name":"root-tool","ignore":true},{"name":"root-shared","ignore":true}]}}}' > "$repo/settings/custom.json"
+mkdir -p "$repo/packages"
+git -C "$repo" mv nanoom.config.json packages/[team].json
+printf '%s\n' '{"group":{"custom":{"tasks":["test"],"rules":[{"name":"pkg-b","ignore":true},{"name":"pkg-shared","ignore":true},{"name":"root-tool","ignore":true},{"name":"root-shared","ignore":true}]}}}' > "$repo/packages/[team].json"
 git -C "$repo" add .
 git -C "$repo" -c user.name=test -c user.email=test@example.com commit -qm custom --no-gpg-sign
 custom_head=$(git -C "$repo" rev-parse HEAD)
@@ -196,26 +196,51 @@ planner="$tmp/custom-planner"
 git clone -q --depth=1 --no-checkout "file://$repo" "$planner"
 git -C "$planner" sparse-checkout set --no-cone '/*' '!/*/' '**/package.json'
 git -C "$planner" checkout -q --detach "$custom_head"
-test ! -e "$planner/settings/custom.json"
-export GITHUB_ACTION_PATH="$root/.github/actions/affected" CWD="$planner" CONFIG=settings/custom.json
+test ! -e "$planner/packages/[team].json"
+export GITHUB_ACTION_PATH="$root/.github/actions/affected" CWD="$planner" CONFIG=packages/[team].json
 export BASE="$head" HEAD="$custom_head" EVENT_HEAD="$custom_head" GITHUB_SHA="$custom_head" RUN_ATTEMPT=1 RUN_ID=8675310 GITHUB_JOB=affected SCHEDULER=off
 export GITHUB_OUTPUT="$tmp/custom-affected"
 bash "$GITHUB_ACTION_PATH/run.sh" > "$tmp/custom-affected.log"
-test -f "$planner/settings/custom.json"
+test -f "$planner/packages/[team].json"
 plan_ref=$(sed -n 's/^plan=//p' "$GITHUB_OUTPUT")
 groups=$(sed -n 's/^groups=//p' "$GITHUB_OUTPUT")
 artifact_dir="$RUNNER_TEMP/nanoom-plan-$RUN_ID-$RUN_ATTEMPT-$GITHUB_JOB"
-jq -e '.configPath == "settings/custom.json" and .itemCount == 1' "$artifact_dir/plan-v1.json" >/dev/null
+jq -e '.configPath == "packages/[team].json" and .itemCount == 1' "$artifact_dir/plan-v1.json" >/dev/null
 custom="$tmp/custom-consumer"
 git clone -q --depth=1 --no-checkout "file://$repo" "$custom"
 jq -r '.custom.include[0].checkout.sparseCheckout' <<<"$groups" | git -C "$custom" sparse-checkout set --no-cone --stdin
 git -C "$custom" checkout -q --detach "$custom_head"
-test -f "$custom/settings/custom.json"
+test -f "$custom/packages/[team].json"
 test ! -e "$custom/nanoom.config.json"
 test ! -e "$custom/packages/pkg-b"
 export GITHUB_ACTION_PATH="$root/.github/actions/install" GITHUB_WORKSPACE="$custom" SELECT_CWD="$custom" CWD="$custom" PLAN="$plan_ref" PLAN_DIR="$artifact_dir" GROUP=custom ASSIGNMENT_ID="$(jq -r '.custom.include[0].assignmentId' <<<"$groups")" GITHUB_JOB=run
 export GITHUB_OUTPUT="$tmp/custom-selection"
 bash "$root/.github/actions/prepare/select.sh" > "$tmp/custom-select.log"
+# prepare must restore just the selected file without selecting packages/.
+custom_assignment=$(sed -n 's/^assignment-file=//p' "$GITHUB_OUTPUT")
+custom_paths=$(sed -n 's/^paths-file=//p' "$GITHUB_OUTPUT")
+! grep -Fxq packages "$custom_paths"
+prepared_custom="$custom/.nanoom/custom"
+git clone -q --depth=1 --no-checkout "file://$repo" "$prepared_custom"
+git -C "$prepared_custom" sparse-checkout set --no-cone '/*' '!/*/'
+git -C "$prepared_custom" checkout -q --detach "$custom_head"
+CWD="$prepared_custom" ASSIGNMENT_FILE="$custom_assignment" PATHS_FILE="$custom_paths" GITHUB_ACTION_PATH="$root/.github/actions/prepare" bash "$root/.github/actions/prepare/checkout.sh" > "$tmp/custom-prepare.log"
+test -f "$prepared_custom/packages/[team].json"
+test ! -e "$prepared_custom/packages/pkg-b"
+# A syntactically valid Plan cannot restore a config blob absent from its SHA.
+missing_metadata="$tmp/missing-config"
+mkdir -p "$missing_metadata"
+jq '.configPath="missing/config.json"' "$artifact_dir/plan-v1.json" > "$missing_metadata/plan-v1.json"
+missing_sha=$(sha256sum "$missing_metadata/plan-v1.json" | awk '{print $1}')
+jq --arg sha "$missing_sha" '.sha256=$sha' "$artifact_dir/plan-reference.json" > "$missing_metadata/plan-reference.json"
+nanoom plan select --input "$missing_metadata/plan-v1.json" --reference "$missing_metadata/plan-reference.json" --group custom --assignment "$ASSIGNMENT_ID" --output-dir "$missing_metadata/selected" >/dev/null
+cp "$missing_metadata/plan-v1.json" "$missing_metadata/plan-reference.json" "$missing_metadata/selected/"
+if CWD="$prepared_custom" ASSIGNMENT_FILE="$missing_metadata/selected/assignment.json" PATHS_FILE="$missing_metadata/selected/paths.txt" PLAN="$(cat "$missing_metadata/plan-reference.json")" GITHUB_OUTPUT="$tmp/missing-config-output" GITHUB_ACTION_PATH="$root/.github/actions/prepare" bash "$root/.github/actions/prepare/checkout.sh" > "$tmp/missing-config.log" 2>&1; then
+  echo 'missing planned configuration unexpectedly restored' >&2; exit 1
+fi
+jq -e '.status == "failure" and .phase == "configuration-checkout"' <(sed -n 's/^result=//p' "$tmp/missing-config-output") >/dev/null
+
+
 export ASSIGNMENT_FILE="$(sed -n 's/^assignment-file=//p' "$GITHUB_OUTPUT")" GITHUB_OUTPUT="$tmp/custom-install"
 bash "$GITHUB_ACTION_PATH/run.sh" > "$tmp/custom-install.log"
 export INSTALL_RESULT="$(sed -n 's/^result=//p' "$GITHUB_OUTPUT")" GITHUB_ACTION_PATH="$root/.github/actions/run" GITHUB_OUTPUT="$tmp/custom-run" CWD=''
@@ -229,7 +254,7 @@ printf '%s\n' 'shrinkwrap lock' > "$repo/npm-shrinkwrap.json"
 git -C "$repo" add .
 git -C "$repo" -c user.name=test -c user.email=test@example.com commit -qm npm --no-gpg-sign
 npm_head=$(git -C "$repo" rev-parse HEAD)
-export GITHUB_ACTION_PATH="$root/.github/actions/affected" CWD="$repo" CONFIG=settings/custom.json
+export GITHUB_ACTION_PATH="$root/.github/actions/affected" CWD="$repo" CONFIG=packages/[team].json
 export BASE="$custom_head" HEAD="$npm_head" EVENT_HEAD="$npm_head" GITHUB_SHA="$npm_head" GITHUB_JOB=affected RUN_ID=8675311 SCHEDULER=artifact
 export GITHUB_OUTPUT="$tmp/npm-affected"
 bash "$GITHUB_ACTION_PATH/run.sh" > "$tmp/npm-affected.log"

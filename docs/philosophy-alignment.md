@@ -64,9 +64,18 @@ Windows `Path::is_absolute`가 거부하지 않는 문제를 확인했다. Yarn 
 
 후속 검토에서 사용자 지정 설정을 `packages/nanoom.json`에 두면 설정의 부모
 `packages`가 checkout 경로에 추가되어 무관한 workspace 소스를 포함하는 문제도
-실제 Git/CLI로 재현했다. 설정 파일만 확보하는 경로로 추가 수정이 필요하다.
+실제 Git/CLI로 재현했다. 부모 경로 추가를 제거하고 matrix는 정확한 파일 패턴,
+prepare는 같은 SHA의 설정 blob을 사용하도록 수정했다. 설정 파일명에 []가 포함된
+실제 sparse checkout과 prepare에서 무관한 pkg-b 소스 제외를 회귀 검증한다.
 
 동일 producer의 Linux는 Rust 테스트/coverage 이후 native focused fixture 생성에서
 실패했다. CI 환경의 Yarn immutable 기본값 때문에 새 lockfile을 만들 수 없었다.
 fixture 생성만 immutable=false로 명시하고 실제 focused install 검증은 계속
 immutable=true로 유지했다. 생성 오류 로그도 CI 출력으로 남긴다.
+
+producer `37118980826`에서 Windows·macOS 잡은 통과했다. Linux는 native 설치
+이후 별도 History Worker E2E가 Action의 상대 config 입력 계약과 달리 절대
+경로를 전달하여 실패했다. fixture 입력을 상대 경로로 수정한 로컬 D1 E2E가
+통과했다. cold fallback, 실제 assignment 2개, D1 병합, duplicate no-op, warm sample
+8개 재사용과 후속 실행을 확인했다. 공개 hosted D1 소비 증거로 대체하지 않는다.
+파일 단위 설정 checkout 수정의 전체 local gate는 통과했으며 line coverage는 96.38%다.
