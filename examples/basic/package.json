@@ -1,0 +1,5 @@
+{
+  "name": "nanoom-basic-example",
+  "private": true,
+  "packageManager": "pnpm@12.8.2"
+}

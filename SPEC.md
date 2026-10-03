@@ -1,100 +1,118 @@
-# Nanoom 공개 계약과 개선 명세
+# Nanoom 공개 계약
 
-## 기준 구현: v0.6.0
+이 문서는 현재 소스가 제공할 공개 계약을 설명한다. 배포된 기준은 v0.7.7이며
+아직 릴리즈되지 않은 변경은 ADR-0017과 정합성 검토에서 구분한다.
+최상위 원칙은 [AGENTS.md](AGENTS.md)와
+[ADR-0015](docs/adr/0015-released-ci-and-template-first.md)다.
+이전 v0.6.0 기반 후보 구현의 계획·인계·체크리스트는 역사 기록으로 보존한다.
+이번 철학 정합성 수정의 진행 및 미출시 항목은
+[정합성 검토](docs/philosophy-alignment.md)에 별도로 기록한다.
 
-아래 기존 계약은 source `539b2c08cc7e2543f3a0cdd10fbdba451b2502d5` 기준이다. 이 branch의 A1~A6 구현은 local Rust/Action gates를 통과했고 공식 OpenAPI schema/examples/digest 검증도 통과했다. A5 real trace 성능·오차·실제 artifact 크기와 A7 hosted producer/consumer 검증은 미완료다. Cloudflare Workers Free + D1 Worker는 배포되어 health/readiness가 통과했지만 인증 secret과 Actions client는 설정하지 않아 보호 데이터 경로는 아직 사용할 수 없다. release도 하지 않았다. 이 branch의 변경은 PR/hosted validation/release 전 후보 구현이다. 공개 계약의 기준은 [README](README.md), 생성된 [JSON schema](nanoom.schema.json), [ADR-0011](docs/adr/0011-sparse-checkout-plan.md), [ADR-0012](docs/adr/0012-ghes-history-checkout-cost.md), [ADR-0014](docs/adr/0014-prediction-state-v3-artifact-history.md)입니다.
+## 사용자 경로
 
-## Work item과 assignment
+대표 CI는 affected → run → status의 세 잡이다. run 잡은 공식 checkout →
+공식 Node 설정 → Nanoom focused install → Nanoom run 네 단계다.
+운영 Nanoom Action은 @latest와 해당 소스 버전의 공개 binary를 사용한다.
+후보 binary의 로컬 회귀는 공개 제품 소비 증거를 대신하지 않는다.
 
-- work item: `(group, workspace, task, shard)`
-- static matrix entry: `{ assignmentId, items, predictedDurationMs, reason, checkout, predictedPreparationMs?, preparationPredictionSource?, preparationSampleCount?, schedulingMode? }`
-- continuous matrix entry: `{ agentId, runId, mode: "continuous", checkout }`
-- `distribution`이 없는 group은 legacy `{ name, task, shard?, totalShards?, checkout }` entry를 유지한다.
-- `concurrency`는 Nanoom assignment 상한이며 GitHub `max-parallel`이 아니다.
+- affected는 이벤트를 explicit base/head로 변환하고 영향 범위, Plan,
+  모든 그룹의 compact matrix와 assignment별 checkout SHA/경로를 제공한다.
+- install은 Plan을 검증·선택하고 패키지 매니저를 자동 판별하여 루트 도구와
+  실행 workspace의 내부 dependency closure를 설치한다.
+- run은 검증된 assignment의 모든 item을 실행하고 실제 subprocess 시간을 측정한다.
+- status는 needs를 평가하고 양성 실행의 필수 잡 판단과 성공 이력 게시를 담당한다.
 
-## Timing
+기본 템플릿은 소비자의 jq/shell, Plan 선택 스크립트 또는 저장소 도구의
+반복 override를 요구하지 않는다. 상세 연결은 [README](README.md)와
+[목표 템플릿](docs/ci-philosophy.md)에 있다.
 
-- 성공 subprocess wall time만 monotonic clock으로 ms 단위 측정한다.
-- key: `group/workspace/task/shard/resolvedRunner/timingEnvironment`
-- 예측: exact key 최근 7개 median → group median → `1`
-- 배치: stable ID 동률 규칙을 가진 deterministic LPT
-- history 실패: artifact/off는 equal-weight 폴백, 시작된 HTTP run은 실패
+## Git과 workspace
 
-## GitHub revision resolution
+명시적 base/head를 우선한다. PR은 이벤트 base와 실행 merge SHA,
+merge_group은 이벤트 base/head SHA, push는 before/실행 SHA를 사용한다.
+마지막 성공 push SHA는 기본 비교 기준이 아니다. zero SHA는 실패한다.
+CLI는 GitHub 이벤트나 API로 비교 범위를 암묵적으로 정하지 않는다.
 
-- 명시적 Action `base`/`head`가 항상 우선한다.
-- pull request와 merge queue는 기존 이벤트 base를 사용한다.
-- push는 현재 workflow 파일·branch의 최신 성공 `push` run의 `head_sha`를 base로
-  사용하고, 현재 run은 후보에서 제외한다.
-- 성공 run 조회 실패는 CLI 전에 실패한다. SHA fetch는 CLI의 bounded blobless history
-  경계에서 수행하며 fetch 또는 ancestor 검증 실패 시 Action output을 기록하지 않는다.
-- Action result의 `revisionResolution`은 source, 실제 full SHA 범위, 성공 run ID를
-  설명한다. CLI는 GitHub API를 호출하지 않는다.
+workspace는 명시적 include/exclude 또는 저장소의 pnpm/package.json 선언에서
+발견한다. 내부 링크와 로컬 버전에 맞는 semver 의존성으로 그래프를 구성한다.
+변경은 transitive dependent로 전파한다. manifest 삭제/rename은 남은 workspace
+전체를 보수적으로 선택하며, sparse checkout의 manifest 누락은 실패한다.
 
-## Sparse checkout
+필요한 Git 이력은 tree/blob 없이 제한된 깊이로 확보한다. 기본 최대 깊이는
+2048이다. 입력 revision은 실제 commit으로 해석하며 tree/blob을 거부한다.
 
-- `workspace.include`/`exclude`가 workspace manifest discovery의 유일한 범위다.
-- affected checkout은 non-cone으로 root manifest, config, 해당 범위의 모든
-  `package.json`을 포함해야 하며 누락 시 실패한다.
-- shallow history fetch는 commit DAG만 받는 `--filter=tree:0`, `--no-tags`를 사용하고
-  `affected.maxFetchDepth`에서 중단한다.
-- matrix `checkout`은 `coneMode: true`와 affected workspace의 내부 dependency
-  closure 및 `checkout.always` 디렉터리의 정렬된 합집합을 제공한다.
-- configured workspace manifest의 삭제나 rename은 현재 manifest graph에 남아 있는
-  모든 workspace를 affected 처리하며 `workspaceManifestStructure` reason을 기록한다.
-- run별 self-hosted checkout 경로는 `.nanoom/` 아래에 격리한다. run Action의
-  `cleanupCheckout: true`는 `if: always()` 단계에서 해당 경로를 검증한 후 삭제한다.
+## 작업과 Plan
 
-## Backend
+work item은 group/workspace/task/shard/totalShards로 구분한다.
+assignment는 한 잡에서 순차 실행할 item 묶음이다. concurrency는 Nanoom
+assignment 상한이며 GitHub max-parallel이 아니다. distribution이 없으면
+item마다 assignment를 만든다. configured tier의 경계는 inclusive다.
 
-- `off`: 외부 I/O 없이 정적 assignment
-- `artifact`: 과거 history로 정적 assignment, 성공 sample과 병합 history를 30일 보관
-- `http`: HTTPS coordinator claim loop와 30초 heartbeat
+Plan v1은 상세 계획 artifact와 작은 digest/provenance reference다.
+정적 matrix는 group, assignmentId, displayName, checkout.ref와
+checkout.sparseCheckout을 제공한다. install/run은 원본 Plan digest,
+repository/workflow/run/attempt/head, assignment 내용과 실제 HEAD를 검증한다.
+선택한 설정 경로를 configPath로 보존해 install/run이 같은 설정을 사용한다.
+설정 경로도 assignment checkout에 포함되며 cwd 밖의 설정은 Plan에서 거부한다.
+하위 프로젝트는 선택적 workingDirectory로 실행 위치를 보존한다. 값과 item/
+checkout 경로는 Git 루트 기준이고 configPath는 프로젝트 기준이다. 공식 checkout은
+하위 프로젝트의 루트 메타데이터와 assignment 소스를 가져오며 install/run은
+Plan에서 cwd를 복원한다. 다른 하위 디렉터리와 symlink redirect는 거부한다.
+저장소 루트 실행은 필드를 생략한다. 이 계약은 미릴리즈 v0.8.0 후보에 해당한다.
+그룹당 256 assignment와 compact 출력 UTF-16 1 MiB 제한을 넘으면 실패한다.
+변경 없음은 assignment 0개인 정상 Plan이다.
 
-Artifact/history/coordinator는 aggregate status의 입력이 아니다. `status` Action은 `needs`만 평가한다.
+공식 checkout이 기본 경로다. prepare 기반 .nanoom/ 격리 checkout도 지원한다.
+선택적 cleanup은 검증된 격리 경로만 삭제한다.
+하위 프로젝트 cwd의 cleanup도 격리 checkout 전체를 삭제하며 기본 저장소를
+가리키는 하위 폴더는 거부한다.
 
-## 제거와 제외
+## 실행과 상태
 
-`isolate`는 v0.3.0에서 제거됐다. Task DAG, remote cache, flaky retry, Nx assignment rules, Nanoom server/SaaS는 현재 배포 구현에 없다. 아래 선택적 History Server 제안과 구분한다.
+실행 도구와 패키지 매니저는 저장소 선언에서 자동 판별한다. ambiguity를
+자동 판별할 수 없거나 의도적 변경이 필요할 때 override한다.
+Yarn Berry와 pnpm의 focused install은 루트 도구·내부 closure·개발 의존성을 포함한다.
+npm 전체 설치/실행은 지원하지만 focused install은 공개 v0.7.7에서 미지원이다.
+미릴리즈 정합성 수정은 npm ci의 native workspace 선택으로 focused install을 제공한다.
+현재 브랜치의 변경은 ADR-0017과 정합성 검토 기록을 참고한다.
 
-## 이 branch의 A1 변경 — 미출시
+계획한 workspace 실행이 없는 성공은 거부한다. assignment는 첫 실패에
+중단하고 남은 item을 pending으로 남긴다. CLI의 continue-on-error도 최종
+실패 exit code와 completed/failed/pending/executions JSON을 유지한다.
+shard 환경변수는 자식 프로세스에만 전달한다.
 
-- work item과 history identity는 `(group, workspace, task, shard, totalShards)`다. 샘플에서 `totalShards`가 빠진 기존 자료는 읽을 수 있지만, 분할 실행의 새 key와 섞지 않는다.
-- exact sample이 없으면 workspace를 제외한 동일 group/task/shard layout/runner/environment의 median을 사용하고, 없으면 cold weight `1`을 쓴다.
-- 명시한 `nanoom run --all --filter`가 workspace를 찾지 못하면 오류다. run Action은 성공 JSON이어도 계획된 workspace 실행이 없으면 assignment를 실패시키고 뒤의 item을 시작하지 않는다.
-- static assignment의 빈 install은 오류다. continuous assignment는 미래 item을 알 수 없어 기존 전체 install 경로를 유지하며, standalone `nanoom install`도 필터 없이 root install을 유지한다.
-- 100/1/1/1 시간 입력은 기존 scheduler에서 이미 빈 assignment 없이 결정적으로 처리되므로 배분 알고리즘을 변경하지 않았다.
+status는 실패·취소와 필수 실행의 누락·생략을 실패로 처리한다.
+no-change의 의도적 생략은 성공이다. 명시적 results의 중복 job ID는 거부한다.
+이력 장애는 task 성공을 실패로 바꾸지 않고 degraded로 기록한다.
 
-## 이 branch의 A3 Action 계약 — 미출시
+## 실행시간 이력
 
-- 정적 `affected`는 Plan v1 file을 만들고 30일 artifact로 올린다. Action output은 `plan` reference와 group/assignmentId/runner matrix만 전달한다. 상세 Plan이나 checkout path 전체를 Actions output으로 되돌리지 않는다.
-- `prepare`는 official artifact download와 checkout Action을 쓰며, original reference/digest/schema/provenance/assignment/current attempt/head를 확인한다. checkout은 `$GITHUB_WORKSPACE/.nanoom/<run>/<attempt>/<job>/<matrix-index>`에 root-only non-cone shallow checkout 후 assignment paths 파일을 cone mode로 적용한다.
-- `install`과 `run`의 정적 경로는 `assignmentFile`과 original `plan` reference를 함께 요구하고 Plan digest 및 checkout `HEAD`를 다시 검증한다. static inline-matrix 호환은 없다. 기존 `scheduler:http` continuous-agent matrix와 전체 install 경로는 분리해 유지한다.
-- GitHub.com artifact transport는 upload v4.6.2/download v4.3.0, GHES wrappers는 upload v3.2.2/download v3.1.0을 고정한다.
+기본 scheduler는 artifact다. 성공 measurements를 ModelState와 작은
+PredictionArtifact v3로 병합한다. prediction을 마지막 publish marker로 게시한다.
+planner는 model/raw measurement를 받지 않고 scope별 compact prediction만 받는다.
+PR scope를 먼저 확인하고 base branch를 fallback으로 사용한다.
 
+exact task/layout/runner/environment key → workspace를 제외한 동일 key → cold 1
+순서로 예측한다. 최근 30 UTC일 안의 최대 7개 일별 count/sum과 7일 half-life
+가중 평균을 사용한다. 준비 이력이 충분할 때에만 preparation+task 예상 비용으로
+assignment 수를 자동 선택하며, unknown/cold에서는 선택 tier의 상한을 유지한다.
 
-## 제안 계약: artifact plan / PredictionState v3 / 선택적 서버
+planning 이력 I/O와 parse의 공유 예산은 3초다. 손상·만료·시간/크기 제한·네트워크
+오류는 cold fallback이다. 선택지가 없으면 이력 metadata 요청도 생략한다.
+데이터/산식/한도는 [PredictionState v3](docs/prediction-model-spec.md)가 정의한다.
 
-전체 결정과 인수 기준은 [IMPLEMENTATION_PLAN](IMPLEMENTATION_PLAN.md)을 따른다. 아래 표는 branch-local 구현과 남은 제안 계약을 함께 설명한다. 어느 것도 release됐다고 가정하지 않는다.
+선택적 History Worker는 Workers/D1의 prediction 조회·관측 병합 backend다.
+기본 artifact 경로를 대체하도록 강제하지 않는다.
+scheduler=http는 별도 coordinator의 등록/claim/heartbeat/완료 client이며,
+History Worker가 queue/lease 서버 역할까지 구현하는 것은 아니다.
 
-| 경계 | 변경 |
-|---|---|
-| 실행 계획 | Plan v1 artifact, 작은 assignment matrix, digest/provenance 검증 |
-| checkout | prepare가 exact head를 격리 checkout하고 paths 파일을 sparse --stdin으로 적용 |
-| install/run | assignment-file 입력, empty/no-execution 성공 금지, 상세 결과 파일 |
-| 이력 | PredictionTable/ModelState v3, planner는 예측값만 조회, updater는 날짜 count/sum·bounded batch dedup |
-| 배분 | 관측 preparation+task 비용, tier cap 안에서 기본 자동 k, cold-cap |
-| 상태 | requiredJobs로 예상하지 않은 skipped run 거부 |
-| 서버 | Rust 별도 binary, opt-in historyBackend:server, 기본 artifact 유지, /health와 /ready |
+status/cache-key는 설정 파싱과 독립적으로 동작한다. cache-key는 선택한 설정,
+manifest, 패키지 매니저 설정과 lockfile을 해시하며 파일 읽기 오류는 실패한다.
+작업 source의 산출물 캐시나 remote cache는 제공하지 않는다.
 
-현재 branch의 A2/A3 구현은 `affected --plan-output FILE --plan-context FILE`, `plan select --input FILE --reference FILE --group GROUP --assignment ID --output-dir DIR`, planned install의 `--filter-file`, 그리고 artifact-backed `affected→prepare→install→run` Action 경로다. 상세 plan은 파일에 저장하고 compact output은 group/assignmentId/runnerLabels/timingEnvironment만 matrix row로 전달한다. validator는 raw-file SHA-256, schema, repository/workflow/run/head provenance, 그리고 `producerAttempt <= current.attempt`를 확인한다. rerun consumer는 actual current run identity를 채운 reference를 제공한다. `install`과 `run`은 original reference를 받아 digest와 checkout HEAD를 매번 검증한다. GHES용 `affected-ghes`/`prepare-ghes`는 v3 artifact Actions를 쓴다. group별 256행 또는 UTF-16 출력 1 MiB 초과는 실패하고 zero-work Plan은 assignment 없이 유효하다. `--filter-file`은 non-empty JSON string array를 요구하고 malformed/non-array/non-string/empty/control-character entry 및 기존 `--filter`과의 동시 사용을 install 전에 거부한다. 필터 옵션 없는 standalone install은 root 설치를 유지한다.
+## 증거와 미검증 범위
 
-A4 local 구현은 v3 MeasurementArtifact/ModelStateBundle/PredictionArtifact, 공용 deterministic compile/apply/project, PR-aware exact/fallback prediction lookup, bounded artifact read와 updater publish marker를 추가했다. `affected`는 선택지가 있을 때만 prediction artifact를 읽고 model/measurement는 planner에 전달하지 않는다. PR ScopeRef의 Rust wire field는 OpenAPI 계약에 맞춰 camelCase를 사용한다. A5 local 구현은 first-task start와 preparation start 사이의 telemetry를 선택적으로 기록하고, task/preparation history가 warm일 때 tier concurrency 상한 안에서 automatic assignment count를 고른다. unknown/cold이면 상한을 유지하며 선택 근거를 compact matrix와 scheduling result에 표시한다. Local 384-item synthetic scheduler 시간은 측정했지만 hosted preparation/task wall time과 real trace prediction error는 미실시다. CLI/Action regressions와 자세한 local/external evidence는 [CHECKLIST](CHECKLIST.md)에 기록했다. 공식 OpenAPI validator는 통과했고 actual hosted consumer는 아직 증명되지 않았다.
-
-서버 HTTP source of truth는 [OpenAPI 3.1.1](docs/api/history.openapi.yaml), Cloudflare Workers/D1·인증·운영 규칙은 [서버 명세](docs/history-server-spec.md)다. API /v1, Plan v1, PredictionTable/ModelState v3 버전은 각각 독립적이다. 기본 배포 목표는 Workers Free + D1 + `workers.dev`이며, 무료 요청/row/storage/CPU 한도를 넘으면 요청이 실패한다. 기존 scheduler:http live coordinator와 새 History Server API를 혼합하지 않는다.
-
-새 공개 계약은 다음 minor에서 workflow 예제/fixture/마이그레이션 문서와 함께 적용한다. 다음 중 하나라도 없으면 구현 완료가 아니다: 계약 회귀, docs, 실제 candidate consumer, positive 실행, 실패 전파. released 검증은 release 후 별도 증거다.
-
-데이터와 산식은 [예측 모델 명세](docs/prediction-model-spec.md)를 따른다. raw 실행 history 보존이 목표가 아니다. key당 최대 30 UTC일 내 최근 7개 날짜의 count/sum을 유지하며 가중 평균을 계산한다. 기존 median과 정확도 차이는 후속 구현의 비교 대상이다. 현재 attempt 측정 artifact는 1일, model/prediction 및 Plan artifact는 30일이다.
-
-planning 전체 이력 I/O·파싱의 공유 budget은 3초이며 크기/시간 초과는 cold fallback한다. planner는 model을 다운로드하지 않는다. artifact 학습 state는 16 MiB/50,000 keys/4096 receipts 상한, 80% 경고다. D1 Worker는 scope row 1.9 MB로 제한하며 비활성 state는 45일 뒤 daily cron이 삭제한다. D1 Free storage/query 한도나 Workers CPU를 넘으면 호출이 실패할 수 있다. artifact run별 사본 총량도 별도 측정한다. 이력 조회와 갱신을 포함한 전체 CI가 느려지면 성능 개선 완료로 인정하지 않는다.
+최신 공개 제품의 producer/consumer CI와 실제 양성 assignment 실행,
+aggregate status를 로컬 gates와 별도로 확인해야 한다. 과거 green run을
+새 소스의 released 검증으로 승계하지 않는다. 실제 GHES, 임의 self-hosted pool,
+성능 개선은 해당 환경의 증거 없이는 주장하지 않는다.

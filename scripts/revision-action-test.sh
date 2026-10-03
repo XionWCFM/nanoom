@@ -10,7 +10,8 @@ git -C "$tmp/repo" init -q -b main
 git -C "$tmp/repo" config user.email fixture@example.invalid
 git -C "$tmp/repo" config user.name fixture
 printf 'base\n' > "$tmp/repo/file"
-git -C "$tmp/repo" add file
+printf '%s\n' '{"group":{"ci":{"tasks":["test"]}}}' > "$tmp/repo/nanoom.config.json"
+git -C "$tmp/repo" add file nanoom.config.json
 git -C "$tmp/repo" commit -q -m base
 base=$(git -C "$tmp/repo" rev-parse HEAD)
 printf 'head\n' >> "$tmp/repo/file"
@@ -42,7 +43,7 @@ run_action() {
   local output=$1 summary=$2 event=${3:-push} event_base=${4:-}
   : > "$output"; : > "$summary"; : > "$FAKE_CURL_LOG"; : > "$FAKE_NANOOM_ARGS"
   env PATH="$tmp/bin:$PATH" GITHUB_ACTION_PATH="$root/.github/actions/affected" GITHUB_OUTPUT="$output" GITHUB_STEP_SUMMARY="$summary" RUNNER_TEMP="$tmp" \
-    CWD="$tmp/repo" CONFIG=nanoom.config.json EVENT="$event" EVENT_BASE="$event_base" EVENT_HEAD="$head" REF_NAME=main \
+    CWD="$tmp/repo" CONFIG="${CONFIG_OVERRIDE:-nanoom.config.json}" EVENT="$event" EVENT_BASE="$event_base" EVENT_HEAD="$head" REF_NAME=main \
     WORKFLOW_REF=owner/repo/.github/workflows/ci.yml@refs/heads/main API=https://api.example REPOSITORY=owner/repo \
     TOKEN=token RUN_ID=99 RUN_ATTEMPT=1 SCHEDULER=off TIMING_RUNNER=yarn TIMING_ENVIRONMENT=linux-x64 \
     BASE="${BASE_OVERRIDE:-}" HEAD="$head" HISTORY_ARTIFACT=unused COORDINATOR_URL= COORDINATOR_TOKEN= \
@@ -104,3 +105,13 @@ for action in ['affected', 'affected-ghes']:
     ]:
         assert eval(expression, {'github': N(event=event, sha='merge')}) == expected
 PYTEST
+
+for invalid in ../outside.json /outside.json 'C:/outside.json' .; do
+  export CONFIG_OVERRIDE="$invalid" BASE_OVERRIDE="$base"
+  if run_action "$tmp/invalid-config-output" "$tmp/invalid-config-summary" > "$tmp/invalid-config.log" 2>&1; then
+    echo "invalid Action configuration accepted: $invalid" >&2; exit 1
+  fi
+  jq -e '.status == "failure" and .phase == "configuration-checkout"' <(sed -n 's/^result=//p' "$tmp/invalid-config-output") >/dev/null
+  test ! -s "$FAKE_NANOOM_ARGS"
+done
+unset CONFIG_OVERRIDE BASE_OVERRIDE

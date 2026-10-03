@@ -39,6 +39,22 @@ fi
 # The CLI resolves the merge base with bounded commit-only deepening. A depth-1
 # checkout cannot prove ancestry here, even when the event revisions are valid.
 
+ACTION_PHASE=configuration-checkout
+[[ -n "$CONFIG" && "$CONFIG" != /* && "$CONFIG" != *\\* && "$CONFIG" != [[:alpha:]]:* && "$CONFIG" != *$'\n'* && "$CONFIG" != *$'\r'* ]] || {
+  echo 'affected config must be a repository-relative file path' >&2; false
+}
+IFS=/ read -r -a config_parts <<< "$CONFIG"
+for part in "${config_parts[@]}"; do
+  [[ "$part" != .. ]] || { echo 'affected config must stay inside cwd' >&2; false; }
+done
+if [[ ! -f "$CWD/$CONFIG" ]]; then
+  prefix=$(git -C "$CWD" rev-parse --show-prefix)
+  [[ $(git -C "$CWD" cat-file -t "$resolved_head:$prefix$CONFIG") == blob ]] || {
+    echo 'affected config must select a tracked file' >&2; false
+  }
+  git --literal-pathspecs -C "$CWD" restore --ignore-skip-worktree-bits --source="$resolved_head" --worktree -- "$CONFIG"
+fi
+
 history_status=disabled; history_fetch_ms=0; history_source_run_id=''; history_path=''
 
 if [[ "$SCHEDULER" == http ]]; then
@@ -101,7 +117,7 @@ if [[ "$SCHEDULER" != http ]]; then
     case "$preparation_pm" in
       pnpm) preparation_lockfile="$CWD/pnpm-lock.yaml" ;;
       yarn) preparation_lockfile="$CWD/yarn.lock" ;;
-      npm) preparation_lockfile="$CWD/package-lock.json" ;;
+      npm) preparation_lockfile="$CWD/package-lock.json"; [[ ! -f "$CWD/npm-shrinkwrap.json" ]] || preparation_lockfile="$CWD/npm-shrinkwrap.json" ;;
       *) preparation_lockfile='' ;;
     esac
     if [[ -n "$preparation_lockfile" && -f "$preparation_lockfile" && "$preparation_pm" == "$declared_pm" ]]; then
@@ -157,6 +173,22 @@ if [[ "$SCHEDULER" != http ]]; then
   printf '◆ nanoom affected plan\n  Command\n    %s\n' "$ACTION_COMMAND"
   ACTION_PHASE=affected-calculation
   compact=$(nanoom "${plan_args[@]}")
+  nanoom_warm_plan() {
+    local warm_path="$plan_dir/warm-plan-v1.json" warm_compact index
+    local warm_args=("${plan_args[@]}")
+    for index in "${!warm_args[@]}"; do
+      if [[ "${warm_args[$index]}" == --plan-output ]]; then
+        warm_args[$((index + 1))]=$warm_path
+      fi
+    done
+    # A failed or interrupted planner must never replace the valid cold Plan.
+    if warm_compact=$(nanoom_history_timeout nanoom "${warm_args[@]}" "$@"); then
+      mv "$warm_path" "$plan_path" || return $?
+      printf '%s' "$warm_compact"
+    else
+      return $?
+    fi
+  }
   history_needed=$(jq -r '.result.historyNeeded // false' <<<"$compact")
   if [[ "$HISTORY_BACKEND" == server && "$history_needed" == true ]]; then
     history_started_ms=$(nanoom_now_ms)
@@ -198,7 +230,7 @@ if [[ "$SCHEDULER" != http ]]; then
       done < <(jq -c '.result.historyScopes[]?' <<<"$compact")
       if [[ "$server_read_failed" == false ]] && ((${#table_args[@]})); then
         ACTION_PHASE=affected-server-calculation
-        if warm_compact=$(nanoom_history_timeout nanoom "${plan_args[@]}" "${table_args[@]}"); then
+        if warm_compact=$(nanoom_warm_plan "${table_args[@]}"); then
           compact=$warm_compact
         else
           echo 'History Server table validation exceeded the shared history budget; using the cold plan' >&2
@@ -272,7 +304,7 @@ if [[ "$SCHEDULER" != http ]]; then
     fi
     if [[ -n "$history_path" ]]; then
       ACTION_PHASE=affected-calculation
-      if warm_compact=$(nanoom_history_timeout nanoom "${plan_args[@]}"); then
+      if warm_compact=$(nanoom_warm_plan); then
         compact=$warm_compact
       else
         echo 'bounded prediction lookup or validation exceeded its shared history budget; using the already-computed cold plan' >&2

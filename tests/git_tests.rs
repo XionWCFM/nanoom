@@ -207,7 +207,7 @@ fn shallow_linked_worktree_fetches_missing_base_history() {
     assert_eq!(
         repo.get_changed_files_from_tip(&base, Some("HEAD"))
             .unwrap(),
-        vec![linked.join("next.txt")]
+        vec![linked.canonicalize().unwrap().join("next.txt")]
     );
 }
 
@@ -238,7 +238,8 @@ fn git_file_lists_preserve_unicode_and_embedded_separators() {
     git(&["add", "."]);
     git(&["commit", "-m", "unusual names", "--no-gpg-sign"]);
     let repo = GitRepo::open(dir.path()).unwrap();
-    let mut expected: Vec<_> = names.iter().map(|name| dir.path().join(name)).collect();
+    let canonical_root = dir.path().canonicalize().unwrap();
+    let mut expected: Vec<_> = names.iter().map(|name| canonical_root.join(name)).collect();
     expected.sort();
     for mut changed in [
         repo.get_changed_files("HEAD~1", Some("HEAD")).unwrap(),
@@ -249,7 +250,7 @@ fn git_file_lists_preserve_unicode_and_embedded_separators() {
         assert_eq!(changed, expected);
     }
     let mut all = repo.get_all_files().unwrap();
-    expected.push(dir.path().join("base.txt"));
+    expected.push(canonical_root.join("base.txt"));
     all.sort();
     expected.sort();
     assert_eq!(all, expected);

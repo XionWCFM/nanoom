@@ -103,6 +103,8 @@ pub async fn calculate_with_override(
     base: Option<&str>,
     head: Option<&str>,
 ) -> Result<AffectedOutput> {
+    let cwd_absolute = cwd.canonicalize()?;
+    let cwd = cwd_absolute.as_path();
     let git_root = crate::git::detect_git_root(cwd)?;
     let git = GitRepo::open(&git_root)?;
 
@@ -128,8 +130,9 @@ pub async fn calculate_with_override(
 
     let head_ref = event.head_ref();
     let head_commit = git.resolve_commit(head_ref)?;
-    let (changed_files, structural_changes) =
+    let (mut changed_files, structural_changes) =
         git.get_changed_files_with_structure(&base_commit, Some(head_ref))?;
+    changed_files.retain(|path| path.starts_with(cwd));
     let structural_changes: Vec<PathBuf> = structural_changes
         .into_iter()
         .filter(|path| crate::workspace::is_workspace_manifest(config, path, cwd))
@@ -155,11 +158,25 @@ pub async fn calculate_with_override(
         )));
     }
     let workspace = Workspace::discover(config, cwd)?;
+    let installation_paths = workspace.installation_checkout_paths(cwd)?;
+    let mut global_dependencies: Vec<String> = config
+        .global_dependencies
+        .iter()
+        .cloned()
+        .chain(installation_paths.iter().map(|path| format!("{path}/**")))
+        .collect();
+    if let Some(source) = &config.source_path {
+        if let Ok(relative) = source.strip_prefix(cwd.canonicalize()?) {
+            global_dependencies.push(globset::escape(
+                &relative.to_string_lossy().replace('\\', "/"),
+            ));
+        }
+    }
     let reasons = explain_affected(
         &workspace,
         &changed_files,
         &structural_changes,
-        &config.global_dependencies,
+        &global_dependencies,
         cwd,
     );
 
@@ -168,13 +185,7 @@ pub async fn calculate_with_override(
 
     for (group_name, group_config) in &config.group {
         let affected_projects = if structural_changes.is_empty() {
-            calculate_affected(
-                &workspace,
-                &changed_files,
-                &config.global_dependencies,
-                cwd,
-                true,
-            )
+            calculate_affected(&workspace, &changed_files, &global_dependencies, cwd, true)
         } else {
             workspace.all_projects().to_vec()
         };
@@ -213,6 +224,7 @@ pub async fn calculate_with_override(
                     workspace
                         .dependency_closure_paths(&project.name, cwd)
                         .into_iter()
+                        .chain(installation_paths.iter().cloned())
                         .chain(config.checkout.always.iter().cloned())
                         .collect::<Vec<_>>(),
                 )

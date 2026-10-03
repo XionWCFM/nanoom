@@ -64,9 +64,7 @@ runs:
         path: .nanoom/${{ github.run_id }}/${{ github.run_attempt }}/${{ github.job }}/${{ strategy.job-index || 0 }}
         fetch-depth: 1
         persist-credentials: false
-        sparse-checkout: |
-          /*
-          !/*/
+        sparse-checkout: ${{ steps.select.outputs.initial-sparse-checkout }}
         sparse-checkout-cone-mode: false
     - name: Apply assignment cone checkout
       id: checkout

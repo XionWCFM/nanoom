@@ -16,6 +16,9 @@ case "$CWD" in
     ;;
 esac
 target=$(cd "$target_path" && pwd -P)
+# A nested project owns the same isolated checkout, including its Git objects.
+checkout_root=$(git -C "$target" rev-parse --show-toplevel 2>/dev/null) || checkout_root=$target
+target=$(cd "$checkout_root" && pwd -P)
 [[ "$target" == "$workspace/.nanoom/"* ]] || {
   echo "cleanupCheckout refused path outside $workspace/.nanoom" >&2
   exit 1

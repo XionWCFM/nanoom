@@ -2,6 +2,7 @@ use crate::config::{Config, DiscoveredWorkspace, PackageJson};
 use crate::error::Result;
 use globset::{Glob, GlobBuilder, GlobSetBuilder};
 use ignore::WalkBuilder;
+use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -165,6 +166,75 @@ impl Workspace {
         paths.sort();
         paths.dedup();
         paths
+    }
+
+    /// Root tooling participates in focused installation even when it is not
+    /// one of the assignment's task workspaces.
+    pub fn installation_checkout_paths(&self, cwd: &Path) -> Result<Vec<String>> {
+        let mut paths = Vec::new();
+        if cwd.join("package.json").is_file() {
+            let root = read_workspace(cwd, cwd)?;
+            for (name, spec) in root.dependency_specs {
+                if self.get_project_by_name(&name).is_some_and(|local| {
+                    is_internal_link(&spec, local.package_json_version.as_deref())
+                }) {
+                    paths.extend(self.dependency_closure_paths(&name, cwd));
+                }
+            }
+        }
+        let yarn_config = cwd.join(".yarnrc.yml");
+        if yarn_config.is_file() {
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct YarnConfig {
+                yarn_path: Option<String>,
+                #[serde(default)]
+                plugins: Vec<YarnPlugin>,
+            }
+            #[derive(Deserialize)]
+            struct YarnPlugin {
+                path: String,
+            }
+            let config: YarnConfig = serde_yaml::from_str(&std::fs::read_to_string(yarn_config)?)?;
+            for asset in config
+                .yarn_path
+                .into_iter()
+                .chain(config.plugins.into_iter().map(|plugin| plugin.path))
+            {
+                let asset = asset.strip_prefix("${PROJECT_CWD}/").unwrap_or(&asset);
+                let path = Path::new(asset);
+                if asset.is_empty()
+                    || asset.starts_with('/')
+                    || asset.contains('\\')
+                    || asset.contains(':')
+                    || asset.chars().any(char::is_control)
+                    || path.is_absolute()
+                    || path.components().any(|part| {
+                        matches!(
+                            part,
+                            std::path::Component::ParentDir | std::path::Component::Prefix(_)
+                        )
+                    })
+                {
+                    return Err(crate::error::Error::ConfigValidation(format!(
+                        ".yarnrc.yml asset '{asset}' must be a repository-relative path"
+                    )));
+                }
+                let normalized: PathBuf = path
+                    .components()
+                    .filter(|part| *part != std::path::Component::CurDir)
+                    .collect();
+                if let Some(parent) = normalized
+                    .parent()
+                    .filter(|parent| !parent.as_os_str().is_empty() && *parent != Path::new("."))
+                {
+                    paths.push(parent.to_string_lossy().replace('\\', "/"));
+                }
+            }
+        }
+        paths.sort();
+        paths.dedup();
+        Ok(paths)
     }
 }
 
@@ -368,12 +438,24 @@ pub(crate) fn matching_global_files(
 }
 
 fn build_global_matcher(patterns: &[String], _cwd: &Path) -> Option<globset::GlobSet> {
-    if patterns.is_empty() {
-        return None;
-    }
-
     let mut builder = GlobSetBuilder::new();
-    for pattern in patterns {
+    let repository_inputs = [
+        "package.json",
+        "nanoom.config.json",
+        "pnpm-workspace.yaml",
+        "pnpm-lock.yaml",
+        "yarn.lock",
+        "package-lock.json",
+        "npm-shrinkwrap.json",
+        ".npmrc",
+        ".yarnrc.yml",
+        "turbo.json",
+        "nx.json",
+        "tsconfig*.json",
+        ".yarn/releases/**",
+        ".yarn/plugins/**",
+    ];
+    for pattern in patterns.iter().map(String::as_str).chain(repository_inputs) {
         if let Ok(glob) = Glob::new(pattern) {
             builder.add(glob);
         }

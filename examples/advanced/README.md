@@ -1,115 +1,136 @@
 # Advanced example
 
-실전에서 쓰는 고급 기능을 전부 담은 예제입니다.
+`ci`와 `e2e` 두 그룹, 제외 규칙, task별 shard와 변경 규모별 assignment 상한을
+보여주는 pnpm 저장소다. 모든 그룹은 하나의 기본 matrix에 포함된다.
 
-```
-advanced/
-├── nanoom.config.json          # 2개 그룹 + 규칙 + globalDependencies + workspace 오버라이드
-├── pnpm-workspace.yaml
-├── packages/
-│   ├── design-system/          # test를 3개 샤드로 분할
-│   ├── db-migrations/          # 일반 build work item
-│   └── legacy-admin/           # ci 그룹에서 완전 제외(ignore)
-├── apps/
-│   ├── web/                    # e2e를 2개 샤드로, design-system에 의존
-│   └── mobile/                 # 독립 앱
-└── tools/release-bot/          # pnpm 워크스페이스엔 있지만 nanoom 설정으로 제외
-```
+| 설정 | 동작 |
+| --- | --- |
+| `ci.tasks` | test, build, typecheck 실행 |
+| `ci.rules` | legacy-admin 제외, design-system test를 3개 shard로 생성 |
+| `e2e.rules` | web의 test:e2e만 2개 shard로 생성; 해당 task가 없는 나머지는 제외 |
+| `distribution` | small/medium/full 변경 비율에 따라 3/6/12 assignment 상한 |
+| `workspace` | packages와 apps 발견; tools 제외 |
+| `globalDependencies` | 기본 전역 입력 외에 workflow 파일 변경도 전체 실행 |
 
-## 설정 포인트
+`concurrency`는 GitHub max-parallel이 아닌 Nanoom assignment 상한이다.
+샤드 실행은 자식 프로세스에 NANOOM_SHARD_INDEX와 NANOOM_SHARD_TOTAL을 전달한다.
+실제 테스트 분할은 task가 이 값을 읽어 구현해야 한다.
 
-| 기능 | 어디서 | 무엇을 하는지 |
-| --- | --- | --- |
-| `ignore: true` | `@adv/legacy-admin` | 이 프로젝트는 ci 그룹 매트릭스에서 아예 빠짐 |
-| `distribution` | `ci` | affected 비율에 따라 Nanoom assignment 수 상한을 선택 |
-| `shard: [{ task, shard }]` | `@adv/design-system`, `@adv/web` | 긴 테스트를 N개 조각으로 쪼개 병렬 실행 |
-| `globalDependencies` | 락파일, 워크플로우 파일 | 이 파일들이 바뀌면 모든 프로젝트가 영향받음으로 처리 |
-| `workspace.include/exclude` | `tools/*` 제외 | 발견기가 자동 찾은 후보 중 불필요한 디렉토리 드롭 |
+## 직접 실행
 
-## 직접 실행해보기
+이 디렉터리를 별도 위치로 복사하고 실행한다.
 
 ```bash
-cd examples/advanced
-git init -b main && git add . && git commit -m init
-
-# 패키지 하나 수정 후 커밋한 뒤:
-nanoom affected --base main --head HEAD
-nanoom affected --base main --head HEAD --json  # matrix와 선택 이유를 함께 출력
-nanoom run ci test                 # 영향받은 프로젝트만 순서대로 실행
-
-# 샤드 나눠 실행 (GitHub Actions의 각 잡에서)
-nanoom run ci test --shard 1 --total-shards 3
-nanoom run ci test --shard 2 --total-shards 3
+example_dir=$(mktemp -d)
+cp -R examples/advanced/. "$example_dir"
+cd "$example_dir"
+pnpm install --frozen-lockfile
+git init -b main
+git add .
+git commit -m "example baseline"
+git switch -c example/change
+printf 'changed\n' > packages/design-system/change.txt
+git add .
+git commit -m "change design system"
+nanoom affected --base main --head HEAD --json
+nanoom run ci test --base main --head HEAD
+nanoom run ci test --all --filter @adv/design-system --shard 1 --total-shards 3
+nanoom run e2e test:e2e --all --filter @adv/web --shard 1 --total-shards 2
 ```
 
-## 기대 동작 예시
+공유 design-system 변경은 ci의 design-system과 web, e2e의 web을 선택한다.
+mobile 변경은 ci의 mobile만 선택한다. legacy-admin은 두 그룹에서 제외한다.
 
-- `packages/design-system` 수정 → design-system(test×3샤드, build, typecheck) + **web**(의존성 전파) 감지.
-  web의 e2e는 e2e 그룹에서 2샤드로 추가 생성.
-- `apps/mobile`만 수정 → mobile 항목만 생성.
-- `pnpm-lock.yaml` 커밋 → 모든 프로젝트가 영향받음 처리.
-- `legacy-admin`을 아무리 수정해도 매트릭스에 절대 등장하지 않음.
+## GitHub Actions
 
-## GitHub Actions 연동
+이 예제를 별도 저장소의 루트로 사용할 때 아래 템플릿을 연결한다.
+Nx/Turbo를 도입해도 각 도구의 설정을 저장소에 선언하면 자동 판별하며,
+일반적인 사용에서 timingRunner·monorepoTool·packageManager를 반복 지정하지 않는다.
 
 ```yaml
+name: CI
+
+on:
+  pull_request:
+  merge_group:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  actions: read
+
 jobs:
-  matrix:
+  affected:
+    name: Plan affected work
     runs-on: ubuntu-latest
     outputs:
+      has_change: ${{ steps.affected.outputs.has_change }}
       plan: ${{ steps.affected.outputs.plan }}
-      groups: ${{ steps.affected.outputs.groups }}
+      matrix: ${{ steps.affected.outputs.matrix }}
     steps:
-      - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
-      - id: affected
-        uses: XionWCFM/nanoom/.github/actions/affected@main
+      - name: Checkout workspace manifests
+        uses: actions/checkout@v7
         with:
-          packageManager: pnpm
-          timingRunner: turbo
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*
+            !/*/
+            **/package.json
+      - name: Plan affected work
+        id: affected
+        uses: XionWCFM/nanoom/.github/actions/affected@latest
 
-  test:
-    needs: matrix
-    if: needs.matrix.outputs.groups != '' && fromJSON(needs.matrix.outputs.groups).ci.hasChange
-    strategy:
-      matrix: ${{ fromJSON(needs.matrix.outputs.groups).ci.include }}
+  run:
+    name: Run affected work (${{ matrix.displayName }})
+    needs: affected
+    if: needs.affected.outputs.has_change == 'true'
     runs-on: ${{ matrix.runnerLabels || 'ubuntu-latest' }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.affected.outputs.matrix) }}
     steps:
-      - id: prepare
-        uses: XionWCFM/nanoom/.github/actions/prepare@latest
+      - name: Checkout planned source
+        uses: actions/checkout@v7
         with:
-          plan: ${{ needs.matrix.outputs.plan }}
-          group: ci
-          assignmentId: ${{ matrix.assignmentId }}
-      - id: install
+          ref: ${{ matrix.checkout.ref }}
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: ${{ matrix.checkout.sparseCheckout }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Focus install planned workspaces
+        id: install
         uses: XionWCFM/nanoom/.github/actions/install@latest
         with:
-          plan: ${{ needs.matrix.outputs.plan }}
-          assignmentFile: ${{ steps.prepare.outputs.assignment-file }}
-          cwd: ${{ steps.prepare.outputs.cwd }}
-          packageManager: pnpm
-      - uses: XionWCFM/nanoom/.github/actions/run@latest
+          plan: ${{ needs.affected.outputs.plan }}
+          group: ${{ matrix.group }}
+          assignmentId: ${{ matrix.assignmentId }}
+
+      - name: Run planned work
+        uses: XionWCFM/nanoom/.github/actions/run@latest
         with:
-          plan: ${{ needs.matrix.outputs.plan }}
-          assignmentFile: ${{ steps.prepare.outputs.assignment-file }}
-          cwd: ${{ steps.prepare.outputs.cwd }}
-          preparedAtMs: ${{ steps.prepare.outputs.prepared-at-ms }}
+          plan: ${{ needs.affected.outputs.plan }}
+          assignmentFile: ${{ steps.install.outputs.assignment-file }}
           installResult: ${{ steps.install.outputs.result }}
-          packageManager: pnpm
-          monorepoTool: turbo
-          cleanupCheckout: true
 
   status:
+    name: CI status
     if: always()
-    needs: [matrix, test]
+    needs: [affected, run]
     runs-on: ubuntu-latest
     steps:
-      - uses: XionWCFM/nanoom/.github/actions/status@latest
+      - name: Publish history and check CI results
+        uses: XionWCFM/nanoom/.github/actions/status@latest
         with:
-          results: |
-            matrix=${{ needs.matrix.result }}
-            test=${{ needs.test.result }}
-          requiredJobs: ${{ needs.matrix.outputs.groups != '' && fromJSON(needs.matrix.outputs.groups).ci.hasChange && '["test"]' || '[]' }}
+          needs: ${{ toJSON(needs) }}
 ```
 
-이 workflow는 `ci` group을 하나의 Turbo matrix job으로 실행합니다. Nx consumer도 같은 Plan/prepare/install 흐름을 쓰고 `timingRunner: nx`, `monorepoTool: nx`로 실행기를 맞춥니다. package manager가 pnpm이면 `packageManager: pnpm`은 그대로 둡니다. Nx/Turbo task graph 설정은 각 도구의 설정 파일에서 관리합니다.
+그룹을 별도 job으로 나눌 때에만 각 그룹의 양성 변경에 해당하는 job을
+status의 requiredJobs로 명시한다. 명시한 배열은 자동 추론보다 우선하며,
+다른 그룹의 정상 no-change 생략은 실패로 취급하지 않는다.

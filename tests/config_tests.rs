@@ -346,6 +346,7 @@ fn test_schema_generation() {
 #[test]
 fn test_workspace_config_defaults() {
     let config = Config {
+        source_path: None,
         schema: None,
         group: std::collections::HashMap::new(),
         global_dependencies: vec![],
@@ -492,4 +493,33 @@ fn invalid_package_workspace_and_pnpm_precedence() {
         Config::load(path, dir.path()).unwrap().workspace.include,
         ["packages/*", "apps/*"]
     );
+}
+
+#[test]
+fn loaded_configuration_origin_is_runtime_metadata_and_not_public_configuration() {
+    let dir = tempdir().unwrap();
+    fs::write(
+        dir.path().join("custom.json"),
+        r#"{"group":{"ci":{"tasks":["test"]}}}"#,
+    )
+    .unwrap();
+    let config = Config::load(Path::new("custom.json"), dir.path()).unwrap();
+    assert_eq!(
+        config.source_path.as_deref(),
+        Some(
+            dir.path()
+                .join("custom.json")
+                .canonicalize()
+                .unwrap()
+                .as_path()
+        )
+    );
+    let serialized = serde_json::to_value(&config).unwrap();
+    assert!(serialized.get("source_path").is_none());
+    fs::write(
+        dir.path().join("custom.json"),
+        r#"{"source_path":"outside.json","group":{"ci":{"tasks":["test"]}}}"#,
+    )
+    .unwrap();
+    assert!(Config::load(Path::new("custom.json"), dir.path()).is_err());
 }

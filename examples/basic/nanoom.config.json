@@ -2,7 +2,7 @@
   "$schema": "../../nanoom.schema.json",
   "group": {
     "ci": {
-      "tasks": ["test", "build"],
+      "tasks": ["test", "build"]
     }
   }
 }
