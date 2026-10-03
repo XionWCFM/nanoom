@@ -4,7 +4,10 @@ source "$GITHUB_ACTION_PATH/../_setup/artifacts.sh"
 [[ "$RUN_ID" =~ ^[0-9]+$ && "$RUN_ATTEMPT" =~ ^[0-9]+$ ]]
 # Reuse the bounded, single-JSON archive reader; never fetch unrelated artifacts.
 nanoom_history_budget_start 60 25165824
-artifacts=$(nanoom_run_artifacts "$RUN_ID")
+metadata="$RUNNER_TEMP/nanoom-measurement-artifacts-$RUN_ID-$RUN_ATTEMPT.json"
+# Keep the listing byte charge in this shell, within the download budget.
+nanoom_run_artifacts "$RUN_ID" > "$metadata"
+artifacts=$(cat "$metadata")
 prefix="nanoom-measurement-v3-$RUN_ID-$RUN_ATTEMPT-"
 names=$(nanoom_history_timeout jq -r --arg prefix "$prefix" \
   '.artifacts[]? | select((.expired | not) and (.name | startswith($prefix))) | .name' <<<"$artifacts")

@@ -62,7 +62,7 @@ run_item() {
   local args=(-C "$CWD" run "$group" "$task" --all --filter "$name" --json)
   [[ -n $(jq -r '.shard // empty' <<<"$item") ]] && args+=(--shard "$(jq -r .shard <<<"$item")" --total-shards "$(jq -r .totalShards <<<"$item")")
   if [[ "$static_plan" == true ]]; then
-    args+=(--runner "$TOOL")
+    args+=(-c "$(jq -r '.configPath // "nanoom.config.json"' "$ASSIGNMENT_FILE")" --runner "$TOOL")
   elif [[ "$TOOL" == turbo && ! -x "$CWD/node_modules/.bin/turbo" ]]; then
     args+=(--runner "$PM")
   elif [[ "$TOOL" != auto ]]; then
@@ -135,7 +135,13 @@ if [[ "$static_plan" == true ]]; then
     measurement_status=skipped
     if identity=$(nanoom_prediction_identity "${GITHUB_EVENT_NAME:-}" "$WORKFLOW_REF" "${GITHUB_REPOSITORY_ID:-}" "${GITHUB_SERVER_URL:-}" "${GITHUB_REF:-}" "${PR_NUMBER:-}" "${PR_HEAD_REPOSITORY_ID:-}" "${PR_HEAD_REF:-}" "${PR_BASE_REF:-}"); then
       sample_dir="$RUNNER_TEMP/nanoom-timing"; mkdir -p "$sample_dir"
-      sample_name=$(printf '%s-%s' "${GITHUB_JOB:-run}" "$ASSIGNMENT_ID" | tr -c 'A-Za-z0-9._-' '-' | cut -c1-80)
+      sample_identity=$(jq -cn --arg job "${GITHUB_JOB:-run}" --arg assignment "$ASSIGNMENT_ID" '[$job,$assignment]')
+      if command -v sha256sum >/dev/null 2>&1; then
+        sample_digest=$(printf '%s' "$sample_identity" | sha256sum | cut -c1-16)
+      else
+        sample_digest=$(printf '%s' "$sample_identity" | shasum -a 256 | cut -c1-16)
+      fi
+      sample_name="$(printf '%s-%s' "${GITHUB_JOB:-run}" "$ASSIGNMENT_ID" | tr -c 'A-Za-z0-9._-' '-' | cut -c1-63)-$sample_digest"
       sample_path="$sample_dir/$sample_name.json"
       preparation_observations='[]'
       preparation_start=${PREPARED_AT_MS:-}
@@ -158,7 +164,7 @@ if [[ "$static_plan" == true ]]; then
           case "$preparation_pm" in
             pnpm) lockfile="$CWD/pnpm-lock.yaml" ;;
             yarn) lockfile="$CWD/yarn.lock" ;;
-            npm) lockfile="$CWD/package-lock.json" ;;
+            npm) lockfile="$CWD/package-lock.json"; [[ ! -f "$CWD/npm-shrinkwrap.json" ]] || lockfile="$CWD/npm-shrinkwrap.json" ;;
           esac
           if [[ -f "$lockfile" ]]; then
             if command -v sha256sum >/dev/null 2>&1; then

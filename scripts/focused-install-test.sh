@@ -52,6 +52,12 @@ for (const name of ['app','tool']) {
  fs.writeFileSync(path, JSON.stringify(pkg));
 }
 JS
+mkdir -p "$tmp/runner"
+CWD="$tmp" RUNNER_TEMP="$tmp/runner" GITHUB_PATH="$tmp/package-manager-path" bash "$root/.github/actions/install/activate.sh"
+npm_shim=$(cat "$tmp/package-manager-path")
+test "$("$npm_shim/npm" --version)" = 11.16.0
+original_path=$PATH
+export PATH="$npm_shim:$PATH"
 npm install --package-lock-only --ignore-scripts --no-audit --no-fund > "$tmp/npm-lock.log" 2>&1
 NODE_ENV=production "$root/target/debug/nanoom" install --filter app --json > "$tmp/npm-install.json"
 jq -e '.packageManager == "npm" and .scope.devDependencies == true' "$tmp/npm-install.json" >/dev/null
@@ -69,6 +75,7 @@ rm package-lock.json
 if "$root/target/debug/nanoom" install --filter app --json > "$tmp/no-lock.json" 2>/dev/null; then exit 1; fi
 jq -e '.status == "failure"' "$tmp/no-lock.json" >/dev/null
 printf '%s\n' 'native npm focused install includes both closures and rejects unknown workspaces or missing lockfiles'
+export PATH=$original_path
 
 rm -rf node_modules packages/*/node_modules
 node - <<'JS'

@@ -39,7 +39,7 @@ runs:
         RUN_ATTEMPT: ${{ github.run_attempt }}
         RUNNER_TEMP: ${{ runner.temp }}
         MEASUREMENT_DIR: ${{ runner.temp }}/nanoom-current-measurements-${{ github.run_id }}-${{ github.run_attempt }}
-      run: bash "$GITHUB_ACTION_PATH/download.sh"
+      run: bash "$GITHUB_ACTION_PATH/../_setup/download-measurements.sh"
     - name: Compile PredictionState v3 or complete live runs
       id: history
       shell: bash

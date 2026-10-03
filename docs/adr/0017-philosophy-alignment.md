@@ -37,6 +37,17 @@ AGENTS.md와 ADR-0015의 두 원칙을 유지한다. 사용자 보조 단계나 
 - 기본/고급 예제는 독립적으로 frozen install 가능한 manifest/lockfile과 대표
   네 단계 템플릿을 제공한다. 과거 계획은 현재 계약을 설명하는 문서와 구분한다.
 
+- 사용자 지정 설정 경로를 Plan/assignment에 보존하고 install/run에 전달한다.
+  manifest-only 계획에서 누락된 설정 blob은 정확한 head에서 확보한다.
+  cwd 밖 또는 안전하지 않은 경로와 checkout에 포함되지 않은 설정은 거부한다.
+- 표준 history/status와 GHES history 모두 같은 bounded API downloader로 현재
+  attempt 측정만 수집한다. 임시 디렉터리는 run/attempt로 분리한다.
+- 명시된 npm 버전은 Corepack의 npm shim도 활성화하고, 선언 없는 npm은 Node의
+  npm을 사용한다. shrinkwrap이 있으면 준비 예측/측정도 그 digest를 사용한다.
+- 측정 artifact 이름에 전체 job/assignment identity digest를 붙여 truncation 충돌을 막는다.
+- status/cache-key는 설정 파싱과 독립적으로 실행한다. cache-key는 선택한 설정과
+  패키지 매니저 설정/shrinkwrap을 포함하고 읽기 오류를 숨기지 않는다.
+
 ## 수용 기준과 증거
 
 실제 sparse checkout, root 도구·실행 workspace의 양쪽 dependency closure,

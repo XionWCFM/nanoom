@@ -126,6 +126,7 @@ async fn test_calculate_affected_no_git_env() {
     create_package_json(&pkg_path, "pkg1", &[]);
 
     let config = Config {
+        source_path: None,
         schema: None,
         group: std::collections::HashMap::new(),
         global_dependencies: vec![],

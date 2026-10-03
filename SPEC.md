@@ -52,6 +52,8 @@ Plan v1은 상세 계획 artifact와 작은 digest/provenance reference다.
 정적 matrix는 group, assignmentId, displayName, checkout.ref와
 checkout.sparseCheckout을 제공한다. install/run은 원본 Plan digest,
 repository/workflow/run/attempt/head, assignment 내용과 실제 HEAD를 검증한다.
+선택한 설정 경로를 configPath로 보존해 install/run이 같은 설정을 사용한다.
+설정 경로도 assignment checkout에 포함되며 cwd 밖의 설정은 Plan에서 거부한다.
 그룹당 256 assignment와 compact 출력 UTF-16 1 MiB 제한을 넘으면 실패한다.
 변경 없음은 assignment 0개인 정상 Plan이다.
 
@@ -96,6 +98,10 @@ planning 이력 I/O와 parse의 공유 예산은 3초다. 손상·만료·시간
 기본 artifact 경로를 대체하도록 강제하지 않는다.
 scheduler=http는 별도 coordinator의 등록/claim/heartbeat/완료 client이며,
 History Worker가 queue/lease 서버 역할까지 구현하는 것은 아니다.
+
+status/cache-key는 설정 파싱과 독립적으로 동작한다. cache-key는 선택한 설정,
+manifest, 패키지 매니저 설정과 lockfile을 해시하며 파일 읽기 오류는 실패한다.
+작업 source의 산출물 캐시나 remote cache는 제공하지 않는다.
 
 ## 증거와 미검증 범위
 

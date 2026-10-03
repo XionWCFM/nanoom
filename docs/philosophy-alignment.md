@@ -39,11 +39,21 @@
 | 로컬 run | affected 선택이 base를 요구하지만 run에는 base 입력이 없음 | --base/--head 추가; 실제 Git 선택 실행/잘못된 조합 회귀 통과 |
 | GHES 측정 수집 | v3 download의 미지원 pattern/merge 입력으로 다른 artifact까지 읽음 | bounded API 선택; 현재 attempt/만료/빈 목록/크기 제한 회귀 통과 |
 
+| 사용자 지정 설정 | affected.config로 계획해도 install/run은 기본 설정을 읽음 | Plan configPath와 sparse 설정 복원/검증; 실제 CLI·Git·Action 경로 회귀 추가 |
+| 메타데이터 명령 | status/cache-key가 불필요한 설정 파싱에 실패하고 cache-key가 선택한 설정·읽기 오류를 무시함 | 독립 실행과 실제 CLI 회귀; 해시 입력/framing/error 보강 |
+| npm 활성화/예측 | 선언한 npm 버전은 활성화하지 않고 preparation은 shrinkwrap을 무시함 | native Corepack npm 실행 및 양쪽 lockfile 우선순위 회귀 |
+| 측정 이름 | 긴 job/assignment 이름 truncation으로 artifact 충돌 가능 | 전체 identity digest와 두 긴 잡 측정 보존 회귀 |
+
 ## 검증 기록
 
 위의 통과는 개발 중인 소스의 로컬 증거다. 예제와 native install은 실제
 패키지 매니저·filesystem·Git을 사용했다. GHES 및 준비 시각 오류 경계는 로컬
 API 응답 회귀이며, live GHES 검증을 주장하지 않는다. 전체 local gates가 통과했으며 line coverage는 96.48%다.
 native install 회귀는 Action 계약 gate에도 연결했다.
-semantic review는 진행 중이다. producer CI·새 릴리즈·최신 공개 제품을
-사용한 두 저장소 실행은 아직 수행하지 않았다. 최종 run/version/SHA를 추가한다.
+producer CI [37115923209](https://github.com/XionWCFM/nanoom/actions/runs/37115923209)는 실패했다.
+Linux는 새 Git 회귀가 전역 author 설정에 의존했고 Windows는 pnpm --prod=false
+기대값이 누락됐다. 로컬 author 없는 Git 경로와 Windows 기대값을 수정했다.
+후속 변경의 `scripts/verify-completion.sh --local`이 통과했다. line coverage는
+96.29%이며 실제 CLI, native focused install과 Action 계약을 포함한다.
+producer 재실행은 진행 중이다.
+새 릴리즈 및 두 저장소의 최신 공개 제품 소비 검증은 아직 수행하지 않았다.

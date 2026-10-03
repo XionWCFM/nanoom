@@ -76,6 +76,8 @@ pub struct Plan {
     pub version: u32,
     pub provenance: PlanProvenance,
     pub task_runner: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config_path: Option<String>,
     pub prediction_reason: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prediction_artifact: Option<ArtifactDigest>,
@@ -139,6 +141,8 @@ pub struct AssignmentContext {
     pub provenance: PlanProvenance,
     pub current: CurrentRun,
     pub task_runner: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config_path: Option<String>,
     pub group: String,
     pub assignment_id: String,
     pub items: Vec<PlanItem>,
@@ -245,6 +249,7 @@ impl Plan {
             version: PLAN_VERSION,
             provenance: context.provenance(),
             task_runner: context.task_runner.clone(),
+            config_path: None,
             prediction_reason: context.prediction_reason.clone(),
             prediction_artifact: context.prediction_artifact.clone(),
             model_artifact: context.model_artifact.clone(),
@@ -265,6 +270,15 @@ impl Plan {
             )));
         }
         validate_provenance(&self.provenance)?;
+        if self
+            .config_path
+            .as_ref()
+            .is_some_and(|path| !valid_relative_path(path) || path == ".")
+        {
+            return Err(invalid(
+                "Plan configPath must be a repository-relative file path",
+            ));
+        }
         if self.task_runner.trim().is_empty() {
             return Err(invalid("Plan taskRunner must not be empty"));
         }
@@ -305,6 +319,17 @@ impl Plan {
                     assignment.scheduling_mode.as_deref(),
                 )?;
                 validate_sorted_paths(group_name, &assignment.checkout_paths)?;
+                if let Some(path) = self.config_path.as_ref().filter(|path| path.contains('/')) {
+                    if !assignment
+                        .checkout_paths
+                        .iter()
+                        .any(|checkout| checkout == "." || Path::new(path).starts_with(checkout))
+                    {
+                        return Err(invalid(
+                            "Plan checkout paths omit the selected configuration",
+                        ));
+                    }
+                }
                 for item in &assignment.items {
                     items += 1;
                     if item.group != *group_name
@@ -362,10 +387,21 @@ pub fn write_affected_plan(
     cwd: &Path,
     context_path: &Path,
     plan_path: &Path,
+    config_path: Option<&Path>,
 ) -> Result<String> {
     let context_bytes = std::fs::read(context_path)?;
     let context: PlanContext = serde_json::from_slice(&context_bytes)?;
-    let plan = Plan::from_affected(output, matrix, &context, expected_task_runner, cwd)?;
+    let mut plan = Plan::from_affected(output, matrix, &context, expected_task_runner, cwd)?;
+    if let Some(source) = config_path {
+        let root = cwd.canonicalize()?;
+        let relative = source
+            .strip_prefix(&root)
+            .map_err(|_| invalid("Plan configuration must be inside the checkout"))?;
+        if relative != Path::new("nanoom.config.json") {
+            plan.config_path = Some(relative.to_string_lossy().replace('\\', "/"));
+        }
+    }
+    plan.validate()?;
     let plan_bytes = serde_json::to_vec_pretty(&plan)?;
     let reference = PlanReference::for_plan(&plan, &plan_bytes)?;
     let compact = compact_output(&plan, &reference)?;
@@ -465,6 +501,7 @@ pub fn select_assignment(
         provenance: plan.provenance.clone(),
         current: reference.current.clone(),
         task_runner: plan.task_runner.clone(),
+        config_path: plan.config_path.clone(),
         group: group_name.to_owned(),
         assignment_id: assignment_id.to_owned(),
         items: assignment.items.clone(),
@@ -897,6 +934,7 @@ fn valid_relative_path(path: &str) -> bool {
     }
     !path.is_empty()
         && !path.starts_with('/')
+        && !matches!(path.as_bytes(), [drive, b':', ..] if drive.is_ascii_alphabetic())
         && !path.contains('\\')
         && !path.chars().any(char::is_control)
         && path
@@ -984,6 +1022,7 @@ mod tests {
             version: PLAN_VERSION,
             provenance: provenance(),
             task_runner: "pnpm".into(),
+            config_path: None,
             prediction_reason: "cold start".into(),
             prediction_artifact: None,
             model_artifact: None,

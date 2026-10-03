@@ -113,7 +113,10 @@ grep -q 'sparse-checkout set --cone --stdin' .github/actions/prepare/checkout.sh
 # Cover both unbudgeted release artifact listing and bounded history reads.
 bash scripts/history-artifact-test.sh
 # GHES v3 has no pattern/merge support; selection uses the bounded API reader.
-! grep -qE "pattern:|merge-multiple:|actions/download-artifact" .github/actions/history-ghes/action.yml
+for action in history-ghes history status; do
+  ! grep -qE "pattern:|merge-multiple:|actions/download-artifact" ".github/actions/$action/action.yml"
+  grep -q '../_setup/download-measurements.sh' ".github/actions/$action/action.yml"
+done
 bash scripts/history-ghes-test.sh
 bash scripts/setup-smoke.sh
 bash scripts/plan-action-test.sh

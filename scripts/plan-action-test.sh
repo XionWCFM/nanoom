@@ -156,6 +156,16 @@ export CWD="$direct" GITHUB_PATH="$tmp/package-manager-path"
 bash "$root/.github/actions/install/activate.sh"
 grep -q 'enable --install-directory .* yarn pnpm' "$RUNNER_TEMP/corepack-call"
 test "$(cat "$GITHUB_PATH")" = "$RUNNER_TEMP/nanoom-package-manager"
+# Declared npm versions also activate the opt-in npm Corepack shim.
+mkdir -p "$tmp/npm-source"
+printf '%s\n' '{"name":"npm-root","packageManager":"npm@11.16.0"}' > "$tmp/npm-source/package.json"
+CWD="$tmp/npm-source" GITHUB_PATH="$tmp/npm-path" bash "$root/.github/actions/install/activate.sh"
+grep -q 'enable --install-directory .* yarn pnpm npm' "$RUNNER_TEMP/corepack-call"
+test "$(cat "$tmp/npm-path")" = "$RUNNER_TEMP/nanoom-package-manager"
+# An undeclared npm repository uses Node's bundled npm without Corepack.
+printf '%s\n' '{"name":"npm-root"}' > "$tmp/npm-source/package.json"
+CWD="$tmp/npm-source" GITHUB_PATH="$tmp/default-npm-path" bash "$root/.github/actions/install/activate.sh"
+test ! -e "$tmp/default-npm-path"
 export GITHUB_ACTION_PATH="$root/.github/actions/install" GITHUB_OUTPUT="$tmp/direct-selection"
 bash "$root/.github/actions/prepare/select.sh" > "$tmp/direct-select.log"
 export ASSIGNMENT_FILE="$(sed -n 's/^assignment-file=//p' "$GITHUB_OUTPUT")" CWD="$direct"
@@ -174,4 +184,55 @@ if bash "$GITHUB_ACTION_PATH/run.sh" > "$tmp/direct-tamper.log" 2>&1; then
 fi
 grep -q 'HEAD mismatch' "$tmp/direct-tamper.log"
 
+# A custom configuration outside root files is restored from the planned SHA
+# during manifest-only planning, then carried through the authoritative Plan.
+mkdir -p "$repo/settings"
+git -C "$repo" mv nanoom.config.json settings/custom.json
+printf '%s\n' '{"group":{"custom":{"tasks":["test"],"rules":[{"name":"pkg-b","ignore":true},{"name":"pkg-shared","ignore":true},{"name":"root-tool","ignore":true},{"name":"root-shared","ignore":true}]}}}' > "$repo/settings/custom.json"
+git -C "$repo" add .
+git -C "$repo" -c user.name=test -c user.email=test@example.com commit -qm custom --no-gpg-sign
+custom_head=$(git -C "$repo" rev-parse HEAD)
+planner="$tmp/custom-planner"
+git clone -q --depth=1 --no-checkout "file://$repo" "$planner"
+git -C "$planner" sparse-checkout set --no-cone '/*' '!/*/' '**/package.json'
+git -C "$planner" checkout -q --detach "$custom_head"
+test ! -e "$planner/settings/custom.json"
+export GITHUB_ACTION_PATH="$root/.github/actions/affected" CWD="$planner" CONFIG=settings/custom.json
+export BASE="$head" HEAD="$custom_head" EVENT_HEAD="$custom_head" GITHUB_SHA="$custom_head" RUN_ATTEMPT=1 RUN_ID=8675310 GITHUB_JOB=affected SCHEDULER=off
+export GITHUB_OUTPUT="$tmp/custom-affected"
+bash "$GITHUB_ACTION_PATH/run.sh" > "$tmp/custom-affected.log"
+test -f "$planner/settings/custom.json"
+plan_ref=$(sed -n 's/^plan=//p' "$GITHUB_OUTPUT")
+groups=$(sed -n 's/^groups=//p' "$GITHUB_OUTPUT")
+artifact_dir="$RUNNER_TEMP/nanoom-plan-$RUN_ID-$RUN_ATTEMPT-$GITHUB_JOB"
+jq -e '.configPath == "settings/custom.json" and .itemCount == 1' "$artifact_dir/plan-v1.json" >/dev/null
+custom="$tmp/custom-consumer"
+git clone -q --depth=1 --no-checkout "file://$repo" "$custom"
+jq -r '.custom.include[0].checkout.sparseCheckout' <<<"$groups" | git -C "$custom" sparse-checkout set --no-cone --stdin
+git -C "$custom" checkout -q --detach "$custom_head"
+test -f "$custom/settings/custom.json"
+test ! -e "$custom/nanoom.config.json"
+test ! -e "$custom/packages/pkg-b"
+export GITHUB_ACTION_PATH="$root/.github/actions/install" GITHUB_WORKSPACE="$custom" SELECT_CWD="$custom" CWD="$custom" PLAN="$plan_ref" PLAN_DIR="$artifact_dir" GROUP=custom ASSIGNMENT_ID="$(jq -r '.custom.include[0].assignmentId' <<<"$groups")" GITHUB_JOB=run
+export GITHUB_OUTPUT="$tmp/custom-selection"
+bash "$root/.github/actions/prepare/select.sh" > "$tmp/custom-select.log"
+export ASSIGNMENT_FILE="$(sed -n 's/^assignment-file=//p' "$GITHUB_OUTPUT")" GITHUB_OUTPUT="$tmp/custom-install"
+bash "$GITHUB_ACTION_PATH/run.sh" > "$tmp/custom-install.log"
+export INSTALL_RESULT="$(sed -n 's/^result=//p' "$GITHUB_OUTPUT")" GITHUB_ACTION_PATH="$root/.github/actions/run" GITHUB_OUTPUT="$tmp/custom-run" CWD=''
+bash "$GITHUB_ACTION_PATH/run.sh" > "$tmp/custom-run.log"
+jq -e '.status == "success" and .executedItemCount == 1 and .group == "custom"' <(sed -n 's/^result=//p' "$GITHUB_OUTPUT") >/dev/null
+# Planning hashes the same npm lockfile that npm ci prioritizes.
+jq '.packageManager="npm@11.16.0"' "$repo/package.json" > "$tmp/npm-package.json"
+cp "$tmp/npm-package.json" "$repo/package.json"
+printf '%s\n' 'package lock' > "$repo/package-lock.json"
+printf '%s\n' 'shrinkwrap lock' > "$repo/npm-shrinkwrap.json"
+git -C "$repo" add .
+git -C "$repo" -c user.name=test -c user.email=test@example.com commit -qm npm --no-gpg-sign
+npm_head=$(git -C "$repo" rev-parse HEAD)
+export GITHUB_ACTION_PATH="$root/.github/actions/affected" CWD="$repo" CONFIG=settings/custom.json
+export BASE="$custom_head" HEAD="$npm_head" EVENT_HEAD="$npm_head" GITHUB_SHA="$npm_head" GITHUB_JOB=affected RUN_ID=8675311 SCHEDULER=artifact
+export GITHUB_OUTPUT="$tmp/npm-affected"
+bash "$GITHUB_ACTION_PATH/run.sh" > "$tmp/npm-affected.log"
+shrinkwrap_digest=$(sha256sum < "$repo/npm-shrinkwrap.json" | awk '{print $1}')
+jq -e --arg digest "$shrinkwrap_digest" '.packageManager == "npm" and .packageManagerVersion == "11.16.0" and .lockfileDigest == $digest' "$RUNNER_TEMP/nanoom-plan-$RUN_ID-$RUN_ATTEMPT-$GITHUB_JOB/preparation-context.json" >/dev/null
 echo 'Plan producer, rerun selection, sparse checkout, focused install, and run contracts passed'

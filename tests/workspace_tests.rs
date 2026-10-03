@@ -229,6 +229,7 @@ fn yarn_workspace_fixture(dir: &Path) {
 
 fn simple_config(include: &[&str], exclude: &[&str]) -> Config {
     Config {
+        source_path: None,
         schema: None,
         group: std::collections::HashMap::new(),
         global_dependencies: vec![],

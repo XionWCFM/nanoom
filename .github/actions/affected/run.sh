@@ -39,6 +39,22 @@ fi
 # The CLI resolves the merge base with bounded commit-only deepening. A depth-1
 # checkout cannot prove ancestry here, even when the event revisions are valid.
 
+ACTION_PHASE=configuration-checkout
+[[ -n "$CONFIG" && "$CONFIG" != /* && "$CONFIG" != *\\* && "$CONFIG" != [[:alpha:]]:* && "$CONFIG" != *$'\n'* && "$CONFIG" != *$'\r'* ]] || {
+  echo 'affected config must be a repository-relative file path' >&2; false
+}
+IFS=/ read -r -a config_parts <<< "$CONFIG"
+for part in "${config_parts[@]}"; do
+  [[ "$part" != .. ]] || { echo 'affected config must stay inside cwd' >&2; false; }
+done
+if [[ ! -f "$CWD/$CONFIG" ]]; then
+  prefix=$(git -C "$CWD" rev-parse --show-prefix)
+  [[ $(git -C "$CWD" cat-file -t "$resolved_head:$prefix$CONFIG") == blob ]] || {
+    echo 'affected config must select a tracked file' >&2; false
+  }
+  git --literal-pathspecs -C "$CWD" restore --ignore-skip-worktree-bits --source="$resolved_head" --worktree -- "$CONFIG"
+fi
+
 history_status=disabled; history_fetch_ms=0; history_source_run_id=''; history_path=''
 
 if [[ "$SCHEDULER" == http ]]; then
@@ -101,7 +117,7 @@ if [[ "$SCHEDULER" != http ]]; then
     case "$preparation_pm" in
       pnpm) preparation_lockfile="$CWD/pnpm-lock.yaml" ;;
       yarn) preparation_lockfile="$CWD/yarn.lock" ;;
-      npm) preparation_lockfile="$CWD/package-lock.json" ;;
+      npm) preparation_lockfile="$CWD/package-lock.json"; [[ ! -f "$CWD/npm-shrinkwrap.json" ]] || preparation_lockfile="$CWD/npm-shrinkwrap.json" ;;
       *) preparation_lockfile='' ;;
     esac
     if [[ -n "$preparation_lockfile" && -f "$preparation_lockfile" && "$preparation_pm" == "$declared_pm" ]]; then

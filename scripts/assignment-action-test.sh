@@ -157,6 +157,20 @@ jq -e '.version == 3 and (.observations | length == 1)' "$yarn_sample" "$pnpm_sa
 jq -e --arg env 'runner-labels:["linux","self-hosted"]' '.scope.timingEnvironment == $env and .observations[0].timingEnvironment == $env' "$yarn_sample" "$pnpm_sample" >/dev/null
 jq -e '.observations[0].shard == 1 and .observations[0].totalShards == 4 and (.observations[0].executionId | length > 0)' "$yarn_sample" "$pnpm_sample" >/dev/null
 
+# Long job identifiers must retain distinct measurements after truncation.
+long_job=$(printf '%090d' 0)
+for suffix in a b; do
+  export GITHUB_JOB="$long_job-$suffix"
+  : > "$GITHUB_OUTPUT"
+  bash "$GITHUB_ACTION_PATH/run.sh" >/dev/null
+  name=$(sed -n 's/^sample-name=//p' "$GITHUB_OUTPUT")
+  path=$(sed -n 's/^sample-path=//p' "$GITHUB_OUTPUT")
+  if [[ "$suffix" == a ]]; then first_name=$name; first_path=$path; else
+    test "$name" != "$first_name" && test "$path" != "$first_path"
+    test -s "$first_path" && test -s "$path"
+  fi
+done
+
 GITHUB_ACTION_PATH="$root/.github/actions/install"
 export GITHUB_ACTION_PATH PM=pnpm GITHUB_JOB=install SCHEDULER=off
 write_assignment '[]'
@@ -177,6 +191,12 @@ jq -e '. == ["pkg-a","pkg-b"]' "$FAKE_FILTER_FILE" >/dev/null
 install_result=$(sed -n 's/^result=//p' "$GITHUB_OUTPUT")
 jq -e '.assignment.itemCount == 2 and (.assignment | has("items") | not) and .packageManager == "pnpm" and .packageManagerVersion == "10.0.0" and .installMode == "focused"' <<<"$install_result" >/dev/null
 
+# An explicit npm selection reaches the same validated focused install path.
+: > "$GITHUB_OUTPUT"; : > "$FAKE_INSTALL_CALLS"
+PM=npm bash "$GITHUB_ACTION_PATH/run.sh" >/dev/null
+grep -q -- 'install --package-manager npm --filter-file' "$FAKE_INSTALL_CALLS"
+jq -e '. == ["pkg-a","pkg-b"]' "$FAKE_FILTER_FILE" >/dev/null
+
 : > "$GITHUB_OUTPUT"
 if FAKE_INSTALL_INVALID_JSON=1 bash "$GITHUB_ACTION_PATH/run.sh" >"$tmp/install-postprocess-failure.log" 2>&1; then echo 'invalid Nanoom install result unexpectedly succeeded' >&2; exit 1; fi
 grep -q 'parse error' "$tmp/install-postprocess-failure.log"
@@ -192,6 +212,16 @@ jq -e '.preparationObservations | length == 1' "$telemetry_sample" >/dev/null
 jq -e '.preparationObservations[0] | .packageManager == "pnpm" and .packageManagerVersion == "10.0.0" and .installMode == "focused" and .durationMs >= 0 and (.lockfileDigest | test("^[0-9a-f]{64}$")) and (.checkoutDigest | test("^[0-9a-f]{64}$")) and (.workspaceSetDigest | test("^[0-9a-f]{64}$"))' "$telemetry_sample" >/dev/null
 result=$(sed -n 's/^result=//p' "$GITHUB_OUTPUT")
 jq -e '.preparationObservationStatus == "recorded"' <<<"$result" >/dev/null
+
+# npm shrinkwrap is authoritative even when package-lock also exists.
+printf '%s\n' 'package lock' > "$CWD/package-lock.json"
+printf '%s\n' 'shrinkwrap lock' > "$CWD/npm-shrinkwrap.json"
+npm_install_result=$(jq -c '.packageManager="npm" | .packageManagerVersion="11.16.0"' <<<"$install_result")
+: > "$GITHUB_OUTPUT"
+INSTALL_RESULT="$npm_install_result" bash "$GITHUB_ACTION_PATH/run.sh" >/dev/null
+npm_sample=$(sed -n 's/^sample-path=//p' "$GITHUB_OUTPUT")
+shrinkwrap_digest=$(sha256sum < "$CWD/npm-shrinkwrap.json" | awk '{print $1}')
+jq -e --arg digest "$shrinkwrap_digest" '.preparationObservations[0] | .packageManager == "npm" and .lockfileDigest == $digest' "$npm_sample" >/dev/null
 
 # The default four-step template needs no explicit preparation timestamp.
 cat > "$tmp/bin/curl" <<'SH_CURL'

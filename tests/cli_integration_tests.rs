@@ -159,6 +159,73 @@ fn json_mode_returns_json_error_and_nonzero_exit() {
 }
 
 #[test]
+fn metadata_commands_work_without_repository_configuration() {
+    let dir = tempdir().unwrap();
+    for config in [None, Some("invalid JSON")] {
+        if let Some(contents) = config {
+            fs::write(dir.path().join("nanoom.config.json"), contents).unwrap();
+        }
+        for args in [
+            vec!["status", "run", "--results", "run=success", "--json"],
+            vec!["cache-key", "--runner", "pnpm", "--task", "test", "--json"],
+        ] {
+            let (success, stdout, stderr) = run_cli_parts(dir.path(), &args, &[]);
+            assert!(success, "{args:?}: {stderr}");
+            serde_json::from_str::<serde_json::Value>(&stdout).unwrap();
+        }
+    }
+    fs::write(dir.path().join("selected.json"), "selected config").unwrap();
+    let args = [
+        "cache-key",
+        "--runner",
+        "pnpm",
+        "--task",
+        "test",
+        "-c",
+        "selected.json",
+        "--json",
+    ];
+    let key =
+        |output: String| serde_json::from_str::<serde_json::Value>(&output).unwrap()["key"].clone();
+    let (success, stdout, stderr) = run_cli_parts(dir.path(), &args, &[]);
+    assert!(success, "{stderr}");
+    let before = key(stdout);
+    fs::write(dir.path().join("selected.json"), "changed config").unwrap();
+    let (success, stdout, stderr) = run_cli_parts(dir.path(), &args, &[]);
+    assert!(success, "{stderr}");
+    assert_ne!(before, key(stdout));
+    for cwd in ["missing", "selected.json"] {
+        assert!(
+            !run_cli_parts(
+                dir.path(),
+                &[
+                    "-C",
+                    cwd,
+                    "cache-key",
+                    "--runner",
+                    "pnpm",
+                    "--task",
+                    "test",
+                    "--json"
+                ],
+                &[]
+            )
+            .0
+        );
+    }
+    fs::create_dir(dir.path().join("yarn.lock")).unwrap();
+    assert!(!run_cli_parts(dir.path(), &args, &[]).0);
+    assert!(
+        !run_cli_parts(
+            dir.path(),
+            &["status", "run", "--results", "run=failure", "--json"],
+            &[]
+        )
+        .0
+    );
+}
+
+#[test]
 fn cache_key_json_is_a_single_json_object() {
     let dir = tempdir().unwrap();
     fs::write(

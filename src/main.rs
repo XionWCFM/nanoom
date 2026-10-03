@@ -126,6 +126,13 @@ async fn run_cli(cli: Cli) -> Result<()> {
         return nanoom::commands::plan::execute(args, &cwd);
     }
 
+    if let Commands::Status(args) = cli.command {
+        return nanoom::commands::status::execute(args).await;
+    }
+    if let Commands::CacheKey(args) = cli.command {
+        return nanoom::commands::cache_key::execute(args, &cwd, &config_path);
+    }
+
     let config = Config::load(&config_path, &cwd)?;
 
     dispatch(cli.command, &config, &cwd).await
@@ -138,9 +145,16 @@ async fn dispatch(command: Commands, config: &Config, cwd: &std::path::Path) -> 
         Commands::Install(args) => nanoom::commands::install::execute(args, config, cwd).await,
         Commands::History(args) => nanoom::commands::history::execute(args),
         Commands::Plan(args) => nanoom::commands::plan::execute(args, cwd),
-        Commands::Status(args) => nanoom::commands::status::execute(args, config).await,
+        Commands::Status(args) => nanoom::commands::status::execute(args).await,
         Commands::Schema { .. } => Ok(()),
-        Commands::CacheKey(args) => nanoom::commands::cache_key::execute(args, cwd),
+        Commands::CacheKey(args) => nanoom::commands::cache_key::execute(
+            args,
+            cwd,
+            config
+                .source_path
+                .as_deref()
+                .unwrap_or(std::path::Path::new("nanoom.config.json")),
+        ),
         Commands::Version { .. } => Ok(()),
     }
 }

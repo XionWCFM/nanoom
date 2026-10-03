@@ -2,7 +2,8 @@
 set -euo pipefail
 cd "$CWD"
 # Corepack reads the packageManager declaration; the consumer does not repeat it.
-if [[ -f yarn.lock || -f pnpm-lock.yaml ]]; then
+manager=$(jq -r '.packageManager // ""' package.json)
+if [[ -f yarn.lock || -f pnpm-lock.yaml || "$manager" == npm@* ]]; then
   if command -v corepack >/dev/null; then
     corepack_binary=corepack
   else
@@ -12,6 +13,9 @@ if [[ -f yarn.lock || -f pnpm-lock.yaml ]]; then
   fi
   shim_dir="$RUNNER_TEMP/nanoom-package-manager"
   mkdir -p "$shim_dir"
-  "$corepack_binary" enable --install-directory "$shim_dir" yarn pnpm
+  shims=(yarn pnpm)
+  # npm shims are opt-in in Corepack; respect an explicit npm version too.
+  if [[ "$manager" == npm@* ]]; then shims+=(npm); fi
+  "$corepack_binary" enable --install-directory "$shim_dir" "${shims[@]}"
   echo "$shim_dir" >> "$GITHUB_PATH"
 fi

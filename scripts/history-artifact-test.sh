@@ -166,7 +166,7 @@ chmod +x "$tmp/bin/nanoom"
 export REAL_NANOOM="$root/target/debug/nanoom"
 printf '%s\n' '{"globalDependencies":["nanoom.config.json"],"group":{"ci":{"tasks":["test","build"],"distribution":{"small":{"maxAffectedPercent":25,"concurrency":2},"medium":{"maxAffectedPercent":60,"concurrency":2},"full":{"maxAffectedPercent":100,"concurrency":2}}}}}' > "$CWD/nanoom.config.json"
 git -C "$CWD" add .
-git -C "$CWD" commit -qm changed
+git -C "$CWD" -c user.name=fixture -c user.email=fixture@example.invalid commit -qm changed --no-gpg-sign
 export HEAD="$(git -C "$CWD" rev-parse HEAD)" BASE="$head"
 export GITHUB_SHA="$HEAD"
 export GITHUB_EVENT_NAME=push GITHUB_REF=refs/heads/main GITHUB_REPOSITORY_ID=12345 GITHUB_SERVER_URL=https://github.com

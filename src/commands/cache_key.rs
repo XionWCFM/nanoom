@@ -18,9 +18,14 @@ pub struct CacheKeyArgs {
     pub json: bool,
 }
 
-pub fn execute(args: CacheKeyArgs, cwd: &Path) -> Result<()> {
+fn cache_key(args: &CacheKeyArgs, cwd: &Path, config_path: &Path) -> Result<(String, Vec<String>)> {
+    if !std::fs::metadata(cwd)?.is_dir() {
+        return Err(crate::error::Error::ConfigValidation(
+            "cache-key working directory must be a directory".into(),
+        ));
+    }
     let mut hasher = Sha256::new();
-    hasher.update(b"nanoom-cache-key-v1\0");
+    hasher.update(b"nanoom-cache-key-v2\0");
     hasher.update(args.runner.as_bytes());
     hasher.update([0]);
     hasher.update(args.task.as_bytes());
@@ -29,26 +34,41 @@ pub fn execute(args: CacheKeyArgs, cwd: &Path) -> Result<()> {
     hasher.update([0]);
 
     let inputs = [
-        "nanoom.config.json",
-        "package.json",
-        "pnpm-lock.yaml",
-        "yarn.lock",
-        "package-lock.json",
+        config_path.to_path_buf(),
+        "package.json".into(),
+        "pnpm-workspace.yaml".into(),
+        ".npmrc".into(),
+        ".yarnrc.yml".into(),
+        "pnpm-lock.yaml".into(),
+        "yarn.lock".into(),
+        "package-lock.json".into(),
+        "npm-shrinkwrap.json".into(),
     ];
     let mut existing_inputs = Vec::new();
     for file in inputs {
-        let path = cwd.join(file);
-        hasher.update(file.as_bytes());
+        let path = cwd.join(&file);
+        let name = file.to_string_lossy().replace('\\', "/");
+        hasher.update(name.as_bytes());
         hasher.update([0]);
-        if let Ok(bytes) = std::fs::read(path) {
-            hasher.update(bytes);
-            existing_inputs.push(file);
+        match std::fs::read(path) {
+            Ok(bytes) => {
+                hasher.update([1]);
+                hasher.update((bytes.len() as u64).to_le_bytes());
+                hasher.update(bytes);
+                existing_inputs.push(name);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => hasher.update([0]),
+            Err(error) => return Err(error.into()),
         }
-        hasher.update([0]);
     }
 
     let digest = format!("{:x}", hasher.finalize());
     let key = format!("nanoom-{}-{}-{}", args.runner, args.task, &digest[..16]);
+    Ok((key, existing_inputs))
+}
+
+pub fn execute(args: CacheKeyArgs, cwd: &Path, config_path: &Path) -> Result<()> {
+    let (key, existing_inputs) = cache_key(&args, cwd, config_path)?;
     if args.json {
         println!(
             "{}",
@@ -90,12 +110,21 @@ mod tests {
             filter: "pkg-a".into(),
             json: false,
         };
-        let key_a = key_for_test(&args, dir.path());
-        let key_b = key_for_test(&args, dir.path());
+        let key_a = cache_key(&args, dir.path(), Path::new("nanoom.config.json"))
+            .unwrap()
+            .0;
+        let key_b = cache_key(&args, dir.path(), Path::new("nanoom.config.json"))
+            .unwrap()
+            .0;
         assert_eq!(key_a, key_b);
-        execute(args.clone(), dir.path()).unwrap();
+        execute(args.clone(), dir.path(), Path::new("nanoom.config.json")).unwrap();
         std::fs::write(dir.path().join("nanoom.config.json"), "{\"x\":1}\n").unwrap();
-        assert_ne!(key_a, key_for_test(&args, dir.path()));
+        assert_ne!(
+            key_a,
+            cache_key(&args, dir.path(), Path::new("nanoom.config.json"))
+                .unwrap()
+                .0
+        );
     }
 
     #[test]
@@ -118,26 +147,31 @@ mod tests {
                 json: false,
             },
             dir.path(),
+            Path::new("nanoom.config.json"),
         )
         .unwrap();
     }
 
-    fn key_for_test(args: &CacheKeyArgs, cwd: &Path) -> String {
-        let mut hasher = Sha256::new();
-        hasher.update(b"nanoom-cache-key-v1\0");
-        hasher.update(args.runner.as_bytes());
-        hasher.update([0]);
-        hasher.update(args.task.as_bytes());
-        hasher.update([0]);
-        hasher.update(args.filter.as_bytes());
-        hasher.update([0]);
-        let bytes = std::fs::read(cwd.join("nanoom.config.json")).unwrap();
-        hasher.update(bytes);
-        format!(
-            "nanoom-{}-{}-{}",
-            args.runner,
-            args.task,
-            &format!("{:x}", hasher.finalize())[..16]
-        )
+    #[test]
+    fn selected_configuration_optional_input_presence_and_read_errors_are_respected() {
+        let dir = tempdir().unwrap();
+        let args = CacheKeyArgs {
+            runner: "npm".into(),
+            task: "test".into(),
+            filter: String::new(),
+            json: false,
+        };
+        let selected = Path::new("custom.json");
+        std::fs::write(dir.path().join(selected), "{}\n").unwrap();
+        let initial = cache_key(&args, dir.path(), selected).unwrap().0;
+        std::fs::write(dir.path().join("nanoom.config.json"), "unused").unwrap();
+        assert_eq!(cache_key(&args, dir.path(), selected).unwrap().0, initial);
+        std::fs::write(dir.path().join(selected), "changed").unwrap();
+        assert_ne!(cache_key(&args, dir.path(), selected).unwrap().0, initial);
+        let absent = cache_key(&args, dir.path(), selected).unwrap().0;
+        std::fs::write(dir.path().join("npm-shrinkwrap.json"), "").unwrap();
+        assert_ne!(cache_key(&args, dir.path(), selected).unwrap().0, absent);
+        std::fs::create_dir(dir.path().join("yarn.lock")).unwrap();
+        assert!(cache_key(&args, dir.path(), selected).is_err());
     }
 }

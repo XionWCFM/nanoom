@@ -464,6 +464,7 @@ mod tests {
             },
         );
         Config {
+            source_path: None,
             schema: None,
             group,
             global_dependencies: vec![],

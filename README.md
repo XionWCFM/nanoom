@@ -48,6 +48,8 @@ nanoom history --input <measurement-v3.json>... --model-output <model-v3.json>
                --run-id <id> --run-attempt <n>
 nanoom status <job,...> --results job=status,... [--json]
 nanoom schema [--output <file>]
+nanoom cache-key --runner <tool> --task <task> [--filter <workspace>] [--json]
+nanoom version [--json]
 ```
 
 GitHub Actions의 `affected`는 명시적인 `base`/`head`가 없을 때 이벤트별 revision을
@@ -327,3 +329,16 @@ MIT
 명시적 `affected --base` / `--head`에 annotated tag를 사용할 수 있습니다. 비교 diagnostics의 `baseCommit`과 `headCommit`은 tag object가 아닌 실제 commit SHA입니다. tree/blob revision은 commit 입력으로 사용할 수 없습니다.
 
 개발 환경 설치와 로컬 검증은 [기여 가이드](CONTRIBUTING.md)를 참고하세요.
+
+`status`와 `cache-key`는 저장소 설정을 파싱하지 않는 독립 명령입니다.
+`cache-key`는 runner/task/filter와 선택한 설정 파일, root manifest,
+workspace 선언, 패키지 매니저 설정 및 지원 lockfile의 bytes로 키를 만듭니다.
+파일 읽기 오류는 실패하며 task source나 산출물을 저장하는 remote cache는 아닙니다.
+
+사용자 지정 `affected.config`는 Plan의 `configPath`에 보존하고 install/run에도
+전달합니다. manifest-only planning에서 빠진 설정은 계획한 SHA의 blob을 확보합니다.
+Plan 설정 경로는 cwd 내부여야 하며 해당 경로는 assignment checkout에 포함됩니다.
+
+npm 준비 예측과 실행 측정은 `npm-shrinkwrap.json`이 있으면 해당 파일을 우선합니다.
+측정 artifact 이름은 잘린 표시 이름에 원래 job/assignment identity의 digest를
+붙여 긴 이름이나 정규화 후 같은 이름이 다른 측정을 덮지 않게 합니다.

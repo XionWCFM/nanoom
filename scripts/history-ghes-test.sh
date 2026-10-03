@@ -33,17 +33,22 @@ chmod +x "$tmp/bin/curl"
 export PATH="$tmp/bin:$PATH" GITHUB_ACTION_PATH="$root/.github/actions/history-ghes"
 export API=https://ghes.example/api/v3 REPOSITORY=owner/repo TOKEN=test RUN_ID=99 RUN_ATTEMPT=2 RUNNER_TEMP="$tmp/runner"
 export MEASUREMENT_DIR="$tmp/download" REQUESTS="$tmp/requests" ARTIFACTS="$tmp/artifacts.json" ARCHIVE="$tmp/measurement.zip"
-bash "$GITHUB_ACTION_PATH/download.sh"
+for action in history-ghes history status; do
+  export GITHUB_ACTION_PATH="$root/.github/actions/$action"
+  : > "$REQUESTS"
+  bash "$GITHUB_ACTION_PATH/../_setup/download-measurements.sh"
+  test "$(grep -c '/artifacts/.*/zip' "$REQUESTS")" -eq 1
+done
 cmp "$tmp/source/measurements.json" "$MEASUREMENT_DIR/nanoom-measurement-v3-99-2-ci-1/measurements.json"
 test "$(grep -c '/artifacts/.*/zip' "$REQUESTS")" -eq 1
 ! grep -q '/artifacts/[234]/zip' "$REQUESTS"
 # No measurements is a valid no-change attempt, with no archive requests.
 printf '%s\n' '{"artifacts":[]}' > "$ARTIFACTS"
 : > "$REQUESTS"
-bash "$GITHUB_ACTION_PATH/download.sh"
+bash "$GITHUB_ACTION_PATH/../_setup/download-measurements.sh"
 ! grep -q '/artifacts/.*/zip' "$REQUESTS"
 # An oversized selected archive fails before downloading, so history degrades.
 printf '%s\n' '{"artifacts":[{"id":1,"name":"nanoom-measurement-v3-99-2-ci-1","expired":false,"size_in_bytes":4194305}]}' > "$ARTIFACTS"
-if bash "$GITHUB_ACTION_PATH/download.sh"; then exit 1; fi
+if bash "$GITHUB_ACTION_PATH/../_setup/download-measurements.sh"; then exit 1; fi
 ! grep -q '/artifacts/.*/zip' "$REQUESTS"
-printf '%s\n' 'GHES current-attempt measurement selection and bounded downloads passed'
+printf '%s\n' 'current-attempt measurement selection and bounded downloads passed'
