@@ -95,6 +95,7 @@ bash scripts/status-action-test.sh
 bash scripts/coordinator-contract-test.sh
 # Includes native Windows checkout paths and canonical workspace boundary checks.
 bash scripts/assignment-action-test.sh
+bash scripts/preparation-clock-test.sh
 grep -Fq 'version:3,scope:' .github/actions/run/run.sh
 grep -Fq 'totalShards:($item.totalShards // null)' .github/actions/run/run.sh
 grep -Fq 'executionId:$executionId' .github/actions/run/run.sh
@@ -111,8 +112,13 @@ grep -q 'actions/checkout@v4' .github/actions/prepare/action.yml
 grep -q 'sparse-checkout set --cone --stdin' .github/actions/prepare/checkout.sh
 # Cover both unbudgeted release artifact listing and bounded history reads.
 bash scripts/history-artifact-test.sh
+# GHES v3 has no pattern/merge support; selection uses the bounded API reader.
+! grep -qE "pattern:|merge-multiple:|actions/download-artifact" .github/actions/history-ghes/action.yml
+bash scripts/history-ghes-test.sh
 bash scripts/setup-smoke.sh
 bash scripts/plan-action-test.sh
+# Prove installation, not only the shape of a package-manager stub command.
+bash scripts/focused-install-test.sh
 # Includes opened/synchronize/push/merge_group expression checks and shallow base fetch.
 bash scripts/revision-action-test.sh
 bash scripts/cleanup-checkout-test.sh

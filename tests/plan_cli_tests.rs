@@ -123,7 +123,7 @@ fn changed_fixture() -> Fixture {
     assert_eq!(
         compact["groups"]["ci"]["include"][0],
         json!({
-            "assignmentId":"ci-0001", "group":"ci", "displayName":"pkg-a · test",
+            "assignmentId":"ci-0001", "group":"ci", "displayName":"pkg-a · test · [ci-0001]",
             "checkout":{"ref":head,"sparseCheckout":"/*\n!/*/\n/packages/pkg-a"}
         })
     );

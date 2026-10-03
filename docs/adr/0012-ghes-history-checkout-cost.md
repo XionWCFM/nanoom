@@ -1,5 +1,9 @@
 # ADR-0012: GHES 우선 history와 sparse checkout 비용
 
+이 문서는 작성 당시의 결정 기록이다. 기본 세 잡·네 단계 템플릿과 status의
+자동 필수 실행 판단/이력 게시 계약은 ADR-0015와 ADR-0017이 우선한다.
+과거 caller glue나 별도 history job을 현재 기본 템플릿의 필수 요건으로 쓰지 않는다.
+
 ## Status
 
 Accepted for v0.5.0.

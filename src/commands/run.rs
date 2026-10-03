@@ -1,4 +1,4 @@
-use crate::affected::calculate;
+use crate::affected::calculate_with_override;
 use crate::config::Config;
 use crate::error::{Error, Result};
 use clap::Args;
@@ -34,6 +34,22 @@ pub struct RunArgs {
 
     #[arg(long, help = "Run on all projects, not just affected")]
     pub all: bool,
+
+    #[arg(
+        long,
+        required_unless_present = "all",
+        conflicts_with = "all",
+        help = "Base revision for affected workspace selection"
+    )]
+    pub base: Option<String>,
+
+    #[arg(
+        long,
+        requires = "base",
+        conflicts_with = "all",
+        help = "Head revision for affected selection (defaults to HEAD)"
+    )]
+    pub head: Option<String>,
 
     #[arg(long, help = "Continue on error")]
     pub continue_on_error: bool,
@@ -99,7 +115,9 @@ pub async fn execute(args: RunArgs, config: &Config, cwd: &std::path::Path) -> R
             .cloned()
             .collect()
     } else {
-        let result = calculate(config, cwd).await?;
+        let result =
+            calculate_with_override(config, cwd, args.base.as_deref(), args.head.as_deref())
+                .await?;
         let group_output = result.group.get(&args.group).ok_or_else(|| {
             Error::ConfigValidation(format!("Group '{}' not in output", args.group))
         })?;
@@ -318,7 +336,7 @@ async fn run_task(
             vec!["run".to_string(), task.command.clone()],
         ),
         "auto" => {
-            let script_runner = resolve_script_runner(&project.path, &task.command, root);
+            let script_runner = resolve_script_runner(&project.path, &task.command, root)?;
             match script_runner {
                 Some(pm) => (pm, vec!["run".to_string(), task.command.clone()]),
                 None => (task.command.clone(), task.args.clone()),
@@ -400,22 +418,18 @@ fn resolve_script_runner(
     project_path: &std::path::Path,
     task: &str,
     root: &std::path::Path,
-) -> Option<String> {
-    let manifest = std::fs::read_to_string(project_path.join("package.json")).ok()?;
-    let scripts: HashMap<String, serde_json::Value> =
-        serde_json::from_str::<serde_json::Value>(&manifest)
-            .ok()?
-            .get("scripts")?
-            .as_object()?
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-
-    if !scripts.contains_key(task) {
-        return None;
+) -> Result<Option<String>> {
+    let manifest = std::fs::read_to_string(project_path.join("package.json"))?;
+    let manifest: serde_json::Value = serde_json::from_str(&manifest)?;
+    if !manifest
+        .get("scripts")
+        .and_then(serde_json::Value::as_object)
+        .is_some_and(|scripts| scripts.contains_key(task))
+    {
+        return Ok(None);
     }
 
-    crate::commands::install::detect_package_manager(root, None).ok()
+    crate::commands::install::detect_package_manager(root, None).map(Some)
 }
 
 #[cfg(test)]
@@ -501,6 +515,8 @@ mod tests {
                 shard: Some(1),
                 total_shards: Some(2),
                 all: true,
+                base: None,
+                head: None,
                 continue_on_error: false,
                 json: true,
             },
@@ -521,6 +537,7 @@ mod tests {
     #[tokio::test]
     async fn test_run_task_raw_command_success() {
         let dir = tempdir().unwrap();
+        std::fs::write(dir.path().join("package.json"), "{}").unwrap();
         let project = make_project("a", dir.path());
         let task = TaskConfig {
             command: "true".to_string(),
@@ -535,6 +552,7 @@ mod tests {
     #[tokio::test]
     async fn test_run_task_raw_command_failure() {
         let dir = tempdir().unwrap();
+        std::fs::write(dir.path().join("package.json"), "{}").unwrap();
         let project = make_project("a", dir.path());
         let task = TaskConfig {
             command: "false".to_string(),
@@ -559,6 +577,7 @@ mod tests {
     #[tokio::test]
     async fn test_run_task_passes_env_vars() {
         let dir = tempdir().unwrap();
+        std::fs::write(dir.path().join("package.json"), "{}").unwrap();
         let project = make_project("a", dir.path());
         let mut env = HashMap::new();
         env.insert("NANOOM_TEST_VAR".to_string(), "hello".to_string());
@@ -600,6 +619,8 @@ mod tests {
             shard: None,
             total_shards: None,
             all: true,
+            base: None,
+            head: None,
             continue_on_error: false,
             json: false,
         };
@@ -618,6 +639,8 @@ mod tests {
             shard: None,
             total_shards: None,
             all: true,
+            base: None,
+            head: None,
             continue_on_error: false,
             json: false,
         };
@@ -640,6 +663,8 @@ mod tests {
                 shard: Some(1),
                 total_shards: Some(2),
                 all: true,
+                base: None,
+                head: None,
                 continue_on_error: false,
                 json: true,
             },
@@ -666,6 +691,8 @@ mod tests {
                 shard: None,
                 total_shards: None,
                 all: true,
+                base: None,
+                head: None,
                 continue_on_error: false,
                 json: false,
             },
@@ -694,6 +721,8 @@ mod tests {
                 shard: None,
                 total_shards: None,
                 all: true,
+                base: None,
+                head: None,
                 continue_on_error: false,
                 json: false,
             },
@@ -720,6 +749,8 @@ mod tests {
                 shard: None,
                 total_shards: None,
                 all: true,
+                base: None,
+                head: None,
                 continue_on_error: true,
                 json: false,
             },
@@ -740,7 +771,7 @@ mod tests {
         )
         .unwrap();
         std::fs::write(dir.path().join("pnpm-lock.yaml"), "").unwrap();
-        let runner = resolve_script_runner(dir.path(), "test", dir.path());
+        let runner = resolve_script_runner(dir.path(), "test", dir.path()).unwrap();
         assert_eq!(runner.as_deref(), Some("pnpm"));
     }
 
@@ -748,20 +779,33 @@ mod tests {
     fn test_resolve_script_runner_no_script() {
         let dir = tempdir().unwrap();
         std::fs::write(dir.path().join("package.json"), r#"{"name":"test"}"#).unwrap();
-        assert!(resolve_script_runner(dir.path(), "test", dir.path()).is_none());
+        assert!(resolve_script_runner(dir.path(), "test", dir.path())
+            .unwrap()
+            .is_none());
     }
 
     #[test]
     fn test_resolve_script_runner_missing_package_json() {
         let dir = tempdir().unwrap();
-        assert!(resolve_script_runner(dir.path(), "test", dir.path()).is_none());
+        assert!(resolve_script_runner(dir.path(), "test", dir.path()).is_err());
     }
 
     #[test]
     fn test_resolve_script_runner_invalid_json() {
         let dir = tempdir().unwrap();
         std::fs::write(dir.path().join("package.json"), "invalid").unwrap();
-        assert!(resolve_script_runner(dir.path(), "test", dir.path()).is_none());
+        assert!(resolve_script_runner(dir.path(), "test", dir.path()).is_err());
+    }
+
+    #[test]
+    fn script_runner_does_not_hide_an_unsupported_package_manager() {
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("package.json"),
+            r#"{"packageManager":"bun@1.0.0","scripts":{"test":"echo test"}}"#,
+        )
+        .unwrap();
+        assert!(resolve_script_runner(dir.path(), "test", dir.path()).is_err());
     }
 
     #[test]
@@ -803,6 +847,8 @@ mod tests {
             shard: Some(2),
             total_shards: Some(2),
             all: false,
+            base: None,
+            head: None,
             continue_on_error: false,
             json: true,
         };
@@ -900,6 +946,8 @@ mod tests {
                 shard: Some(2),
                 total_shards: Some(1),
                 all: true,
+                base: None,
+                head: None,
                 continue_on_error: false,
                 json: true,
             },

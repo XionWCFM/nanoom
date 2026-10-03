@@ -193,6 +193,22 @@ jq -e '.preparationObservations[0] | .packageManager == "pnpm" and .packageManag
 result=$(sed -n 's/^result=//p' "$GITHUB_OUTPUT")
 jq -e '.preparationObservationStatus == "recorded"' <<<"$result" >/dev/null
 
+# The default four-step template needs no explicit preparation timestamp.
+cat > "$tmp/bin/curl" <<'SH_CURL'
+#!/usr/bin/env bash
+jq -cn --arg started "$FAKE_JOB_STARTED" '{jobs:[{name:"Run affected work (ci · test · [ci-1])",status:"in_progress",started_at:$started}]}'
+SH_CURL
+chmod +x "$tmp/bin/curl"
+export API=https://api.example TOKEN=test-token PREPARED_AT_MS=''
+export FAKE_JOB_STARTED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+: > "$GITHUB_OUTPUT"
+bash "$GITHUB_ACTION_PATH/run.sh" >/dev/null
+telemetry_sample=$(sed -n 's/^sample-path=//p' "$GITHUB_OUTPUT")
+jq -e '.preparationObservations | length == 1' "$telemetry_sample" >/dev/null
+result=$(sed -n 's/^result=//p' "$GITHUB_OUTPUT")
+jq -e '.preparationObservationStatus == "recorded" and .status == "success"' <<<"$result" >/dev/null
+unset API TOKEN
+
 export GITHUB_JOB=reversed-telemetry PREPARED_AT_MS=99999999999999
 : > "$GITHUB_OUTPUT"
 bash "$GITHUB_ACTION_PATH/run.sh" >/dev/null

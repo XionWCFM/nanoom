@@ -141,4 +141,40 @@ bash "$GITHUB_ACTION_PATH/run.sh" > "$tmp/affected.log"
 affected_result=$(sed -n 's/^result=//p' "$GITHUB_OUTPUT")
 jq -e '.scheduling.historyStatus == "history_not_needed" and .scheduling.historyFetchMs == 0' <<<"$affected_result" >/dev/null
 test ! -s "$FAKE_REQUESTS"
+
+# A warm planner may write its output before timing out or failing. The
+# already-computed cold Plan must still match the reference returned to users.
+cat > "$tmp/bin/nanoom" <<'SH'
+#!/usr/bin/env bash
+warm=false; plan_output=''
+args=("$@")
+while (($#)); do
+  case "$1" in
+    --prediction|--prediction-table) warm=true; shift 2 ;;
+    --plan-output) plan_output=$2; shift 2 ;;
+    *) shift ;;
+  esac
+done
+if [[ "$warm" == true ]]; then
+  "$REAL_NANOOM" "${args[@]}" >/dev/null
+  printf '\n' >> "$plan_output"
+  exit 124
+fi
+exec "$REAL_NANOOM" "${args[@]}"
+SH
+chmod +x "$tmp/bin/nanoom"
+export REAL_NANOOM="$root/target/debug/nanoom"
+printf '%s\n' '{"globalDependencies":["nanoom.config.json"],"group":{"ci":{"tasks":["test","build"],"distribution":{"small":{"maxAffectedPercent":25,"concurrency":2},"medium":{"maxAffectedPercent":60,"concurrency":2},"full":{"maxAffectedPercent":100,"concurrency":2}}}}}' > "$CWD/nanoom.config.json"
+git -C "$CWD" add .
+git -C "$CWD" commit -qm changed
+export HEAD="$(git -C "$CWD" rev-parse HEAD)" BASE="$head"
+export GITHUB_SHA="$HEAD"
+export GITHUB_EVENT_NAME=push GITHUB_REF=refs/heads/main GITHUB_REPOSITORY_ID=12345 GITHUB_SERVER_URL=https://github.com
+export HISTORY_REF=main PACKAGE_MANAGER=auto
+export GITHUB_OUTPUT="$tmp/interrupted-output"
+bash "$root/.github/actions/affected/run.sh" > "$tmp/interrupted.log" 2>&1
+grep -q 'using the already-computed cold plan' "$tmp/interrupted.log"
+reference=$(sed -n 's/^plan=//p' "$GITHUB_OUTPUT")
+actual_digest=$(sha256sum < "$RUNNER_TEMP/nanoom-plan-$RUN_ID-$RUN_ATTEMPT-$GITHUB_JOB/plan-v1.json" | awk '{print $1}')
+test "$actual_digest" = "$(jq -r .sha256 <<<"$reference")"
 echo 'v3 history artifact, scope lookup, bounded planner download, updater model read, and no-read contracts passed'

@@ -6,11 +6,13 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 repo="$tmp/producer"
 consumer="$tmp/consumer"
-mkdir -p "$repo/packages/pkg-a" "$repo/packages/pkg-shared" "$repo/packages/pkg-b" "$repo/tools/always" "$repo/tools/unrelated" "$tmp/bin" "$consumer"
+mkdir -p "$repo/packages/pkg-a" "$repo/packages/pkg-shared" "$repo/packages/pkg-b" "$repo/packages/root-tool" "$repo/packages/root-shared" "$repo/.yarn/releases" "$repo/.yarn/plugins" "$repo/tools/always" "$repo/tools/unrelated" "$tmp/bin" "$consumer"
 cat > "$repo/package.json" <<'JSON'
-{"name":"root","private":true,"packageManager":"pnpm@9.1.0","workspaces":["packages/*"]}
+{"name":"root","private":true,"packageManager":"pnpm@9.1.0","workspaces":["packages/*"],"devDependencies":{"root-tool":"workspace:*"}}
 JSON
 printf 'lockfileVersion: 9\n' > "$repo/pnpm-lock.yaml"
+printf 'yarnPath: .yarn/releases/yarn.cjs\nplugins:\n  - path: .yarn/plugins/plugin.cjs\n' > "$repo/.yarnrc.yml"
+touch "$repo/.yarn/releases/yarn.cjs" "$repo/.yarn/plugins/plugin.cjs"
 cat > "$repo/nanoom.config.json" <<'JSON'
 {"workspace":{"include":["packages/*"]},"checkout":{"always":["tools/always"]},"group":{"ci":{"tasks":["test"]}}}
 JSON
@@ -24,6 +26,8 @@ cat > "$repo/packages/pkg-b/package.json" <<'JSON'
 {"name":"pkg-b","version":"1.0.0","scripts":{"test":"node -e \"console.log('pkg-b test ran')\""}}
 JSON
 touch "$repo/tools/always/keep.txt" "$repo/tools/unrelated/keep.txt"
+printf '%s\n' '{"name":"root-tool","version":"1.0.0","dependencies":{"root-shared":"workspace:*"}}' > "$repo/packages/root-tool/package.json"
+printf '%s\n' '{"name":"root-shared","version":"1.0.0"}' > "$repo/packages/root-shared/package.json"
 git -C "$repo" init -q
 git -C "$repo" config user.email test@example.com
 git -C "$repo" config user.name test
@@ -135,6 +139,10 @@ test -f "$direct/package.json"
 test -f "$direct/pnpm-lock.yaml"
 test -f "$direct/packages/pkg-a/change.txt"
 test -f "$direct/packages/pkg-shared/package.json"
+test -f "$direct/packages/root-tool/package.json"
+test -f "$direct/packages/root-shared/package.json"
+test -f "$direct/.yarn/releases/yarn.cjs"
+test -f "$direct/.yarn/plugins/plugin.cjs"
 test -f "$direct/tools/always/keep.txt"
 test ! -e "$direct/packages/pkg-b"
 test ! -e "$direct/tools/unrelated"

@@ -157,6 +157,22 @@ if [[ "$SCHEDULER" != http ]]; then
   printf '◆ nanoom affected plan\n  Command\n    %s\n' "$ACTION_COMMAND"
   ACTION_PHASE=affected-calculation
   compact=$(nanoom "${plan_args[@]}")
+  nanoom_warm_plan() {
+    local warm_path="$plan_dir/warm-plan-v1.json" warm_compact index
+    local warm_args=("${plan_args[@]}")
+    for index in "${!warm_args[@]}"; do
+      if [[ "${warm_args[$index]}" == --plan-output ]]; then
+        warm_args[$((index + 1))]=$warm_path
+      fi
+    done
+    # A failed or interrupted planner must never replace the valid cold Plan.
+    if warm_compact=$(nanoom_history_timeout nanoom "${warm_args[@]}" "$@"); then
+      mv "$warm_path" "$plan_path" || return $?
+      printf '%s' "$warm_compact"
+    else
+      return $?
+    fi
+  }
   history_needed=$(jq -r '.result.historyNeeded // false' <<<"$compact")
   if [[ "$HISTORY_BACKEND" == server && "$history_needed" == true ]]; then
     history_started_ms=$(nanoom_now_ms)
@@ -198,7 +214,7 @@ if [[ "$SCHEDULER" != http ]]; then
       done < <(jq -c '.result.historyScopes[]?' <<<"$compact")
       if [[ "$server_read_failed" == false ]] && ((${#table_args[@]})); then
         ACTION_PHASE=affected-server-calculation
-        if warm_compact=$(nanoom_history_timeout nanoom "${plan_args[@]}" "${table_args[@]}"); then
+        if warm_compact=$(nanoom_warm_plan "${table_args[@]}"); then
           compact=$warm_compact
         else
           echo 'History Server table validation exceeded the shared history budget; using the cold plan' >&2
@@ -272,7 +288,7 @@ if [[ "$SCHEDULER" != http ]]; then
     fi
     if [[ -n "$history_path" ]]; then
       ACTION_PHASE=affected-calculation
-      if warm_compact=$(nanoom_history_timeout nanoom "${plan_args[@]}"); then
+      if warm_compact=$(nanoom_warm_plan); then
         compact=$warm_compact
       else
         echo 'bounded prediction lookup or validation exceeded its shared history budget; using the already-computed cold plan' >&2

@@ -139,6 +139,11 @@ if [[ "$static_plan" == true ]]; then
       sample_path="$sample_dir/$sample_name.json"
       preparation_observations='[]'
       preparation_start=${PREPARED_AT_MS:-}
+      if [[ -z "$preparation_start" ]]; then
+        source "$GITHUB_ACTION_PATH/../run/preparation.sh"
+        preparation_start=$(nanoom_job_preparation_start) || preparation_start=''
+        [[ -n "$preparation_start" ]] || preparation_observation_status=unavailable
+      fi
       first_task_start=$(jq -sr '[.[] | select(.status == "success") | .execution.startedAtMs | select(type == "number" and . > 0)] | first // empty' "$DETAIL_FILE")
       install_status=$(jq -r '.status // empty' <<<"${INSTALL_RESULT:-null}" 2>/dev/null || true)
       install_assignment_id=$(jq -r '.assignment.assignmentId // empty' <<<"${INSTALL_RESULT:-null}" 2>/dev/null || true)

@@ -30,12 +30,16 @@ runs:
       id: measurements
       if: inputs.scheduler == 'artifact'
       continue-on-error: true
-      uses: actions/download-artifact@v3.1.0
-      with:
-        pattern: nanoom-measurement-v3-${{ github.run_id }}-${{ github.run_attempt }}-*
-        path: ${{ runner.temp }}/nanoom-current-measurements
-        merge-multiple: true
-        if-no-files-found: ignore
+      shell: bash
+      env:
+        API: ${{ github.api_url }}
+        REPOSITORY: ${{ github.repository }}
+        TOKEN: ${{ github.token }}
+        RUN_ID: ${{ github.run_id }}
+        RUN_ATTEMPT: ${{ github.run_attempt }}
+        RUNNER_TEMP: ${{ runner.temp }}
+        MEASUREMENT_DIR: ${{ runner.temp }}/nanoom-current-measurements-${{ github.run_id }}-${{ github.run_attempt }}
+      run: bash "$GITHUB_ACTION_PATH/download.sh"
     - name: Compile PredictionState v3 or complete live runs
       id: history
       shell: bash
@@ -50,7 +54,7 @@ runs:
         TOKEN: ${{ github.token }}
         HISTORY_ARTIFACT: ${{ inputs.historyArtifactName }}
         MODEL_ARTIFACT: ${{ inputs.modelArtifactName }}
-        MEASUREMENT_DIR: ${{ runner.temp }}/nanoom-current-measurements
+        MEASUREMENT_DIR: ${{ runner.temp }}/nanoom-current-measurements-${{ github.run_id }}-${{ github.run_attempt }}
         MEASUREMENT_DOWNLOAD_OUTCOME: ${{ steps.measurements.outcome }}
         WORKFLOW_REF: ${{ github.workflow_ref }}
         HISTORY_REF: ${{ github.head_ref || github.ref_name }}

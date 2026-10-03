@@ -30,7 +30,7 @@ jq -e '[.[] | .outputs.has_change? | select(. != null)] | all(. == "true" or . =
   false
 }
 has_change=$(jq -r '[.[] | .outputs.has_change? | select(. != null)] | any(. == "true")' <<<"$NEEDS")
-if [[ "$has_change" == true ]]; then
+if [[ "$has_change" == true ]] && jq -e 'length == 0' >/dev/null <<<"$REQUIRED_JOBS"; then
   REQUIRED_JOBS=$(jq -cn --argjson required "$REQUIRED_JOBS" --argjson needs "$NEEDS" \
     '$required + ($needs | to_entries | map(select(.value.outputs.has_change? == null) | .key)) | unique')
   [[ "$REQUIRED_JOBS" != '[]' ]] || REQUIRED_JOBS='["run"]'

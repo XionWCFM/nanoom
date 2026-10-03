@@ -514,7 +514,10 @@ pub fn compact_output(plan: &Plan, reference: &PlanReference) -> Result<String> 
                     let shard = item.shard.map_or_else(String::new, |shard| {
                         format!(" · shard {shard}/{}", item.total_shards.unwrap_or(1))
                     });
-                    format!("{} · {}{shard}", item.name, item.task)
+                    format!(
+                        "{} · {}{shard} · [{}]",
+                        item.name, item.task, assignment.assignment_id
+                    )
                 } else {
                     let tasks: std::collections::BTreeSet<_> = assignment
                         .items
@@ -522,7 +525,7 @@ pub fn compact_output(plan: &Plan, reference: &PlanReference) -> Result<String> 
                         .map(|item| item.task.as_str())
                         .collect();
                     format!(
-                        "{group_name} · {} · {} tasks · {}",
+                        "{group_name} · {} · {} tasks · [{}]",
                         tasks.into_iter().collect::<Vec<_>>().join("/"),
                         assignment.items.len(),
                         assignment.assignment_id
@@ -1004,7 +1007,10 @@ mod tests {
         let output: Value =
             serde_json::from_str(&compact_output(&plan, &reference).unwrap()).unwrap();
         let row = &output["groups"]["ci"]["include"][0];
-        assert_eq!(row["displayName"], "pkg-00000 · test · shard 2/4");
+        assert_eq!(
+            row["displayName"],
+            "pkg-00000 · test · shard 2/4 · [ci-0000]"
+        );
         assert_eq!(row["checkout"]["ref"], plan.provenance.head);
         assert_eq!(
             row["checkout"]["sparseCheckout"],
@@ -1019,7 +1025,7 @@ mod tests {
             serde_json::from_str(&compact_output(&plan, &reference).unwrap()).unwrap();
         assert_eq!(
             output["groups"]["ci"]["include"][0]["displayName"],
-            "ci · test · 3 tasks · ci-0000"
+            "ci · test · 3 tasks · [ci-0000]"
         );
     }
 

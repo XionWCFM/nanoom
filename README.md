@@ -22,7 +22,7 @@ npm install --save-dev @nanoom/cli
       "rules": [{ "name": "@repo/e2e", "shard": [{ "task": "test", "shard": 2 }] }]
     }
   },
-  "globalDependencies": ["yarn.lock", "tsconfig.json"],
+  "globalDependencies": ["scripts/**"],
   "workspace": { "include": ["packages/*", "tools/*"] },
   "affected": { "maxFetchDepth": 2048 },
   "checkout": { "always": ["scripts"] }
@@ -39,6 +39,7 @@ nanoom affected --base <revision> [--head <revision>] [--history <json>] [--json
 nanoom plan select --input <file> --reference <file> --group <name>
                    --assignment <id> --output-dir <directory>
 nanoom run <group> <task> [--filter <workspace>] [--all]
+           [--base <revision> --head <revision>]
            [--shard N --total-shards N] [--continue-on-error] [--json]
 nanoom install [--package-manager auto|pnpm|yarn|npm] [--filter <workspace>]...
               [--filter-file <file>]
@@ -62,6 +63,19 @@ full SHA의 `baseCommit`/`headCommit`이 포함됩니다. push의 `baseSource`�
 로그와 Step Summary에도 같은 값이 출력됩니다. CLI는 계속 명시적인
 `nanoom affected --base ... --head ...`만 받아 플랫폼 독립적으로 동작합니다.
 
+로컬 `run`은 `--all` 또는 비교 기준 `--base`를 명시합니다. affected 실행은
+`nanoom run ci test --base main --head HEAD`처럼 같은 Git 범위를 전달합니다.
+패키지 매니저의 선언이 잘못되거나 지원하지 않는 도구를 선언하면 실패하며,
+자동으로 npm으로 바꿔 실행하지 않습니다. 선언 없이 서로 다른 패키지 매니저의
+lockfile이 공존하면 명시적인 선언 또는 override가 필요합니다.
+
+`install --filter`는 Yarn Berry, pnpm, npm의 native focused install을 사용합니다. 루트 도구와 선택 workspace 양쪽의 내부 dependency closure와 개발 의존성을 설치하며, npm은 lockfile을 요구하는 `ci`를 사용합니다. Yarn Classic focused install은 미지원입니다.
+
+root package.json, Nanoom 설정, workspace 선언, 지원 lockfile, .npmrc·.yarnrc.yml,
+Nx·Turbo 설정과 root tsconfig 변경은 기본 전역 입력으로 모든 workspace를
+선택합니다. globalDependencies는 저장소별 추가 전역 입력입니다. 루트 내부
+도구의 dependency closure와 선언한 Yarn release/plugin 변경도 전체 실행합니다.
+
 ## Sparse checkout
 
 공개 workflow는 `@latest`를 사용합니다. 릴리스가 검증된 뒤 `latest` Action tag가 이동하고,
@@ -81,13 +95,16 @@ configured workspace의 `package.json`이 삭제되거나 rename되면 현재 gr
 dependency를 복원하지 않고, 남아 있는 workspace 전체를 보수적으로 affected 처리합니다.
 
 각 assignment의 checkout 경로는 affected workspace, 내부 dependency closure,
-`checkout.always`의 합집합입니다. `prepare` Action은 Plan artifact와 reference를 검증한 뒤
+focused install에 필요한 루트 내부 도구의 dependency closure, .yarnrc.yml의
+yarnPath/plugin 디렉터리, `checkout.always`의 합집합입니다. manifest-only planning도
+Yarn 소스를 미리 가져오지 않고 이 선언에서 경로를 계산합니다.
+`prepare` Action은 Plan artifact와 reference를 검증한 뒤
 정확한 Plan head를 `$GITHUB_WORKSPACE/.nanoom/<run>/<attempt>/<job>/<matrix-index>`에
 root-only non-cone checkout하고, 그 assignment의 paths 파일로 cone checkout을 적용합니다.
 선택한 디렉터리와 root 파일이 포함되므로 lockfile과 root 설정도 유지됩니다.
 
 정적 Action workflow는 상세 Plan 대신 짧은 reference와 group/assignmentId matrix를 전달합니다.
-matrix의 `displayName`은 workspace·task·shard 또는 묶음 작업을 설명합니다.
+matrix의 `displayName`은 workspace·task·shard 또는 묶음 작업과 `[assignmentId]`를 설명합니다. 기본 run은 이 식별자로 현재 GitHub 실행 시도의 잡 시작 시각을 찾아 checkout·Node 설정·설치와 잡 초기화 시간을 기록합니다. 조회 실패나 중복 이름이면 준비 측정만 생략합니다.
 여러 group을 하나의 run job에서 실행하려면 affected의 `matrix` 출력을
 `strategy.matrix`에 그대로 전달합니다. group별 출력은 `groups`에도 유지됩니다.
 `checkout.ref`와 `checkout.sparseCheckout`에는 Plan head와 non-cone 경로를 넣습니다.
@@ -183,6 +200,10 @@ runs-on: ${{ matrix.runnerLabels || 'ubuntu-latest' }}
 
 첫 실행은 cold scheduling으로 정상 실행됩니다. history upload/merge가 실패하면 결과를 degraded로 표시하고 다음 실행은 cold로 진행합니다. 해당 affected group에 배분 선택지가 없으면 metadata를 조회하지 않고 `historyStatus: history_not_needed`로 기록합니다. 기능을 명시적으로 끄려면 affected/run/history에 `scheduler: off`를 설정하세요.
 
+warm 재계획은 별도 후보 파일에 쓰고 성공한 경우에만 기존 Plan을 교체합니다.
+이력 검증이나 재계획이 실패·시간 초과되어도 이미 계산한 cold Plan과 reference의
+digest는 유지되며, 이력 장애가 후속 install/run을 깨뜨리지 않습니다.
+
 ## Plan v1 파일 CLI
 
 Plan v1 producer는 상세 계획을 파일에 저장하고 작은 reference/matrix JSON만 stdout에 출력합니다. context 파일에는 repository, workflow, run ID, producer attempt, planning job, 비교한 전체 base/head SHA, 실행 tool을 넣습니다.
@@ -202,8 +223,6 @@ Planned install은 `nanoom install --filter-file FILE`로 non-empty JSON string 
 ```yaml
 - id: affected
   uses: XionWCFM/nanoom/.github/actions/affected@latest
-  with:
-    packageManager: pnpm
 
 - id: prepare
   uses: XionWCFM/nanoom/.github/actions/prepare@latest
@@ -218,7 +237,6 @@ Planned install은 `nanoom install --filter-file FILE`로 non-empty JSON string 
     plan: ${{ needs.affected.outputs.plan }}
     assignmentFile: ${{ steps.prepare.outputs.assignment-file }}
     cwd: ${{ steps.prepare.outputs.cwd }}
-    packageManager: pnpm
 
 - uses: XionWCFM/nanoom/.github/actions/run@latest
   with:
@@ -232,15 +250,13 @@ Planned install은 `nanoom install --filter-file FILE`로 non-empty JSON string 
 - uses: XionWCFM/nanoom/.github/actions/history@latest
 ```
 
-history job은 run 성공 뒤 실행하고 aggregate `status`의 dependency에 포함합니다. 작은 workflow는 `${{ toJSON(needs) }}`를 그대로 전달할 수 있습니다. 명시적 `results`는 job ID마다 하나의 결과만 허용하며 중복은 실패합니다. 대규모 matrix에서는 outputs까지 포함한 JSON이 runner process 한도를 넘을 수 있으므로 `results`에 필요한 job 결과만 `job=${{ needs.job.result }}` 형식으로 전달합니다.
+기본 템플릿의 status는 `${{ toJSON(needs) }}`로 필수 실행을 판단하고 이력을 게시합니다. 별도 history Action은 선택적인 확장 경로입니다. 명시적 `results`는 job ID마다 하나의 결과만 허용하며 중복은 실패합니다. 대규모 matrix에서는 outputs까지 포함한 JSON이 runner process 한도를 넘을 수 있으므로 `results`에 필요한 job 결과만 `job=${{ needs.job.result }}` 형식으로 전달합니다.
 
 기본 `affected`, `run`, `history`, `prepare`는 GitHub.com용 artifact v4 Action을 사용합니다. GHES에서는 `affected-ghes`, `prepare-ghes`, `run-ghes`, `history-ghes`가 upload v3.2.2/download v3.1.0을 사용합니다. composite Action의 `uses:`는 파라미터화할 수 없고 조건부 step도 사전 다운로드되므로 진입점을 분리했으며 서버를 자동 감지하지 않습니다. v3는 Actions Runner `2.327.1` 이상이 필요합니다. GitHub-hosted timing environment는 OS/architecture, self-hosted는 OS/architecture/runner name으로 분리됩니다. autoscaled pool은 안정적인 pool 또는 image revision을 `timingEnvironment`로 지정하세요.
 
 ```yaml
 # GHES only; GitHub.com은 기본 run/history를 그대로 사용합니다.
 - uses: XionWCFM/nanoom/.github/actions/affected-ghes@latest
-  with:
-    packageManager: pnpm
 - id: prepare
   uses: XionWCFM/nanoom/.github/actions/prepare-ghes@latest
   with:
@@ -254,7 +270,6 @@ history job은 run 성공 뒤 실행하고 aggregate `status`의 dependency에 �
     plan: ${{ needs.affected.outputs.plan }}
     assignmentFile: ${{ steps.prepare.outputs.assignment-file }}
     cwd: ${{ steps.prepare.outputs.cwd }}
-    packageManager: pnpm
 
 - uses: XionWCFM/nanoom/.github/actions/run-ghes@latest
   with:
@@ -268,7 +283,7 @@ history job은 run 성공 뒤 실행하고 aggregate `status`의 dependency에 �
 - uses: XionWCFM/nanoom/.github/actions/history-ghes@latest
 ```
 
-조건부 matrix의 `skipped`는 no-change일 때만 정상입니다. positive plan에서 `run` job이 누락되거나 skip되어도 aggregate가 실패하도록 단일 `ci` group 예제에 `requiredJobs`를 설정합니다. no-change면 빈 배열을 전달해 의도한 skip을 허용합니다.
+기본 템플릿에서는 status에 `needs` 전체를 전달하면 planning의 `has_change`에서 필수 실행을 자동 판단합니다. 그룹별 job이나 큰 결과를 위한 `results` 확장 경로에서는 양성 그룹에 대응하는 `requiredJobs`를 명시합니다. 명시한 비어 있지 않은 배열은 자동 추론보다 우선하며, 다른 그룹의 정상 생략을 필수 실행으로 추가하지 않습니다.
 
 ```yaml
 jobs:
@@ -301,7 +316,7 @@ jobs:
 
 ## 경계와 검증
 
-`affected` Action이 GitHub event를 explicit `--base`/`--head`로 변환하고 CLI는 플랫폼 독립적으로 계산합니다. `status`는 timing/history/coordinator를 해석하지 않고 `needs` 결과를 집계하며, caller가 지정한 `requiredJobs`만 추가로 성공을 요구합니다. Task DAG, remote task cache, flaky retry, agent type routing, Nx assignment rules와 공식 SaaS/server는 v0.3.0 범위가 아닙니다.
+`affected` Action이 GitHub event를 explicit `--base`/`--head`로 변환하고 CLI는 플랫폼 독립적으로 계산합니다. `status`는 `needs`의 planning 출력으로 양성 실행의 필수 잡을 판단하고 성공한 task의 이력을 게시합니다. 그룹별 확장은 명시적인 `requiredJobs`를 우선합니다. Task DAG, remote task cache, flaky retry, agent type routing, Nx assignment rules와 운영형 SaaS/coordinator는 제공하지 않습니다. 선택적 History Server는 실행 coordinator와 별개입니다.
 
 설정 schema는 `nanoom schema --output nanoom.schema.json`으로 생성합니다. v0.5.0의 GHES history와 checkout-cost 결정은 [ADR-0012](docs/adr/0012-ghes-history-checkout-cost.md)에 기록되어 있습니다.
 

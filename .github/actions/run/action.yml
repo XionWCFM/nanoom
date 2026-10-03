@@ -3,7 +3,7 @@ description: Run one authoritative matrix entry
 inputs:
   plan: {description: "Original affected Plan reference used to anchor assignment-file validation", default: ''}
   assignmentFile: {description: "Validated assignment-file output from nanoom prepare for static work", default: ''}
-  preparedAtMs: {description: "prepared-at-ms output from the matching prepare action", default: ''}
+  preparedAtMs: {description: "Optional preparation clock override; default uses the current GitHub job start", default: ''}
   installResult: {description: "Canonical result output from the matching nanoom install action", default: ''}
   matrix: {description: "scheduler=http continuous agent only; static inline matrices are not accepted", default: ''}
   group: {description: "Affected group for a scheduler=http continuous agent", default: ''}
@@ -41,6 +41,8 @@ runs:
         ASSIGNMENT_FILE: ${{ inputs.assignmentFile }}
         PREPARED_AT_MS: ${{ inputs.preparedAtMs }}
         INSTALL_RESULT: ${{ inputs.installResult }}
+        API: ${{ github.api_url }}
+        TOKEN: ${{ github.token }}
         PLAN: ${{ inputs.plan }}
         GROUP: ${{ inputs.group }}
         PM: ${{ inputs.packageManager }}

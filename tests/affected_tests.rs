@@ -32,6 +32,82 @@ fn create_package_json(dir: &std::path::Path, name: &str, deps: &[(&str, &str)])
 }
 
 #[tokio::test]
+async fn repository_install_and_task_configuration_changes_are_global_by_default() {
+    let dir = tempdir().unwrap();
+    let git = |args: &[&str]| {
+        assert!(Command::new("git")
+            .args(args)
+            .current_dir(dir.path())
+            .env("GIT_AUTHOR_NAME", "test")
+            .env("GIT_AUTHOR_EMAIL", "test@example.com")
+            .env("GIT_COMMITTER_NAME", "test")
+            .env("GIT_COMMITTER_EMAIL", "test@example.com")
+            .output()
+            .unwrap()
+            .status
+            .success());
+    };
+    git(&["init", "-q"]);
+    fs::write(
+        dir.path().join("package.json"),
+        r#"{"name":"root","devDependencies":{"tool":"workspace:*"}}"#,
+    )
+    .unwrap();
+    for (name, deps) in [
+        ("app", vec![]),
+        ("tool", vec![("shared", "workspace:*")]),
+        ("shared", vec![]),
+    ] {
+        let path = dir.path().join(format!("packages/{name}"));
+        fs::create_dir_all(&path).unwrap();
+        create_package_json(&path, name, &deps);
+    }
+    git(&["add", "."]);
+    git(&["commit", "-qm", "base"]);
+    let config: Config =
+        serde_json::from_value(serde_json::json!({"group":{"ci":{"tasks":["test"]}}})).unwrap();
+    for (file, expected) in [
+        ("pnpm-lock.yaml", 3),
+        ("turbo.json", 3),
+        ("tsconfig.json", 3),
+        ("packages/shared/changed.txt", 3),
+        ("README.md", 0),
+    ] {
+        fs::write(
+            dir.path().join(file),
+            if file.ends_with(".json") {
+                "{}"
+            } else {
+                "changed"
+            },
+        )
+        .unwrap();
+        git(&["add", "."]);
+        git(&["commit", "-qm", "change"]);
+        let output = nanoom::affected::calculate_with_override(
+            &config,
+            dir.path(),
+            Some("HEAD~1"),
+            Some("HEAD"),
+        )
+        .await
+        .unwrap();
+        assert_eq!(output.group["ci"].affected_workspaces, expected, "{file}");
+        if expected > 0 {
+            assert!(
+                output
+                    .diagnostics
+                    .unwrap()
+                    .reasons
+                    .values()
+                    .all(|reason| reason.kind == "globalDependency"),
+                "{file}"
+            );
+        }
+    }
+}
+
+#[tokio::test]
 async fn test_calculate_affected_no_git_env() {
     let dir = tempdir().unwrap();
 

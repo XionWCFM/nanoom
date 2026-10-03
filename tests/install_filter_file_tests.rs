@@ -76,7 +76,7 @@ fn install_filter_file_runs_the_existing_focused_install_with_deduplicated_filte
     );
     assert_eq!(
         fs::read_to_string(log).unwrap(),
-        "install\n--frozen-lockfile\n--filter\n.\n--filter\npkg-a...\n--filter\npkg-b...\n"
+        "install\n--frozen-lockfile\n--prod=false\n--filter\n.\n--filter\npkg-a...\n--filter\npkg-b...\n"
     );
 }
 

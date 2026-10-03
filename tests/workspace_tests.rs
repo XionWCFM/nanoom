@@ -26,6 +26,84 @@ fn package_json(name: &str, deps: &[(&str, &str)]) -> serde_json::Value {
 }
 
 #[test]
+fn root_tooling_checkout_includes_only_internal_dependency_closure() {
+    let dir = tempdir().unwrap();
+    write_json(
+        &dir.path().join("package.json"),
+        &serde_json::json!({
+            "name":"root", "devDependencies":{"tool":"workspace:*", "registry":"^2.0.0"}
+        }),
+    );
+    for (name, deps) in [
+        ("tool", vec![("shared", "workspace:*")]),
+        ("shared", vec![]),
+        ("registry", vec![]),
+        ("unrelated", vec![]),
+    ] {
+        write_json(
+            &dir.path().join(format!("packages/{name}/package.json")),
+            &package_json(name, &deps),
+        );
+    }
+    let workspace = Workspace::discover(&simple_config(&["packages/*"], &[]), dir.path()).unwrap();
+    assert_eq!(
+        workspace.installation_checkout_paths(dir.path()).unwrap(),
+        vec!["packages/shared", "packages/tool"]
+    );
+}
+
+#[test]
+fn yarn_assets_are_planned_from_configuration_without_source_checkout() {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join(".yarnrc.yml"), "yarnPath: ${PROJECT_CWD}/.yarn/releases/yarn.cjs\nplugins:\n  - path: .yarn/plugins/plugin.cjs\n").unwrap();
+    let workspace = Workspace::discover(&simple_config(&["packages/*"], &[]), dir.path()).unwrap();
+    assert_eq!(
+        workspace.installation_checkout_paths(dir.path()).unwrap(),
+        vec![".yarn/plugins", ".yarn/releases"]
+    );
+    fs::write(dir.path().join(".yarnrc.yml"), "yarnPath: ./yarn.cjs\n").unwrap();
+    assert!(workspace
+        .installation_checkout_paths(dir.path())
+        .unwrap()
+        .is_empty());
+    fs::write(
+        dir.path().join(".yarnrc.yml"),
+        "yarnPath: ./.yarn/./releases/yarn.cjs\n",
+    )
+    .unwrap();
+    assert_eq!(
+        workspace.installation_checkout_paths(dir.path()).unwrap(),
+        vec![".yarn/releases"]
+    );
+    fs::remove_file(dir.path().join(".yarnrc.yml")).unwrap();
+    assert!(workspace
+        .installation_checkout_paths(dir.path())
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn yarn_asset_configuration_rejects_unsafe_and_malformed_paths() {
+    let dir = tempdir().unwrap();
+    let workspace = Workspace::discover(&simple_config(&["packages/*"], &[]), dir.path()).unwrap();
+    for yaml in [
+        "yarnPath: ../outside/yarn.cjs",
+        "yarnPath: /outside/yarn.cjs",
+        "yarnPath: C:/outside/yarn.cjs",
+        "yarnPath: ''",
+        "yarnPath: [not, a, path]",
+        "plugins: [{path: ../plugin.cjs}]",
+        "yarnPath: \"bad\\npath/yarn.cjs\"",
+    ] {
+        fs::write(dir.path().join(".yarnrc.yml"), yaml).unwrap();
+        assert!(
+            workspace.installation_checkout_paths(dir.path()).is_err(),
+            "accepted {yaml}"
+        );
+    }
+}
+
+#[test]
 fn test_workspace_protocol_links_propagate() {
     let dir = tempdir().unwrap();
     yarn_workspace_fixture(dir.path());

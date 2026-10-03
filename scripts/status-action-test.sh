@@ -26,9 +26,13 @@ run_case required-skipped '{"run":{"result":"skipped"}}' failure '["run"]'
 run_case required-missing '{"history":{"result":"success"}}' failure '["run"]'
 run_case planned-success '{"affected":{"result":"success","outputs":{"has_change":"true"}},"run":{"result":"success"}}' success
 run_case planned-skipped '{"affected":{"result":"success","outputs":{"has_change":"true"}},"run":{"result":"skipped"}}' failure
+run_case planned-skipped-whitespace '{"affected":{"result":"success","outputs":{"has_change":"true"}},"run":{"result":"skipped"}}' failure '[ ]'
 run_case planned-missing '{"affected":{"result":"success","outputs":{"has_change":"true"}}}' failure
 run_case planned-failure '{"affected":{"result":"success","outputs":{"has_change":"true"}},"run":{"result":"failure"}}' failure
 run_case planned-cancelled '{"affected":{"result":"success","outputs":{"has_change":"true"}},"run":{"result":"cancelled"}}' failure
+run_case selected-group '{"affected":{"result":"success","outputs":{"has_change":"true"}},"run-ci":{"result":"success"},"run-e2e":{"result":"skipped"}}' success '["run-ci"]'
+run_case selected-group-skipped '{"affected":{"result":"success","outputs":{"has_change":"true"}},"run-ci":{"result":"skipped"},"run-e2e":{"result":"skipped"}}' failure '["run-ci"]'
+run_case selected-group-failed '{"affected":{"result":"success","outputs":{"has_change":"true"}},"run-ci":{"result":"success"},"run-e2e":{"result":"failure"}}' failure '["run-ci"]'
 run_case no-change '{"affected":{"result":"success","outputs":{"has_change":"false"}},"run":{"result":"skipped"}}' success
 grep -q '^publish-history=true$' "$tmp/planned-success.output"
 grep -q '^publish-history=false$' "$tmp/no-change.output"

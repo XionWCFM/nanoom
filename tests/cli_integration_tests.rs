@@ -76,6 +76,45 @@ fn binary_path() -> std::path::PathBuf {
     path.join("nanoom")
 }
 
+#[test]
+fn local_run_uses_explicit_revisions_instead_of_an_unresolvable_implicit_base() {
+    let dir = tempdir().unwrap();
+    setup_monorepo(dir.path());
+    init_git_repo(dir.path());
+    fs::write(dir.path().join("packages/pkg-a/changed.txt"), "changed").unwrap();
+    for args in [
+        vec!["add", "."],
+        vec!["commit", "-m", "change", "--no-gpg-sign"],
+    ] {
+        assert!(Command::new("git")
+            .arg("-C")
+            .arg(dir.path())
+            .args(args)
+            .output()
+            .unwrap()
+            .status
+            .success());
+    }
+    let (success, stdout, stderr) = run_cli_parts(
+        dir.path(),
+        &["run", "ci", "test", "--base", "HEAD~1", "--json"],
+        &[],
+    );
+    assert!(success, "{stderr}");
+    let result: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(result["projects"], serde_json::json!(["pkg-a"]));
+    assert_eq!(result["executions"][0]["workspace"], "pkg-a");
+    assert!(!run_cli_parts(dir.path(), &["run", "ci", "test", "--json"], &[]).0);
+    assert!(
+        !run_cli_parts(
+            dir.path(),
+            &["run", "ci", "test", "--all", "--base", "HEAD~1"],
+            &[]
+        )
+        .0
+    );
+}
+
 fn run_cli(cwd: &Path, args: &[&str], envs: &[(&str, &str)]) -> (bool, String) {
     let (success, stdout, stderr) = run_cli_parts(cwd, args, envs);
     (success, format!("{}{}", stdout, stderr))
@@ -549,7 +588,7 @@ fn test_run_unknown_group_fails() {
     setup_monorepo(dir.path());
     init_git_repo(dir.path());
 
-    let (success, output) = run_cli(dir.path(), &["run", "no-such-group", "test"], &[]);
+    let (success, output) = run_cli(dir.path(), &["run", "no-such-group", "test", "--all"], &[]);
     assert!(!success);
     assert!(output.contains("not found"));
 }

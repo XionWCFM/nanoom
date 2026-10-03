@@ -1,5 +1,9 @@
 # Luna Max 실행 지시서 — Nanoom PredictionState v3
 
+> 이 문서는 작성 당시의 설계·조사·실행 기록이다. 현재 공개 계약과 작업 기준은
+> [SPEC.md](SPEC.md), [AGENTS.md](AGENTS.md), [CI 철학](docs/ci-philosophy.md)을 따른다.
+> 과거 branch/PR 상태와 후보 검증을 현재 구현 상태나 이번 수정의 완료 증거로 사용하지 않는다.
+
 작성일: 2026-09-24. 상태 갱신: 2026-09-25. 대상: **Luna, reasoning effort `max`**. A7 hosted acceptance는 candidate SHA `0d29332882ed303a22a24bb15c8464cc406eb57a`로 완료했고 근거는 [CHECKLIST.md](CHECKLIST.md)에 기록했다. 문서가 존재한다는 사실만으로 runtime 구현 완료를 뜻하지는 않는다.
 
 ## 1. 시작 상태와 목표
