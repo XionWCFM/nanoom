@@ -167,7 +167,7 @@ impl GitRepo {
 }
 
 pub fn detect_git_root(path: &Path) -> Result<PathBuf> {
-    let repo = open(path).map_err(|e| Error::GitError(e.to_string()))?;
+    let repo = gix::discover(path).map_err(|e| Error::GitError(e.to_string()))?;
     Ok(repo.workdir().unwrap_or(path).to_path_buf())
 }
 

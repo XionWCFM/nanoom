@@ -52,6 +52,14 @@ AGENTS.md와 ADR-0015의 두 원칙을 유지한다. 사용자 보조 단계나 
 
 ## 수용 기준과 증거
 
+하위 프로젝트의 `cwd` 입력이 부모 Git 저장소를 찾지 못하거나 상대 경로 비교에서
+변경을 누락하는 문제도 수정한다. 공유 affected 경계에서 cwd를 정규화하고 Git
+루트를 탐색한다. Plan은 workingDirectory를 보존하고 checkout 경로는 저장소 기준,
+실행은 프로젝트 기준으로 연결한다. 공식 sparse checkout과 prepare 양쪽에서
+필요한 프로젝트 메타데이터를 포함한다. install/run에 cwd 재계산을 요구하지 않는다.
+공백을 포함한 하위 프로젝트의 실제 Git/CLI/Action 경로와 안전하지 않은 디렉터리,
+다른 cwd 및 symlink redirect 거부를 회귀 검증한다.
+
 실제 sparse checkout, root 도구·실행 workspace의 양쪽 dependency closure,
 production 환경의 개발 도구, 무관한 workspace 제외를 검증한다. native pnpm·npm·Yarn Berry 검증은 `bash scripts/focused-install-test.sh`로 재현한다. Action 계약은 기존
 `scripts/action-contract.sh`에 status, 중단된 재계획, GHES 다운로드, 준비 시간

@@ -85,3 +85,20 @@ source `62cfbba7b987d50f9edbddcb0b49444b5747638a`의 producer
 계획·Linux·macOS·Windows·aggregate status가 모두 성공했다. 운영 경로는 공개
 v0.7.7을 사용했으며 후보 소스의 회귀와 로컬 D1 E2E를 검사한 producer 증거다.
 현재 v0.8.0 릴리즈 정보를 준비한다. 아직 공개 발행 또는 latest 이동은 하지 않았다.
+
+v0.8.0 버전 준비 source `da72e3be20c4917704d3d34885e5e452e917eb85`의 producer
+[37120312174](https://github.com/XionWCFM/nanoom/actions/runs/37120312174)도
+계획·Linux·macOS·Windows·aggregate status가 모두 성공했다. 공개 제품은 여전히
+v0.7.7이며 이 결과를 v0.8.0 released consumer 증거로 사용하지 않는다.
+
+후속 점검에서 하위 프로젝트의 cwd가 부모 Git 저장소를 찾지 못하는 문제와
+상대 경로의 변경 감지 누락을 재현했다. Git 루트 탐색·cwd 정규화·프로젝트 범위
+변경 필터와 Plan workingDirectory를 연결했다. checkout/item 경로는 저장소 기준,
+configPath와 설치·실행은 프로젝트 기준이다. 공식 sparse checkout과 prepare에서
+프로젝트 루트 메타데이터를 유지하며 소비자에게 cwd 재계산을 요구하지 않는다.
+공백이 있는 프로젝트에서 실제 assignment 실행과 무관한 workspace 소스 제외,
+프로젝트 밖 변경의 no-change, 잘못된 cwd 및 symlink redirect 거부를 검증했다.
+전체 local gate는 통과했고 line coverage는 96.26%다. 로컬 History Worker E2E도
+cold fallback, assignment 2개 실행, D1 병합, duplicate no-op, warm sample 8개
+재사용과 후속 실행이 통과했다. 이 하위 프로젝트 수정의 hosted producer 및
+공개 릴리즈 소비 검증은 별도로 필요하다.

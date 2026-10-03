@@ -17,6 +17,8 @@ if [[ -n ${ASSIGNMENT_FILE:-} ]]; then
   fi
   source "$GITHUB_ACTION_PATH/../_setup/assignment.sh"
   nanoom_validate_assignment_file "$ASSIGNMENT_FILE" "$CWD"
+  CWD=$(nanoom_assignment_cwd "$ASSIGNMENT_FILE" "$CWD")
+  ACTION_CWD=$CWD
   mode=static; static_plan=true
   GROUP=$(jq -er .group "$ASSIGNMENT_FILE")
   ASSIGNMENT_ID=$(jq -er .assignmentId "$ASSIGNMENT_FILE")

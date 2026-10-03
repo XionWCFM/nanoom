@@ -12,6 +12,8 @@ if [[ -n ${ASSIGNMENT_FILE:-} ]]; then
   fi
   source "$GITHUB_ACTION_PATH/../_setup/assignment.sh"
   nanoom_validate_assignment_file "$ASSIGNMENT_FILE" "$CWD"
+  CWD=$(nanoom_assignment_cwd "$ASSIGNMENT_FILE" "$CWD")
+  ACTION_CWD=$CWD
   group=$(jq -er .group "$ASSIGNMENT_FILE")
   assignment_id=$(jq -er .assignmentId "$ASSIGNMENT_FILE")
   planned_count=$(jq -er '.items | select(type == "array" and length > 0) | length' "$ASSIGNMENT_FILE")

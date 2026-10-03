@@ -208,6 +208,13 @@ digest는 유지되며, 이력 장애가 후속 install/run을 깨뜨리지 않�
 
 ## Plan v1 파일 CLI
 
+프로젝트가 Git 루트 아래에 있으면 `affected`의 `cwd` 또는 CLI `-C`에 프로젝트
+디렉터리를 지정합니다. Plan의 선택적 `workingDirectory`는 Git 루트 기준이며,
+item/checkout 경로와 matrix sparse 패턴도 Git 루트 기준입니다. install/run은
+같은 Plan에서 실행 디렉터리를 복원하므로 소비자가 cwd를 다시 계산할 필요가 없습니다.
+기본값은 저장소 루트이며, 다른 하위 경로나 symlink로 바뀐 실행 디렉터리는 거부합니다.
+이 지원은 v0.8.0 후보 변경으로 공개 v0.7.7에는 포함되지 않습니다.
+
 Plan v1 producer는 상세 계획을 파일에 저장하고 작은 reference/matrix JSON만 stdout에 출력합니다. context 파일에는 repository, workflow, run ID, producer attempt, planning job, 비교한 전체 base/head SHA, 실행 tool을 넣습니다.
 
 ```bash

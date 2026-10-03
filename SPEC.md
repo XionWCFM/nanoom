@@ -54,6 +54,11 @@ checkout.sparseCheckout을 제공한다. install/run은 원본 Plan digest,
 repository/workflow/run/attempt/head, assignment 내용과 실제 HEAD를 검증한다.
 선택한 설정 경로를 configPath로 보존해 install/run이 같은 설정을 사용한다.
 설정 경로도 assignment checkout에 포함되며 cwd 밖의 설정은 Plan에서 거부한다.
+하위 프로젝트는 선택적 workingDirectory로 실행 위치를 보존한다. 값과 item/
+checkout 경로는 Git 루트 기준이고 configPath는 프로젝트 기준이다. 공식 checkout은
+하위 프로젝트의 루트 메타데이터와 assignment 소스를 가져오며 install/run은
+Plan에서 cwd를 복원한다. 다른 하위 디렉터리와 symlink redirect는 거부한다.
+저장소 루트 실행은 필드를 생략한다. 이 계약은 미릴리즈 v0.8.0 후보에 해당한다.
 그룹당 256 assignment와 compact 출력 UTF-16 1 MiB 제한을 넘으면 실패한다.
 변경 없음은 assignment 0개인 정상 Plan이다.
 

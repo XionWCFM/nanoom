@@ -2,6 +2,7 @@
 
 ## 0.8.0
 
+- Preserve nested project working directories through Plan selection, repository-relative sparse checkout, focused install, and run; detect Git roots and normalize relative affected paths.
 - Add npm focused install and local run revision inputs; include root tooling, internal dependency closures, and development dependencies in focused installs.
 - Treat root execution inputs and declared internal tooling as global changes, and preserve custom configuration paths through Plan selection and file-level checkout.
 - Record preparation timing in the default four-step template and preserve cold Plans when warm replanning is interrupted.

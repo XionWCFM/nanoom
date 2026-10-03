@@ -759,3 +759,153 @@ fn custom_configuration_is_global_checked_out_and_preserved_by_plan_selection() 
         assert!(!output.status.success(), "accepted {unsafe_path}");
     }
 }
+
+#[test]
+fn nested_working_directory_is_preserved_with_repository_relative_checkout() {
+    let fixture = changed_fixture();
+    let root = fixture.dir.path();
+    fs::create_dir(root.join("nested app")).unwrap();
+    for path in ["package.json", "nanoom.config.json", "packages"] {
+        git(root, &["mv", path, "nested app/"]);
+    }
+    write_json(
+        &root.join("nested app/nanoom.config.json"),
+        &json!({"group":{"ci":{"tasks":["test"]}},"globalDependencies":["**"]}),
+    );
+    git(root, &["add", "."]);
+    git(root, &["commit", "-m", "nested", "--no-gpg-sign"]);
+    let base = git(root, &["rev-parse", "HEAD"]);
+    fs::write(
+        root.join("nested app/packages/pkg-a/change.txt"),
+        "nested change",
+    )
+    .unwrap();
+    git(root, &["add", "."]);
+    git(
+        root,
+        &["commit", "-m", "change nested app", "--no-gpg-sign"],
+    );
+    let head = git(root, &["rev-parse", "HEAD"]);
+    let mut context: Value =
+        serde_json::from_slice(&fs::read(root.join("context.json")).unwrap()).unwrap();
+    context["base"] = json!(base);
+    context["head"] = json!(head);
+    write_json(&root.join("context.json"), &context);
+    let output = run_cli(
+        root,
+        &[
+            "-C",
+            "nested app",
+            "affected",
+            "--base",
+            &base,
+            "--head",
+            &head,
+            "--timing-runner",
+            "pnpm",
+            "--plan-output",
+            "nested-plan.json",
+            "--plan-context",
+            "../context.json",
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let compact: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let plan: Value =
+        serde_json::from_slice(&fs::read(root.join("nested app/nested-plan.json")).unwrap())
+            .unwrap();
+    assert_eq!(plan["workingDirectory"], "nested app");
+    assert_eq!(
+        plan["groups"]["ci"]["assignments"][0]["items"][0]["path"],
+        "nested app/packages/pkg-a"
+    );
+    let sparse = compact["groups"]["ci"]["include"][0]["checkout"]["sparseCheckout"]
+        .as_str()
+        .unwrap();
+    assert!(sparse.contains("/nested\\ app/*"));
+    assert!(sparse.contains("/nested\\ app/packages/pkg-a"));
+    assert!(!sparse.lines().any(|line| line == "/packages/pkg-a"));
+    write_json(&root.join("nested-reference.json"), &compact["plan"]);
+    let selected = run_cli(
+        root,
+        &[
+            "plan",
+            "select",
+            "--input",
+            "nested app/nested-plan.json",
+            "--reference",
+            "nested-reference.json",
+            "--group",
+            "ci",
+            "--assignment",
+            "ci-0001",
+            "--output-dir",
+            "nested-selected",
+        ],
+    );
+    assert!(
+        selected.status.success(),
+        "{}",
+        String::from_utf8_lossy(&selected.stderr)
+    );
+    let selected: Value =
+        serde_json::from_slice(&fs::read(root.join("nested-selected/assignment.json")).unwrap())
+            .unwrap();
+    assert_eq!(selected["workingDirectory"], "nested app");
+    fs::write(root.join("outside-project.txt"), "unrelated change").unwrap();
+    git(root, &["add", "outside-project.txt"]);
+    git(root, &["commit", "-m", "outside project", "--no-gpg-sign"]);
+    let outside_head = git(root, &["rev-parse", "HEAD"]);
+    let outside = run_cli(
+        root,
+        &[
+            "-C",
+            "nested app",
+            "affected",
+            "--base",
+            &head,
+            "--head",
+            &outside_head,
+            "--json",
+        ],
+    );
+    assert!(
+        outside.status.success(),
+        "{}",
+        String::from_utf8_lossy(&outside.stderr)
+    );
+    let outside: Value = serde_json::from_slice(&outside.stdout).unwrap();
+    assert_eq!(outside["affected"]["has_change"], false);
+    for directory in ["../escape", "C:/escape", "/escape", ".", "another-project"] {
+        let mut tampered = plan.clone();
+        tampered["workingDirectory"] = json!(directory);
+        let bytes = serde_json::to_vec(&tampered).unwrap();
+        fs::write(root.join("nested-unsafe.json"), &bytes).unwrap();
+        let mut reference = compact["plan"].clone();
+        reference["sha256"] = json!(format!("{:x}", Sha256::digest(&bytes)));
+        write_json(&root.join("nested-unsafe-reference.json"), &reference);
+        assert!(!run_cli(
+            root,
+            &[
+                "plan",
+                "select",
+                "--input",
+                "nested-unsafe.json",
+                "--reference",
+                "nested-unsafe-reference.json",
+                "--group",
+                "ci",
+                "--assignment",
+                "ci-0001",
+                "--output-dir",
+                "nested-unsafe-selected"
+            ]
+        )
+        .status
+        .success());
+    }
+}

@@ -78,6 +78,8 @@ pub struct Plan {
     pub task_runner: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub config_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub working_directory: Option<String>,
     pub prediction_reason: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prediction_artifact: Option<ArtifactDigest>,
@@ -143,6 +145,8 @@ pub struct AssignmentContext {
     pub task_runner: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub config_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub working_directory: Option<String>,
     pub group: String,
     pub assignment_id: String,
     pub items: Vec<PlanItem>,
@@ -222,6 +226,12 @@ impl Plan {
 
         let mut groups = BTreeMap::new();
         let repo_root = cwd.canonicalize()?;
+        let git_root = crate::git::detect_git_root(cwd)?.canonicalize()?;
+        let relative = repo_root
+            .strip_prefix(&git_root)
+            .map_err(|_| invalid("Plan working directory must be inside the repository"))?;
+        let working_directory = (!relative.as_os_str().is_empty())
+            .then(|| relative.to_string_lossy().replace('\\', "/"));
         for group_name in output.group.keys() {
             let rows = matrix
                 .get(group_name)
@@ -232,9 +242,22 @@ impl Plan {
                 })?;
             let mut assignments = Vec::with_capacity(rows.len());
             for (index, row) in rows.iter().enumerate() {
-                assignments.push(assignment_from_matrix(
-                    group_name, index, row, cwd, &repo_root,
-                )?);
+                let mut assignment =
+                    assignment_from_matrix(group_name, index, row, cwd, &repo_root)?;
+                if let Some(directory) = &working_directory {
+                    for path in assignment
+                        .checkout_paths
+                        .iter_mut()
+                        .chain(assignment.items.iter_mut().map(|item| &mut item.path))
+                    {
+                        *path = if path == "." {
+                            directory.clone()
+                        } else {
+                            format!("{directory}/{path}")
+                        };
+                    }
+                }
+                assignments.push(assignment);
             }
             groups.insert(group_name.clone(), PlanGroup { assignments });
         }
@@ -250,6 +273,7 @@ impl Plan {
             provenance: context.provenance(),
             task_runner: context.task_runner.clone(),
             config_path: None,
+            working_directory,
             prediction_reason: context.prediction_reason.clone(),
             prediction_artifact: context.prediction_artifact.clone(),
             model_artifact: context.model_artifact.clone(),
@@ -277,6 +301,15 @@ impl Plan {
         {
             return Err(invalid(
                 "Plan configPath must be a repository-relative file path",
+            ));
+        }
+        if self
+            .working_directory
+            .as_ref()
+            .is_some_and(|path| !valid_relative_path(path) || path == ".")
+        {
+            return Err(invalid(
+                "Plan workingDirectory must be a repository-relative directory",
             ));
         }
         if self.task_runner.trim().is_empty() {
@@ -318,6 +351,15 @@ impl Plan {
                     assignment.preparation_sample_count,
                     assignment.scheduling_mode.as_deref(),
                 )?;
+                if let Some(directory) = &self.working_directory {
+                    if assignment
+                        .checkout_paths
+                        .iter()
+                        .any(|path| !Path::new(path).starts_with(directory))
+                    {
+                        return Err(invalid("Plan checkout paths escape its workingDirectory"));
+                    }
+                }
                 validate_sorted_paths(group_name, &assignment.checkout_paths)?;
                 for item in &assignment.items {
                     items += 1;
@@ -491,6 +533,7 @@ pub fn select_assignment(
         current: reference.current.clone(),
         task_runner: plan.task_runner.clone(),
         config_path: plan.config_path.clone(),
+        working_directory: plan.working_directory.clone(),
         group: group_name.to_owned(),
         assignment_id: assignment_id.to_owned(),
         items: assignment.items.clone(),
@@ -562,7 +605,7 @@ pub fn compact_output(plan: &Plan, reference: &PlanReference) -> Result<String> 
                     "checkout".into(),
                     serde_json::json!({
                         "ref": plan.provenance.head,
-                        "sparseCheckout": assignment_sparse_checkout(&assignment.checkout_paths, plan.config_path.as_deref()),
+                        "sparseCheckout": assignment_sparse_checkout(&assignment.checkout_paths, plan.config_path.as_deref(), plan.working_directory.as_deref()),
                     }),
                 );
                 if let Some(labels) = &assignment.runner_labels {
@@ -899,22 +942,39 @@ fn validate_assignment_prediction(
     }
 }
 
-fn assignment_sparse_checkout(paths: &[String], config_path: Option<&str>) -> String {
+fn assignment_sparse_checkout(
+    paths: &[String],
+    config_path: Option<&str>,
+    working_directory: Option<&str>,
+) -> String {
     if paths.iter().any(|path| path == ".") {
         return "/*".into();
     }
     let mut patterns = vec!["/*".to_string(), "!/*/".to_string()];
-    for path in paths.iter().map(String::as_str).chain(config_path) {
-        let mut pattern = String::from("/");
-        for character in path.chars() {
-            if "*?[] ".contains(character) {
-                pattern.push('\\');
-            }
-            pattern.push(character);
-        }
-        patterns.push(pattern);
+    if let Some(directory) = working_directory {
+        let prefix = sparse_pattern(directory);
+        patterns.extend([format!("{prefix}/*"), format!("!{prefix}/*/")]);
+    }
+    patterns.extend(paths.iter().map(|path| sparse_pattern(path)));
+    if let Some(config) = config_path {
+        let path = working_directory.map_or_else(
+            || config.to_string(),
+            |directory| format!("{directory}/{config}"),
+        );
+        patterns.push(sparse_pattern(&path));
     }
     patterns.join("\n")
+}
+
+fn sparse_pattern(path: &str) -> String {
+    let mut pattern = String::from("/");
+    for character in path.chars() {
+        if "*?[] ".contains(character) {
+            pattern.push('\\');
+        }
+        pattern.push(character);
+    }
+    pattern
 }
 
 fn valid_relative_path(path: &str) -> bool {
@@ -1012,6 +1072,7 @@ mod tests {
             provenance: provenance(),
             task_runner: "pnpm".into(),
             config_path: None,
+            working_directory: None,
             prediction_reason: "cold start".into(),
             prediction_artifact: None,
             model_artifact: None,
@@ -1044,7 +1105,7 @@ mod tests {
             row["checkout"]["sparseCheckout"],
             "/*\n!/*/\n/packages/pkg-00000\n/tools/shared\\ \\[dev\\]"
         );
-        assert_eq!(assignment_sparse_checkout(&[".".into()], None), "/*");
+        assert_eq!(assignment_sparse_checkout(&[".".into()], None, None), "/*");
 
         let plan = plan_with_items(3, 1);
         let bytes = serde_json::to_vec(&plan).unwrap();

@@ -260,4 +260,63 @@ export GITHUB_OUTPUT="$tmp/npm-affected"
 bash "$GITHUB_ACTION_PATH/run.sh" > "$tmp/npm-affected.log"
 shrinkwrap_digest=$(sha256sum < "$repo/npm-shrinkwrap.json" | awk '{print $1}')
 jq -e --arg digest "$shrinkwrap_digest" '.packageManager == "npm" and .packageManagerVersion == "11.16.0" and .lockfileDigest == $digest' "$RUNNER_TEMP/nanoom-plan-$RUN_ID-$RUN_ATTEMPT-$GITHUB_JOB/preparation-context.json" >/dev/null
+# A project below the Git root keeps checkout paths and execution cwd aligned.
+mkdir -p "$repo/nested app"
+git -C "$repo" mv package.json pnpm-lock.yaml .yarnrc.yml .yarn packages tools 'nested app/'
+rm "$repo/package-lock.json" "$repo/npm-shrinkwrap.json"
+jq '.packageManager="pnpm@9.1.0"' "$repo/nested app/package.json" > "$tmp/nested-package.json"
+cp "$tmp/nested-package.json" "$repo/nested app/package.json"
+cp "$repo/nested app/packages/[team].json" "$repo/nested app/nanoom.config.json"
+git -C "$repo" add .
+git -C "$repo" -c user.name=test -c user.email=test@example.com commit -qm nested --no-gpg-sign
+nested_base=$(git -C "$repo" rev-parse HEAD)
+printf '%s\n' changed > "$repo/nested app/packages/pkg-a/nested-change.txt"
+git -C "$repo" add .
+git -C "$repo" -c user.name=test -c user.email=test@example.com commit -qm nested-change --no-gpg-sign
+nested_head=$(git -C "$repo" rev-parse HEAD)
+export GITHUB_ACTION_PATH="$root/.github/actions/affected" CWD="$repo/nested app" CONFIG=nanoom.config.json
+export BASE="$nested_base" HEAD="$nested_head" EVENT_HEAD="$nested_head" GITHUB_SHA="$nested_head" GITHUB_JOB=affected RUN_ID=8675312 SCHEDULER=off
+export GITHUB_OUTPUT="$tmp/nested-affected"
+bash "$GITHUB_ACTION_PATH/run.sh" > "$tmp/nested-affected.log"
+plan_ref=$(sed -n 's/^plan=//p' "$GITHUB_OUTPUT")
+groups=$(sed -n 's/^groups=//p' "$GITHUB_OUTPUT")
+artifact_dir="$RUNNER_TEMP/nanoom-plan-$RUN_ID-$RUN_ATTEMPT-$GITHUB_JOB"
+jq -e '.workingDirectory == "nested app" and .itemCount == 1' "$artifact_dir/plan-v1.json" >/dev/null
+nested_consumer="$tmp/nested-consumer"
+git clone -q --depth=1 --no-checkout "file://$repo" "$nested_consumer"
+jq -r '.custom.include[0].checkout.sparseCheckout' <<<"$groups" | git -C "$nested_consumer" sparse-checkout set --no-cone --stdin
+git -C "$nested_consumer" checkout -q --detach "$nested_head"
+test -f "$nested_consumer/nested app/package.json"
+test -f "$nested_consumer/nested app/pnpm-lock.yaml"
+test ! -e "$nested_consumer/nested app/packages/pkg-b"
+export GITHUB_ACTION_PATH="$root/.github/actions/install" GITHUB_WORKSPACE="$nested_consumer" SELECT_CWD="$nested_consumer" CWD="$nested_consumer" PLAN="$plan_ref" PLAN_DIR="$artifact_dir" GROUP=custom ASSIGNMENT_ID="$(jq -r '.custom.include[0].assignmentId' <<<"$groups")" GITHUB_JOB=run
+export GITHUB_OUTPUT="$tmp/nested-selection"
+bash "$root/.github/actions/prepare/select.sh" > "$tmp/nested-select.log"
+selected_cwd=$(sed -n 's/^cwd=//p' "$GITHUB_OUTPUT")
+test "$selected_cwd" = "$(cd "$nested_consumer/nested app" && pwd -P)"
+source "$root/.github/actions/_setup/assignment.sh"
+nested_assignment=$(sed -n 's/^assignment-file=//p' "$GITHUB_OUTPUT")
+if nanoom_assignment_cwd "$nested_assignment" "$nested_consumer/nested app/packages/pkg-a" > "$tmp/wrong-nested-cwd.log" 2>&1; then
+  echo 'unplanned execution directory unexpectedly accepted' >&2; exit 1
+fi
+mv "$nested_consumer/nested app" "$nested_consumer/nested-real"
+mkdir "$tmp/outside-project"
+ln -s "$tmp/outside-project" "$nested_consumer/nested app"
+if nanoom_assignment_cwd "$nested_assignment" "$nested_consumer" > "$tmp/symlink-nested-cwd.log" 2>&1; then
+  echo 'redirected planned directory unexpectedly accepted' >&2; exit 1
+fi
+rm "$nested_consumer/nested app"
+mv "$nested_consumer/nested-real" "$nested_consumer/nested app"
+export ASSIGNMENT_FILE="$(sed -n 's/^assignment-file=//p' "$GITHUB_OUTPUT")" CWD="$selected_cwd" GITHUB_OUTPUT="$tmp/nested-install" PM=auto
+bash "$GITHUB_ACTION_PATH/run.sh" > "$tmp/nested-install.log"
+export INSTALL_RESULT="$(sed -n 's/^result=//p' "$GITHUB_OUTPUT")" GITHUB_ACTION_PATH="$root/.github/actions/run" GITHUB_OUTPUT="$tmp/nested-run" CWD=''
+bash "$GITHUB_ACTION_PATH/run.sh" > "$tmp/nested-run.log"
+jq -e '.status == "success" and .executedItemCount == 1' <(sed -n 's/^result=//p' "$GITHUB_OUTPUT") >/dev/null
+nested_prepared="$nested_consumer/.nanoom/prepared"
+git clone -q --depth=1 --no-checkout "file://$repo" "$nested_prepared"
+awk '/^initial-sparse-checkout<</ {active=1;next} /^NANOOM_SPARSE$/ {active=0} active' "$tmp/nested-selection" | git -C "$nested_prepared" sparse-checkout set --no-cone --stdin
+git -C "$nested_prepared" checkout -q --detach "$nested_head"
+CWD="$nested_prepared/nested app" ASSIGNMENT_FILE="$ASSIGNMENT_FILE" PATHS_FILE="$(sed -n 's/^paths-file=//p' "$tmp/nested-selection")" GITHUB_ACTION_PATH="$root/.github/actions/prepare" bash "$root/.github/actions/prepare/checkout.sh" > "$tmp/nested-prepare.log"
+test -f "$nested_prepared/nested app/packages/pkg-a/package.json"
+test ! -e "$nested_prepared/nested app/packages/pkg-b"
 echo 'Plan producer, rerun selection, sparse checkout, focused install, and run contracts passed'
