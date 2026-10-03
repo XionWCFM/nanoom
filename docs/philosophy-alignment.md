@@ -79,3 +79,9 @@ producer `37118980826`에서 Windows·macOS 잡은 통과했다. Linux는 native
 통과했다. cold fallback, 실제 assignment 2개, D1 병합, duplicate no-op, warm sample
 8개 재사용과 후속 실행을 확인했다. 공개 hosted D1 소비 증거로 대체하지 않는다.
 파일 단위 설정 checkout 수정의 전체 local gate는 통과했으며 line coverage는 96.38%다.
+
+source `62cfbba7b987d50f9edbddcb0b49444b5747638a`의 producer
+[37119554831](https://github.com/XionWCFM/nanoom/actions/runs/37119554831)은
+계획·Linux·macOS·Windows·aggregate status가 모두 성공했다. 운영 경로는 공개
+v0.7.7을 사용했으며 후보 소스의 회귀와 로컬 D1 E2E를 검사한 producer 증거다.
+현재 v0.8.0 릴리즈 정보를 준비한다. 아직 공개 발행 또는 latest 이동은 하지 않았다.
