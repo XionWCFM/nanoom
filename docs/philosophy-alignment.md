@@ -106,3 +106,11 @@ cold fallback, assignment 2개 실행, D1 병합, duplicate no-op, warm sample 8
 남기는 후속 오류도 회귀로 재현했다. 소속 Git 루트를 정리 대상으로 사용하고
 .nanoom 아래인지 검증한다. 기본 저장소를 가리키는 하위 폴더는 거부한다.
 정리 회귀 및 전체 Action 계약(native focused install 포함)이 통과했다.
+
+하위 프로젝트 source ea90cd0의 producer
+[37122024306](https://github.com/XionWCFM/nanoom/actions/runs/37122024306)에서
+Windows affected 회귀가 실패했다. canonical cwd와 Git 파일 목록의 Windows 경로
+표현이 달라 정상 변경을 프로젝트 밖으로 제외했다. GitRepo의 공통 작업 디렉터리를
+canonical 경로로 맞추고 Git 파일 목록·linked worktree·특수 파일명 회귀의 기준도
+같게 유지했다. 수정 후 전체 local gate가 통과했고 line coverage는 96.26%다.
+Windows hosted 재검증은 별도로 필요하다.
