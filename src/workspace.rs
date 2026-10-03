@@ -204,6 +204,7 @@ impl Workspace {
                 let asset = asset.strip_prefix("${PROJECT_CWD}/").unwrap_or(&asset);
                 let path = Path::new(asset);
                 if asset.is_empty()
+                    || asset.starts_with('/')
                     || asset.contains('\\')
                     || asset.contains(':')
                     || asset.chars().any(char::is_control)

@@ -92,7 +92,11 @@ for (const name of ['app','tool']) {
 }
 JS
 printf 'nodeLinker: node-modules\n' > .yarnrc.yml
-yarn install > "$tmp/yarn-lock.log" 2>&1
+# Fixture creation generates a new lockfile; the focused consumer below remains immutable.
+YARN_ENABLE_IMMUTABLE_INSTALLS=false yarn install > "$tmp/yarn-lock.log" 2>&1 || {
+  cat "$tmp/yarn-lock.log" >&2
+  exit 1
+}
 cp yarn.lock "$tmp/original-yarn.lock"
 rm -rf node_modules packages/*/node_modules .yarn/install-state.gz packages/unrelated
 YARN_ENABLE_IMMUTABLE_INSTALLS=true NODE_ENV=production "$root/target/debug/nanoom" install --filter app --json > "$tmp/yarn-install.json"
