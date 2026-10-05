@@ -72,6 +72,7 @@ def document_check():
     assert SHA(batch) == vectors['idempotencyKeyForCanonicalBatch']
     assert '"sha256:' + SHA(table) + '"' == vectors['predictionEtag']
     assert SHA(model) == vectors['modelDigest']
+    assert SHA(SCHEMAS['ModelStateBundle']['examples'][0]) == vectors['modelBundleDigest']
     invalid = []
     for field, value in [('unexpected', True), ('aggregates', []), ('version', 2), ('batchId', 'bad'), ('runAttempt', 0)]:
         item = deepcopy(batch)
@@ -98,7 +99,7 @@ def document_check():
             links += 1
     assert set(API['paths']) == {'/health', '/ready', BASE + '/snapshot', BASE + '/observations:merge'}
     assert API['x-runtime-limits']['plannerHistoryBudgetMs'] == 3000
-    print(f'PASS OpenAPI: {len(SCHEMAS)} schemas, {count} examples, 6 JCS vectors, {len(invalid)} invalid cases, {links} local links')
+    print(f'PASS OpenAPI: {len(SCHEMAS)} schemas, {count} examples, 9 JCS vectors, {len(invalid)} invalid cases, {links} local links')
 
 
 def predict(buckets, recent=()):

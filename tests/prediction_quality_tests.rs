@@ -182,6 +182,11 @@ fn next_run_error_is_measured_for_stable_outlier_shift_and_sparse_traces() {
             vec![1000, 1000, 1000, 1000, 8000, 8000, 8000, 8000, 8000],
         ),
         (
+            "step-down",
+            DAY_MS,
+            vec![5000, 5000, 5000, 5000, 1000, 1000, 1000, 1000, 1000],
+        ),
+        (
             "same-day-shift",
             1000,
             vec![1000, 1000, 1000, 1000, 8000, 8000, 8000, 8000, 8000],

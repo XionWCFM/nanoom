@@ -1219,7 +1219,7 @@ components:
           taskRunner: yarn
           timingEnvironment: linux-x64-node24
         updatedAtMs: 1790208000000
-        pruningDay: 20691
+        pruningDay: 20720
         batchAcceptanceAfterMs: 1789603200000
         entries:
         - keyId: 8e3a060d9912f5f4230ab9f0a25df7fe50c4d9814cca14ec6f20f795a7e0fcda
@@ -1259,15 +1259,31 @@ components:
           scope:
             repositoryKey: github-12345
             workflowPath: .github/workflows/ci.yml
-            ref: {kind: push, ref: refs/heads/main}
+            ref:
+              kind: push
+              ref: refs/heads/main
             group: ci
             taskRunner: yarn
             timingEnvironment: linux-x64-node24
           updatedAtMs: 1790208000000
-          pruningDay: 20691
+          pruningDay: 20720
           batchAcceptanceAfterMs: 1789603200000
-          entries: []
-          receipts: []
+          entries:
+          - keyId: 8e3a060d9912f5f4230ab9f0a25df7fe50c4d9814cca14ec6f20f795a7e0fcda
+            buckets:
+            - - 20720
+              - 1
+              - 12000
+              - 1790208000000
+            prediction:
+            - 12000
+            - 1
+            - 1790208000000
+            - 1792800000000
+          receipts:
+          - - 1368e6bbb03a78c15d423d23afac569f4f8bfd6e1b10a38b9f4c8e647177b9b5
+            - da6555f1a7f41374048173faaec4116a03740d83fd9114ba8880aa4dce8fe4c9
+            - 1790208000000
     PredictionArtifactEntry:
       type: object
       additionalProperties: false
@@ -1313,7 +1329,7 @@ components:
             - 1792800000000
         modelArtifact:
           name: nanoom-model-v3-123456789-1
-          sha256: ada20f873e74812b9e056d9134c73ae06102c808739d5fd1c73f0b40e800302b
+          sha256: fc2c0bdc4943b5f5ef650b2429c926dededf397ac5432b614da969b78bed289e
     PredictionArtifact:
       type: object
       additionalProperties: false
@@ -1349,7 +1365,7 @@ components:
               - 1792800000000
           modelArtifact:
             name: nanoom-model-v3-123456789-1
-            sha256: ada20f873e74812b9e056d9134c73ae06102c808739d5fd1c73f0b40e800302b
+            sha256: fc2c0bdc4943b5f5ef650b2429c926dededf397ac5432b614da969b78bed289e
     EnvironmentPrediction:
       type: object
       additionalProperties: false
@@ -1432,7 +1448,8 @@ x-contract-examples:
   batchId: 1368e6bbb03a78c15d423d23afac569f4f8bfd6e1b10a38b9f4c8e647177b9b5
   idempotencyKeyForCanonicalBatch: da6555f1a7f41374048173faaec4116a03740d83fd9114ba8880aa4dce8fe4c9
   predictionEtag: '"sha256:2e3b67ef98b6f9153a343838e9399ebfcdf3cdff0683363ed2e46cbbf8f5762f"'
-  modelDigest: ada20f873e74812b9e056d9134c73ae06102c808739d5fd1c73f0b40e800302b
+  modelDigest: a258e3cacbcd62039a5db6097806959a1bf09b9e444effa6dbdad81d59c8f275
+  modelBundleDigest: fc2c0bdc4943b5f5ef650b2429c926dededf397ac5432b614da969b78bed289e
   clockMs: 1790208000000
 x-runtime-limits:
   requestBytes: 16777216

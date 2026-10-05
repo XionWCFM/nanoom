@@ -30,6 +30,7 @@
 | 잡음 | 7.36% | 7.69% | 7.69% | 11.54% | 8.22% |
 | 단발 이상치 | 121.52% | 70.37% | 70.37% | 140.74% | 136.34% |
 | 비용 급증 | 51.92% | 32.56% | 32.56% | 16.28% | 31.54% |
+| 비용 감소 (5초 → 1초) | 63.79% | 40.00% | 40.00% | 20.00% | 38.75% |
 | 동일 날짜 비용 급증 | 57.60% | 32.56% | 32.56% | 16.28% | 31.54% |
 | 12일 간격 실행 | 34.54% | 28.00% | 56.00% | 28.00% | 49.00% |
 
@@ -74,3 +75,9 @@ GitHub의 라벨은 runner를 선택하는 조건이며, 일치하는 여러 run
 실제 Rust compile/apply/projection 경로의 10,000 workspace × 2 profile(각 workspace 비용 5배, 환경 비용 2배) 회귀는 pool 10,001 row와 child 20,002 row를 생성했다. 로컬 profile의 model JSON 4,317,665 bytes, prediction JSON 3,126,882 bytes로 16/8 MiB 한도 안에 있었다. key당 최근 요약 1개인 입력이며 최대 보관 상태·전송 ZIP·네트워크 latency 검증은 아니다.
 
 환경 수집은 표준 `/sys/fs/cgroup`의 프로세스 cgroup과 접근 가능한 상위 cgroup의 CPU/메모리 제한 중 최솟값을 반영한다. namespaced root 밖 경로는 읽지 않으며 v1 또는 확인 불가 계층은 unknown이다. group 경로는 profile과 해시에 포함하지 않는다. 최근 미분류 관측이 7일 밖의 분류된 환경보다 새로우면 현재 workspace 이력을 유지해 오래된 profile로 덮어쓰지 않는다.
+
+## Producer CI와 명세 예제 보완
+
+[PR #115 CI 37342038038](https://github.com/XionWCFM/nanoom/actions/runs/37342038038)은 구현 커밋 `afb0251aef33967867fab0847fa47ecc0e7d4a1e`에서 계획·Linux check·macOS test·Windows test·CI status가 모두 성공했다. 운영 단계는 공개 v0.8.0을 사용했으며 내부 개발 검증이 v0.9.0 후보 소스를 검사했다. 이 결과는 v0.9.0 released consumer 증거가 아니다.
+
+후속 보완은 5초 → 1초 비용 감소의 prequential 검증과 공개 예제의 런타임 검증이다. 감소 trace WAPE는 기존 평균 63.79% → 후보 40.00%였다. 기존 ModelState 예제는 pruningDay가 bucket보다 과거여서 실제 core가 거부했다. 날짜를 맞추고 단일 state digest와 model bundle digest를 분리해 publish marker가 bundle을 가리키게 수정했다. Rust 회귀는 예제의 validate → projection → snapshot/marker table 및 digest 일치를 검사한다. 후속 commit의 producer CI는 별도로 확인한다.

@@ -36,7 +36,7 @@ artifact compiler가 현재 attempt의 성공 실행 ID를 먼저 dedup한 뒤 �
 
 새로 학습한 key의 기본 예측은 최근 batch 평균의 중앙값이다. `recentBatches`는 `[lastObservedAtMs, runId, runAttempt, roundedBatchMeanMs]` 요약을 timestamp/runId/attempt 순으로 정렬해 최신 3개만 보관한다. 실제 현재 batch의 key/day count와 sum으로 정수 half-up 평균을 만들며 과거 prediction을 가짜 관측으로 넣지 않는다. 최신 요약과 7일 이내인 요약만 중앙값에 포함하고, 짝수 개이면 가운데 두 값의 half-up 평균을 쓴다. 드문 실행에서는 이전 요약이 제외되어 최근값을 사용한다. 실패·취소된 관측은 기존과 같이 학습하지 않는다.
 
-30일/day pruning으로 사라진 bucket에 해당하는 요약도 제거한다. 최대 3개 최신 요약을 선택하는 규칙은 batch 도착 순서와 무관하며, 같은 batch replay는 receipt에서 차단해 요약과 count 모두 증가하지 않는다. batch가 같은 key를 하루에 여러 번 실행했다면 그 batch/day의 평균 요약 하나를 사용한다. `observationCount`는 여전히 보존 bucket 전체의 관측 수이며 중앙값에 사용된 요약 개수와 같지 않다.
+30일/day pruning으로 사라진 bucket에 해당하는 요약도 제거한다. 최대 3개 최신 요약을 선택하는 규칙은 batch 도착 순서와 무관하며, 같은 batch replay는 receipt에서 차단해 요약과 count 모두 증가하지 않는다. batch가 같은 key를 하루에 여러 번 실행했다면 그 batch/day의 평균 요약 하나를 사용한다. profile별 row와 미분류 row의 `observationCount`는 보존 bucket 전체의 관측 수이며 중앙값에 사용된 요약 개수와 같지 않다. pool row에서는 최근 가중치에 사용한 관측 수 합을 제공한다.
 
 기존 `recentBatches`가 없는 v3 entry는 날짜 가중 평균으로 읽는다. 새로운 실제 batch를 학습하면 최근 요약 기반으로 전환한다. 새 ModelState 필드는 구버전 strict reader에서 거부될 수 있으므로 새 binary와 Worker를 함께 검증해야 한다. PredictionTable의 5-column row는 유지하지만 batch/model/table에는 환경별 child 배열이 추가된다.
 
