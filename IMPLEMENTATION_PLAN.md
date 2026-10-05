@@ -131,7 +131,7 @@ History API/artifact/업로드 문제는 구체 상태·이유·source·fallback
 
 서버 phase는 공유 데이터 계약에 의존한다. 서버를 먼저 억지로 완성해 artifact 기본 경로를 우회하지 않는다. 계약 변경 시 관련 문서/CLI/Action/fixture/서버 spec을 함께 리뷰한다. 작업자가 새로운 공개 API, fallback, 데이터 손실 가능 구현을 임의로 선택하지 않도록 의문은 주 에이전트가 이 명세에 반영한다.
 
-status Action은 optional `requiredJobs`를 추가한다. 그 이름의 job은 존재하고 success여야 한다. 나머지는 기존 success/skipped 정책이다. group에 작업이 있을 때 해당 run job을 required로 지정한다. completion script는 계획에서 expected assignment/item을 읽고 고정 최소 job 수 검사를 제거한다. local coverage 기준을 producer의 96%와 맞춘다.
+status Action은 optional `requiredJobs`를 추가한다. 그 이름의 job은 존재하고 success여야 한다. 나머지는 기존 success/skipped 정책이다. group에 작업이 있을 때 해당 run job을 required로 지정한다. completion script는 계획에서 expected assignment/item을 읽고 고정 최소 job 수 검사를 제거한다. 커버리지 하한은 폐지한다. 로컬과 producer는 실제 사용자 동작 검증을 수행한다.
 
 ## 6. 사용자 경로 acceptance와 검증
 

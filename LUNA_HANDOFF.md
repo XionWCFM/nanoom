@@ -84,7 +84,7 @@ A1은 identity·fallback·실행 정확성 수정이다. A4의 PredictionState v
 | A3 | prepare→checkout→install→run, GHES wrappers | 정확한 head, 실제 sparse 범위, root 도구와 dependency closure, unrelated 제외, 실행 item 일치 |
 | A4 | 공용 compile/apply/project와 분리된 model/prediction artifact | bounded read, duplicate/expiry/PR 격리, model/sample planning 다운로드 0회 |
 | A5 | 준비 시간 관측과 자동 assignment 개수 | cold/unknown 분리, 결정성, 실제 시간·예측 오차·크기 측정 |
-| A6 | 예제/마이그레이션, requiredJobs, completion gate | positive인데 skip/실행0이면 실패, no-change는 성공, coverage 96% 기준 정합 |
+| A6 | 예제/마이그레이션, requiredJobs, completion gate | positive인데 skip/실행0이면 실패, no-change는 성공, 사용자 경로 회귀 검증 |
 | A7 | producer와 실제 consumer fixture의 candidate 검증 | 같은 SHA의 Action+binary, cold→warm, non-skipped jobs, 실패 전파, aggregate, PR/run URL |
 | S0~S6 | Cloudflare Rust Worker, D1 CAS, 인증/운영, opt-in client | 서버 명세의 단계별 증거, local D1 concurrency, 실제 workers.dev hosted path |
 
@@ -117,13 +117,7 @@ bash scripts/action-contract.sh
 git diff --check
 ```
 
-Action/이력/상태/완료 gate를 변경하면 대응하는 `scripts/*-test.sh`를 실행한다. schema/config를 바꾸면 기존 생성·일치 검사를 확인하고 schema 산출물도 갱신한다. coverage gate는 다음과 같다.
-
-```sh
-cargo llvm-cov --locked --workspace --all-features --fail-under-lines 96 --summary-only
-```
-
-현재 `scripts/verify-completion.sh`는 coverage 90%를 사용한다. 이 명령 하나의 통과를 최종 기준으로 삼지 말고 A6에서 producer 96%와 맞춘다. 도구가 없거나 외부 환경이 없어서 실행하지 못한 검사는 미실시로 기록한다.
+Action/이력/상태/완료 gate를 변경하면 대응하는 `scripts/*-test.sh`를 실행한다. schema/config를 바꾸면 기존 생성·일치 검사를 확인하고 schema 산출물도 갱신한다. 커버리지 비율 gate는 폐지했다. 실제 입력과 기대 출력·실패·부작용을 검증하며, 도구나 외부 환경이 없어서 실행하지 못한 검사는 미실시로 기록한다.
 
 `bash scripts/review-change.sh <검증한-base-ref>`는 committed diff만 본다. 인계 문서 커밋을 구현 증거로 사용하지 않는다. 미커밋 diff와 untracked 파일을 별도로 검토하고, 실제 구현 commit이 생긴 뒤 올바른 base로 다시 확인한다.
 

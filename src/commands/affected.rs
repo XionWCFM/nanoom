@@ -515,63 +515,8 @@ mod tests {
         scheduling_diagnostics, MAX_PREDICTION_CONTEXT_BYTES, MAX_PREPARATION_CONTEXT_BYTES,
     };
 
-    use crate::affected::{AffectedOutput, GroupOutput, WorkspaceEntry};
-
-    use std::collections::HashMap;
     use std::path::Path;
     use tempfile::tempdir;
-
-    fn mock_output() -> AffectedOutput {
-        let workspaces = vec![WorkspaceEntry {
-            group: "ci".into(),
-            name: "proj-a".into(),
-            path: "packages/proj-a".into(),
-            task: "test".into(),
-            shard: None,
-            total_shards: None,
-            checkout_paths: vec!["packages/proj-a".into()],
-        }];
-        let mut group = HashMap::new();
-        group.insert(
-            "ci".into(),
-            GroupOutput {
-                runner_labels: None,
-                timing_environment: None,
-                label: "ci".into(),
-                workspaces,
-                total_workspaces: 1,
-                affected_workspaces: 1,
-                affected_percent: 100.0,
-                distribution: None,
-            },
-        );
-        AffectedOutput {
-            has_change: true,
-            group,
-            diagnostics: None,
-        }
-    }
-
-    #[test]
-    fn test_execute_json_output() {
-        // Test structure only - execute requires full config and env setup
-        // This is tested in integration tests
-        let result = mock_output();
-        let json = serde_json::to_string(&result).unwrap();
-        assert!(json.contains("has_change"));
-        assert!(json.contains("proj-a"));
-    }
-
-    #[test]
-    fn test_format_text_branch() {
-        let result = mock_output();
-        let output = format!(
-            "◆ nanoom affected\n  Result: changes found\n  Matrix group: ci ({} entries)",
-            result.group["ci"].workspaces.len()
-        );
-        assert!(output.contains("Result: changes found"));
-        assert!(output.contains("Matrix group: ci (1 entries)"));
-    }
 
     #[test]
     fn timing_runner_auto_resolves_the_execution_boundary() {
