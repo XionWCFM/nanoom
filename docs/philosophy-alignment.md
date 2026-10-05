@@ -2,7 +2,8 @@
 
 기준: 루트 AGENTS.md, ADR-0015, docs/ci-philosophy.md.
 시작 소스: 44cece86c3fc90bff05061af9f8941b9d53be9df, 공개 제품 v0.7.7.
-현재 상태: 조사와 수정 진행 중. 공개 릴리즈 소비 검증 전에는 완료가 아니다.
+현재 상태: 조사 범위에서 발견한 위반을 수정했고 아래 수용 기준의 공개 실행 검증을 통과했다.
+최종 공개 제품은 v0.8.0, 소스 SHA는 ee834254f875c9f88d9173c9ea075f6917bd9901이다.
 
 ## 계획과 수용 기준
 
@@ -44,7 +45,39 @@
 | npm 활성화/예측 | 선언한 npm 버전은 활성화하지 않고 preparation은 shrinkwrap을 무시함 | native Corepack npm 실행 및 양쪽 lockfile 우선순위 회귀 |
 | 측정 이름 | 긴 job/assignment 이름 truncation으로 artifact 충돌 가능 | 전체 identity digest와 두 긴 잡 측정 보존 회귀 |
 
-## 검증 기록
+## 최종 수용 검증
+
+| 증거 | 결과 |
+| --- | --- |
+| 로컬 개발 소스 gate | `scripts/verify-completion.sh --local` 성공, line coverage 96.20%; 실제 Git·CLI·Action 계약과 native pnpm/npm/Yarn focused install 포함 |
+| producer CI | [37296323393 attempt 1](https://github.com/XionWCFM/nanoom/actions/runs/37296323393/attempts/1): v0.7.7 운영 경로에서 v0.8.0 소스의 Linux/macOS/Windows 회귀와 status 성공 |
+| 새 공개 릴리즈 | [v0.8.0](https://github.com/XionWCFM/nanoom/releases/tag/v0.8.0), [37297293850](https://github.com/XionWCFM/nanoom/actions/runs/37297293850): 다섯 플랫폼 build, archive/checksum/executable/Sigstore 검증, GitHub 및 npm 발행 성공 |
+| Nanoom 공개 제품 소비 CI | [37296323393 attempt 2](https://github.com/XionWCFM/nanoom/actions/runs/37296323393/attempts/2): 공개 `@latest`/v0.8.0으로 세 OS의 실제 assignment와 aggregate status 성공 |
+| fixture 양성 PR | [37298014388 attempt 1](https://github.com/XionWCFM/nanoom-fixtures/actions/runs/37298014388/attempts/1): Next service의 build/test/typecheck/format:check/lint 5개 작업, assignment 3개와 status 성공 |
+| fixture 양성 main | [37298255789](https://github.com/XionWCFM/nanoom-fixtures/actions/runs/37298255789): 동일 공개 제품의 실제 push Plan/assignment/status 성공 |
+| fixture warm 재계획 | [37298014388 attempt 2](https://github.com/XionWCFM/nanoom-fixtures/actions/runs/37298014388/attempts/2): 최신 공개 제품의 main 이력 37298255789를 약 2.1초에 읽고 preparation group 예측으로 assignment 2개를 선택; 작업 5개와 status 성공 |
+| fixture 변경 없음 | [37298381842](https://github.com/XionWCFM/nanoom-fixtures/actions/runs/37298381842), [37298472872](https://github.com/XionWCFM/nanoom-fixtures/actions/runs/37298472872): 문서만 변경, Plan item/assignment 0개, run 정상 생략, status 성공 |
+
+공개 Action과 binary의 소스는 `ee834254f875c9f88d9173c9ea075f6917bd9901`로
+일치하며 `latest`도 같은 SHA다. 기존 릴리즈 아티팩트는 변경하지 않았다.
+fixture PR Plan의 실행 SHA는 `98e2ad866ae7f7a871707fb36d38b94a0e405e8a`다.
+기본 네 단계에서 task 측정 5개와 preparation 측정 3개를 실제 artifact에서 확인했고,
+후속 공개 계획이 이를 재사용했다. 두 저장소에 소비자 보조 로직이나 workflow를
+추가하지 않았다.
+
+별도 로컬 공개 제품 검증에서는 macOS arm64 릴리즈 archive의 checksum과
+`nanoom 0.8.0`, 정상 npm 설치 후 wrapper 실행을 확인했다. 릴리즈 소스와 binary로
+native pnpm/npm/Yarn focused install을 다시 검증했다. 기존 pnpm+Nx fixture에서도
+자동 도구 판별, shared → core → app 전파, focused closure/root Nx 설치,
+무관한 workspace 제외와 실제 작업 3개가 성공했다. 이는 hosted pnpm+Nx 증거와
+구분한다. 릴리즈 status Action의 실패·취소·필수 생략/누락·중복 결과 회귀도 통과했다.
+
+변경 검토는 공개 경계와 호출자, 회귀·문서·fixture·릴리즈 및 위 실행 증거를 대조했다.
+`review-change.sh`의 heuristics와 의미 검토 모두 통과했으며 남은 차단 사항은 없다.
+GHES API 경계와 History Worker의 D1 cold/warm 경로는 로컬 회귀/E2E 증거다.
+live GHES, hosted D1 및 self-hosted 성능 검증을 수행했다고 주장하지 않는다.
+
+## 검증 기록 (진행 당시의 역사 기록)
 
 위의 통과는 개발 중인 소스의 로컬 증거다. 예제와 native install은 실제
 패키지 매니저·filesystem·Git을 사용했다. GHES 및 준비 시각 오류 경계는 로컬
