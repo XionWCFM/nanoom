@@ -23,12 +23,14 @@ Dir.glob('.github/actions/*/action.yml').each do |path|
   end
 end
 # GHES uses the v3 artifact protocol; dotcom uses v4. Patch versions are not contracts.
-%w[affected run history].each do |name|
-  [name, "#{name}-ghes"].each do |variant|
-    action = YAML.load_file(".github/actions/#{variant}/action.yml")
-    major = variant.end_with?('-ghes') ? 'v3' : 'v4'
-    uploads = action.dig('runs', 'steps').map { |step| step['uses'] }.compact.select { |use| use.start_with?('actions/upload-artifact@') }
-    abort "#{variant}: wrong artifact protocol" unless !uploads.empty? && uploads.all? { |use| use.match?(/@#{major}(?:\.|$)/) }
+{'upload' => %w[affected run history], 'download' => %w[prepare]}.each do |operation, names|
+  names.each do |name|
+    [name, "#{name}-ghes"].each do |variant|
+      action = YAML.load_file(".github/actions/#{variant}/action.yml")
+      major = variant.end_with?('-ghes') ? 'v3' : 'v4'
+      transfers = action.dig('runs', 'steps').map { |step| step['uses'] }.compact.select { |use| use.start_with?("actions/#{operation}-artifact@") }
+      abort "#{variant}: wrong artifact protocol" unless !transfers.empty? && transfers.all? { |use| use.match?(/@#{major}(?:\.|$)/) }
+    end
   end
 end
 RUBY
