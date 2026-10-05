@@ -1,11 +1,11 @@
 # Nanoom 공개 계약
 
-이 문서는 현재 소스가 제공할 공개 계약을 설명한다. 배포된 기준은 v0.7.7이며
-아직 릴리즈되지 않은 변경은 ADR-0017과 정합성 검토에서 구분한다.
+이 문서는 v0.8.0의 공개 계약을 설명한다. v0.7.7과의 변경 사항은
+ADR-0017에, 실제 릴리즈 및 공개 제품 소비 증거는 정합성 검토에 기록한다.
 최상위 원칙은 [AGENTS.md](AGENTS.md)와
 [ADR-0015](docs/adr/0015-released-ci-and-template-first.md)다.
 이전 v0.6.0 기반 후보 구현의 계획·인계·체크리스트는 역사 기록으로 보존한다.
-이번 철학 정합성 수정의 진행 및 미출시 항목은
+이번 철학 정합성 수정의 진행과 검증 결과는
 [정합성 검토](docs/philosophy-alignment.md)에 별도로 기록한다.
 
 ## 사용자 경로
@@ -58,7 +58,7 @@ repository/workflow/run/attempt/head, assignment 내용과 실제 HEAD를 검증
 checkout 경로는 Git 루트 기준이고 configPath는 프로젝트 기준이다. 공식 checkout은
 하위 프로젝트의 루트 메타데이터와 assignment 소스를 가져오며 install/run은
 Plan에서 cwd를 복원한다. 다른 하위 디렉터리와 symlink redirect는 거부한다.
-저장소 루트 실행은 필드를 생략한다. 이 계약은 미릴리즈 v0.8.0 후보에 해당한다.
+저장소 루트 실행은 필드를 생략한다. 이 계약은 v0.8.0부터 제공한다.
 상세 affected workspace path는 프로젝트 기준 상대 경로다. 운영체제의 canonical
 절대 경로 표현은 workspace 출력과 Plan 경로의 계약에 포함하지 않는다.
 그룹당 256 assignment와 compact 출력 UTF-16 1 MiB 제한을 넘으면 실패한다.
@@ -77,9 +77,9 @@ install Action의 패키지 매니저 활성화는 Plan/assignment 검증 후 �
 수행한다. prepare 경로에서도 같은 활성화를 수행하고 설치 프로세스에 즉시 shim을
 제공한다. 활성화 실패는 설치 전에 실패한다.
 Yarn Berry와 pnpm의 focused install은 루트 도구·내부 closure·개발 의존성을 포함한다.
-npm 전체 설치/실행은 지원하지만 focused install은 공개 v0.7.7에서 미지원이다.
-미릴리즈 정합성 수정은 npm ci의 native workspace 선택으로 focused install을 제공한다.
-현재 브랜치의 변경은 ADR-0017과 정합성 검토 기록을 참고한다.
+npm은 v0.8.0부터 ci의 native workspace 선택으로 focused install을 제공한다.
+v0.7.7은 npm 전체 설치/실행만 지원한다.
+버전별 변경과 검증 결과는 ADR-0017과 정합성 검토 기록을 참고한다.
 
 계획한 workspace 실행이 없는 성공은 거부한다. assignment는 첫 실패에
 중단하고 남은 item을 pending으로 남긴다. CLI의 continue-on-error도 최종

@@ -78,9 +78,9 @@ production 환경의 개발 도구, 무관한 workspace 제외를 검증한다. 
 회귀를 연결한다. 예제는 깨끗한 별도 위치에서 frozen install과 문서의 Git 비교·실행을 확인한다.
 
 전체 로컬 gates와 변경 검토, producer CI, 새 릴리즈, 두 저장소의 최신 공개 제품
-실행과 aggregate status가 모두 필요하다. 현재 이 ADR은 미릴리즈 수정의 결정이며
-공개 실행의 완료 증거가 아니다. 진행과 최종 run/version/SHA는
+실행과 aggregate status가 모두 필요하다. 이 ADR은 설계 결정이며 공개 실행의 완료 증거는 별도로 남긴다. 진행과 최종 run/version/SHA는
 [정합성 검토 기록](../philosophy-alignment.md)에 남긴다.
 
-릴리즈 target 설치를 고정 Rust toolchain과 일치시키는 workflow 제안은
-[완성 diff](../validation/release-toolchain.patch)에 있다. 적용 전 사용자 승인이 필요하다.
+릴리즈 target 설치를 고정 Rust toolchain과 일치시키는 workflow 변경은
+[완성 diff](../validation/release-toolchain.patch)와 동일하게 적용했다. 승인 근거와
+trigger·권한·matrix·필수 check의 동일성은 정합성 검토 기록에 남겼다.
