@@ -54,12 +54,6 @@ runs:
         GITHUB_JOB: ${{ github.job }}
         MATRIX_INDEX: ${{ strategy.job-index || 0 }}
       run: bash "$GITHUB_ACTION_PATH/../prepare/select.sh"
-    - name: Activate the repository package manager
-      if: inputs.assignmentFile == '' && inputs.plan != ''
-      shell: bash
-      env:
-        CWD: ${{ steps.select.outputs.cwd || inputs.cwd }}
-      run: bash "$GITHUB_ACTION_PATH/activate.sh"
     - name: Install focused dependencies
       id: install
       shell: bash

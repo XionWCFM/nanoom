@@ -233,6 +233,16 @@ pub async fn calculate_with_override(
 
         for task in &group_config.tasks {
             for project in &filtered_projects {
+                let project_path = project
+                    .path
+                    .strip_prefix(cwd)
+                    .map_err(|_| {
+                        crate::error::Error::ConfigValidation(
+                            "workspace is outside the affected project".into(),
+                        )
+                    })?
+                    .to_string_lossy()
+                    .replace('\\', "/");
                 let rule = group_config.rules.iter().find(|r| r.name == project.name);
 
                 let shard_rule = rule.and_then(|r| r.shard.iter().find(|s| s.task == *task));
@@ -242,7 +252,7 @@ pub async fn calculate_with_override(
                         workspaces.push(WorkspaceEntry {
                             group: group_name.clone(),
                             name: project.name.clone(),
-                            path: project.path.to_string_lossy().replace('\\', "/"),
+                            path: project_path.clone(),
                             task: task.clone(),
                             shard: Some(shard_idx),
                             total_shards: Some(shard_rule.shard),
@@ -253,7 +263,7 @@ pub async fn calculate_with_override(
                     workspaces.push(WorkspaceEntry {
                         group: group_name.clone(),
                         name: project.name.clone(),
-                        path: project.path.to_string_lossy().replace('\\', "/"),
+                        path: project_path,
                         task: task.clone(),
                         shard: None,
                         total_shards: None,

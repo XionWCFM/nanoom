@@ -58,12 +58,19 @@ AGENTS.md와 ADR-0015의 두 원칙을 유지한다. 사용자 보조 단계나 
 실행은 프로젝트 기준으로 연결한다.
 Git 파일 목록도 canonical 작업 디렉터리를 사용해 Windows의 경로 표현 차이로
 변경을 프로젝트 밖으로 오인하지 않도록 한다.
+상세 affected workspace path는 프로젝트 기준 상대 경로로 제공한다. canonical
+Windows 절대 경로를 forward slash로 직렬화해 Plan 경로가 깨지는 문제를 방지한다.
 공식 sparse checkout과 prepare 양쪽에서
 필요한 프로젝트 메타데이터를 포함한다. install/run에 cwd 재계산을 요구하지 않는다.
 공백을 포함한 하위 프로젝트의 실제 Git/CLI/Action 경로와 안전하지 않은 디렉터리,
 다른 cwd 및 symlink redirect 거부를 회귀 검증한다.
 cleanup은 하위 프로젝트 폴더만 남기지 않고 소속 격리 checkout 전체를 제거한다.
 실제 Git 루트가 기본 저장소이거나 .nanoom 밖이면 삭제를 거부한다.
+
+install의 활성화가 Plan 직접 입력 경로에만 있던 누락도 수정한다. Plan/assignment
+검증 후 공유 install 경계에서 활성화하여 prepare 경로도 같은 도구를 사용한다.
+shim은 같은 설치 프로세스와 후속 step에 제공한다. 빈/잘못된 assignment는
+활성화 전 거부하고 활성화 실패 시 설치를 시작하지 않는다.
 
 실제 sparse checkout, root 도구·실행 workspace의 양쪽 dependency closure,
 production 환경의 개발 도구, 무관한 workspace 제외를 검증한다. native pnpm·npm·Yarn Berry 검증은 `bash scripts/focused-install-test.sh`로 재현한다. Action 계약은 기존

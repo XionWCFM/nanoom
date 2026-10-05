@@ -59,6 +59,8 @@ checkout 경로는 Git 루트 기준이고 configPath는 프로젝트 기준이�
 하위 프로젝트의 루트 메타데이터와 assignment 소스를 가져오며 install/run은
 Plan에서 cwd를 복원한다. 다른 하위 디렉터리와 symlink redirect는 거부한다.
 저장소 루트 실행은 필드를 생략한다. 이 계약은 미릴리즈 v0.8.0 후보에 해당한다.
+상세 affected workspace path는 프로젝트 기준 상대 경로다. 운영체제의 canonical
+절대 경로 표현은 workspace 출력과 Plan 경로의 계약에 포함하지 않는다.
 그룹당 256 assignment와 compact 출력 UTF-16 1 MiB 제한을 넘으면 실패한다.
 변경 없음은 assignment 0개인 정상 Plan이다.
 
@@ -71,6 +73,9 @@ Plan에서 cwd를 복원한다. 다른 하위 디렉터리와 symlink redirect�
 
 실행 도구와 패키지 매니저는 저장소 선언에서 자동 판별한다. ambiguity를
 자동 판별할 수 없거나 의도적 변경이 필요할 때 override한다.
+install Action의 패키지 매니저 활성화는 Plan/assignment 검증 후 같은 실행 경계에서
+수행한다. prepare 경로에서도 같은 활성화를 수행하고 설치 프로세스에 즉시 shim을
+제공한다. 활성화 실패는 설치 전에 실패한다.
 Yarn Berry와 pnpm의 focused install은 루트 도구·내부 closure·개발 의존성을 포함한다.
 npm 전체 설치/실행은 지원하지만 focused install은 공개 v0.7.7에서 미지원이다.
 미릴리즈 정합성 수정은 npm ci의 native workspace 선택으로 focused install을 제공한다.

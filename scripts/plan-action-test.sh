@@ -46,8 +46,13 @@ if [[ ${1:-} == run ]]; then exec npm run "$2"; fi
 exit 0
 SH
 chmod +x "$tmp/bin/pnpm"
+cat > "$tmp/bin/corepack" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" > "$RUNNER_TEMP/corepack-call"
+SH
+chmod +x "$tmp/bin/corepack"
 ln -s "$root/target/debug/nanoom" "$tmp/bin/nanoom"
-export PATH="$tmp/bin:$PATH" FAKE_PNPM_CALLS="$tmp/pnpm-calls"
+export PATH="$tmp/bin:$PATH" FAKE_PNPM_CALLS="$tmp/pnpm-calls" GITHUB_PATH="$tmp/package-manager-path"
 export RUNNER_TEMP="$tmp/runner-temp" GITHUB_WORKSPACE="$consumer" GITHUB_STEP_SUMMARY="$tmp/summary"
 export GITHUB_OUTPUT="$tmp/affected-output" GITHUB_ACTION_PATH="$root/.github/actions/affected"
 export ACTION_NAME=affected ACTION_CWD="$repo" CWD="$repo" CONFIG=nanoom.config.json
@@ -147,12 +152,8 @@ test -f "$direct/tools/always/keep.txt"
 test ! -e "$direct/packages/pkg-b"
 test ! -e "$direct/tools/unrelated"
 export GITHUB_WORKSPACE="$direct" SELECT_CWD="$direct" GITHUB_JOB=run
-cat > "$tmp/bin/corepack" <<'SH'
-#!/usr/bin/env bash
-printf '%s\n' "$*" > "$RUNNER_TEMP/corepack-call"
-SH
-chmod +x "$tmp/bin/corepack"
 export CWD="$direct" GITHUB_PATH="$tmp/package-manager-path"
+: > "$GITHUB_PATH"
 bash "$root/.github/actions/install/activate.sh"
 grep -q 'enable --install-directory .* yarn pnpm' "$RUNNER_TEMP/corepack-call"
 test "$(cat "$GITHUB_PATH")" = "$RUNNER_TEMP/nanoom-package-manager"

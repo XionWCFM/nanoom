@@ -791,6 +791,29 @@ fn nested_working_directory_is_preserved_with_repository_relative_checkout() {
     context["base"] = json!(base);
     context["head"] = json!(head);
     write_json(&root.join("context.json"), &context);
+    let detail = run_cli(
+        root,
+        &[
+            "-C",
+            "nested app",
+            "affected",
+            "--base",
+            &base,
+            "--head",
+            &head,
+            "--json",
+        ],
+    );
+    assert!(
+        detail.status.success(),
+        "{}",
+        String::from_utf8_lossy(&detail.stderr)
+    );
+    let detail: Value = serde_json::from_slice(&detail.stdout).unwrap();
+    assert_eq!(
+        detail["affected"]["group"]["ci"]["workspaces"][0]["path"],
+        "packages/pkg-a"
+    );
     let output = run_cli(
         root,
         &[

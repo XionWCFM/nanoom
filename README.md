@@ -73,6 +73,11 @@ lockfile이 공존하면 명시적인 선언 또는 override가 필요합니다.
 
 `install --filter`는 Yarn Berry, pnpm, npm의 native focused install을 사용합니다. 루트 도구와 선택 workspace 양쪽의 내부 dependency closure와 개발 의존성을 설치하며, npm은 lockfile을 요구하는 `ci`를 사용합니다. Yarn Classic focused install은 미지원입니다.
 
+install Action은 Plan 또는 prepare의 assignment 파일을 받은 두 경로 모두 검증된
+프로젝트에서 패키지 매니저를 활성화합니다. 활성화된 shim은 같은 설치 프로세스와
+후속 step에 제공하며, 활성화 실패 시 의존성 설치를 시작하지 않습니다.
+이 연결은 v0.8.0 후보 변경입니다.
+
 root package.json, Nanoom 설정, workspace 선언, 지원 lockfile, .npmrc·.yarnrc.yml,
 Nx·Turbo 설정과 root tsconfig 변경은 기본 전역 입력으로 모든 workspace를
 선택합니다. globalDependencies는 저장소별 추가 전역 입력입니다. 루트 내부
@@ -215,6 +220,8 @@ item/checkout 경로와 matrix sparse 패턴도 Git 루트 기준입니다. inst
 같은 Plan에서 실행 디렉터리를 복원하므로 소비자가 cwd를 다시 계산할 필요가 없습니다.
 기본값은 저장소 루트이며, 다른 하위 경로나 symlink로 바뀐 실행 디렉터리는 거부합니다.
 이 지원은 v0.8.0 후보 변경으로 공개 v0.7.7에는 포함되지 않습니다.
+상세 affected 출력의 workspace path도 프로젝트 기준 상대 경로로 제공하여
+Windows의 canonical 절대 경로 표현을 matrix에 직렬화하지 않습니다.
 
 Plan v1 producer는 상세 계획을 파일에 저장하고 작은 reference/matrix JSON만 stdout에 출력합니다. context 파일에는 repository, workflow, run ID, producer attempt, planning job, 비교한 전체 base/head SHA, 실행 tool을 넣습니다.
 

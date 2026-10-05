@@ -38,6 +38,8 @@ else
   echo 'install requires assignmentFile; only scheduler=http continuous agents may use matrix' >&2
   false
 fi
+ACTION_PHASE=package-manager-activation ACTION_COMMAND=activate-repository-package-manager
+source "$GITHUB_ACTION_PATH/activate.sh"
 printf -v ACTION_COMMAND '%q ' nanoom "${args[@]}"; ACTION_COMMAND=${ACTION_COMMAND% }
 printf '◆ nanoom install\n  Inputs\n    normalized assignment: %s\n    package manager: %s\n    cwd: %s\n  Command\n    %s\n' "$matrix_json" "$PM" "$CWD" "$ACTION_COMMAND"
 ACTION_PHASE=focused-install

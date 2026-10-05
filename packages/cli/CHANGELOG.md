@@ -2,6 +2,7 @@
 
 ## 0.8.0
 
+- Emit project-relative affected workspace paths and activate the package manager after Plan validation in both direct and prepared install paths.
 - Clean up the complete isolated checkout when running a nested project, while rejecting the primary repository as a deletion target.
 - Preserve nested project working directories through Plan selection, repository-relative sparse checkout, focused install, and run; detect Git roots and normalize relative affected paths.
 - Add npm focused install and local run revision inputs; include root tooling, internal dependency closures, and development dependencies in focused installs.

@@ -44,6 +44,9 @@ if [[ " $* " == *" plan select "* ]]; then
 fi
 if [[ "${3:-}" == run ]]; then printf '%s\n' "$*" >> "$FAKE_RUN_CALLS"; fi
 if [[ "${3:-}" == install ]]; then
+  [[ ${PATH%%:*} == "$RUNNER_TEMP/nanoom-package-manager" ]] || {
+    echo 'install started before the activated shims were available' >&2; exit 1
+  }
   printf '%s\n' "$*" >> "$FAKE_INSTALL_CALLS"
   if [[ "${FAKE_INSTALL_FAIL:-}" == 1 ]]; then
     printf '%s\n' '{"status":"failure","error":"expected package-manager failure"}'
@@ -81,6 +84,12 @@ cat > "$tmp/bin/pnpm" <<'SH'
 if [[ "$PWD" == "$FAKE_PACKAGE_MANAGER_CWD" ]]; then printf '%s\n' '10.0.0'; else printf '%s\n' '99.0.0'; fi
 SH
 chmod +x "$tmp/bin/pnpm"
+cat > "$tmp/bin/corepack" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$FAKE_ACTIVATION_CALLS"
+[[ ${FAKE_ACTIVATION_FAIL:-} != 1 ]]
+SH
+chmod +x "$tmp/bin/corepack"
 export PATH="$tmp/bin:$PATH" GITHUB_ACTION_PATH="$root/.github/actions/run" GITHUB_STEP_SUMMARY="$tmp/summary" RUNNER_TEMP="$tmp/runner"
 mkdir -p "$RUNNER_TEMP"
 export GITHUB_WORKSPACE="$workspace" GITHUB_SHA="$head" REPOSITORY=owner/repo
@@ -88,6 +97,7 @@ export GITHUB_REPOSITORY_ID=12345 GITHUB_SERVER_URL=https://github.com GITHUB_RE
 export WORKFLOW_REF=owner/repo/.github/workflows/ci.yml@refs/heads/main RUN_ID=1 RUN_ATTEMPT=1 GITHUB_RUN_ID=1 GITHUB_RUN_ATTEMPT=1 GITHUB_JOB=run MATRIX_INDEX=0
 export PLAN="$reference" ASSIGNMENT_FILE="$assignment_file" FAKE_SELECTED_ASSIGNMENT="$tmp/selected-source.json"
 export FAKE_PACKAGE_MANAGER_CWD="$(cd "$cwd" && pwd -P)"
+export FAKE_ACTIVATION_CALLS="$tmp/activation-calls" GITHUB_PATH="$tmp/package-manager-path"
 export GITHUB_OUTPUT="$tmp/output" FAKE_RUN_CALLS="$tmp/run-calls" FAKE_INSTALL_CALLS="$tmp/install-calls" FAKE_FILTER_FILE="$tmp/filter-file.json"
 export MATRIX='' GROUP= PM=pnpm TOOL=auto CWD="$cwd" SCHEDULER=off TIMING_ENVIRONMENT=linux-x64 COORDINATOR_URL='' COORDINATOR_TOKEN=''
 
@@ -177,15 +187,21 @@ write_assignment '[]'
 : > "$GITHUB_OUTPUT"; : > "$FAKE_INSTALL_CALLS"
 if bash "$GITHUB_ACTION_PATH/run.sh" >/dev/null 2>&1; then echo 'empty static install unexpectedly succeeded' >&2; exit 1; fi
 test ! -s "$FAKE_INSTALL_CALLS"
+test ! -s "$FAKE_ACTIVATION_CALLS"
 
 write_assignment '[{"group":"ci","name":"pkg-a","path":"packages/pkg-a","task":"test"},{"group":"ci","name":"pkg-b","path":"packages/pkg-b","task":"test"}]'
 : > "$GITHUB_OUTPUT"; : > "$FAKE_INSTALL_CALLS"
+if FAKE_ACTIVATION_FAIL=1 bash "$GITHUB_ACTION_PATH/run.sh" >"$tmp/activation-failure.log" 2>&1; then echo 'failed activation unexpectedly installed dependencies' >&2; exit 1; fi
+test ! -s "$FAKE_INSTALL_CALLS"
+jq -e '.status == "failure" and .phase == "package-manager-activation"' <(sed -n 's/^result=//p' "$GITHUB_OUTPUT") >/dev/null
+: > "$GITHUB_OUTPUT"; : > "$FAKE_ACTIVATION_CALLS"
 if FAKE_INSTALL_FAIL=1 bash "$GITHUB_ACTION_PATH/run.sh" >"$tmp/install-failure.log" 2>&1; then echo 'failed focused install unexpectedly succeeded' >&2; exit 1; fi
 grep -q 'expected package-manager failure' "$tmp/install-failure.log"
 install_failure_result=$(sed -n 's/^result=//p' "$GITHUB_OUTPUT")
 jq -e '.status == "failure" and .action == "install" and .phase == "focused-install"' <<<"$install_failure_result" >/dev/null
 : > "$GITHUB_OUTPUT"; : > "$FAKE_INSTALL_CALLS"
 bash "$GITHUB_ACTION_PATH/run.sh" >/dev/null
+test -s "$FAKE_ACTIVATION_CALLS"
 grep -q -- '--filter-file' "$FAKE_INSTALL_CALLS"
 jq -e '. == ["pkg-a","pkg-b"]' "$FAKE_FILTER_FILE" >/dev/null
 install_result=$(sed -n 's/^result=//p' "$GITHUB_OUTPUT")

@@ -31,7 +31,7 @@
 | 기본 준비 시간 | 대표 네 단계에서 preparedAtMs가 전달되지 않아 preparation observations가 비어 있음 | 현재 attempt jobs API 자동 시각; 정상/중복/오류/명시적 시각 회귀 통과 |
 | 공개 예제 | basic의 제거된 --format, 불완전 workflow, advanced의 @main·필수 override·Node 설정 누락 | 네 단계 템플릿, manifest/lockfile 수정; clean copy install/affected/run 통과 |
 | 계약 문서 | SPEC.md가 v0.6.0/미출시/last-successful-push를 현재 계약처럼 설명함 | SPEC 갱신, 과거 계획에 역사적 기록 표시 |
-| 릴리즈 toolchain | moving stable에 target을 설치하면서 빌드는 저장소의 고정 toolchain을 사용함 | 완성 diff 준비; 사용자 승인 요청 중, workflow 미적용 |
+| 릴리즈 toolchain | moving stable에 target을 설치하면서 빌드는 저장소의 고정 toolchain을 사용함 | 앞서 제시한 동일 diff를 적용; 저장소의 고정 toolchain에 target 설치 |
 | 기본 전역 입력 | root lockfile/실행 설정 변경에도 모든 task가 생략됨 | 기본 global 입력과 root tooling 전파 수정; 실제 Git 회귀 통과 |
 | focused install | pnpm의 root filter만으로 내부 도구의 dependency가 설치되지 않음; production 환경의 dev tooling 누락; npm 기본 Plan 실행 미지원 | 양쪽 closure와 dev 설치 수정; native pnpm 12.8.2/npm 11.16.0/Yarn 4.11.0 clean install 통과 |
 | 이력 재계획 | 중단된 warm CLI가 cold Plan 파일을 덮어써 반환 digest와 실제 파일이 어긋남 | 후보 파일 격리; 중단 회귀 통과 |
@@ -114,3 +114,20 @@ Windows affected 회귀가 실패했다. canonical cwd와 Git 파일 목록의 W
 canonical 경로로 맞추고 Git 파일 목록·linked worktree·특수 파일명 회귀의 기준도
 같게 유지했다. 수정 후 전체 local gate가 통과했고 line coverage는 96.26%다.
 Windows hosted 재검증은 별도로 필요하다.
+
+producer [37122561019](https://github.com/XionWCFM/nanoom/actions/runs/37122561019)는
+Linux·macOS가 성공했고 Windows는 Plan 경로 검증에서 실패했다. canonical 절대
+경로를 forward slash로 직렬화하면 Windows verbatim prefix가 깨졌다. 상세 affected
+workspace path를 프로젝트 기준 상대 경로로 제공해 운영체제별 절대 경로 표현이
+matrix/Plan 경계에 들어가지 않도록 수정했다. 하위 프로젝트 상세 출력과 Plan의
+실제 CLI 회귀가 통과했다.
+
+prepare assignment 파일 입력에서는 install의 패키지 매니저 활성화가 생략되는
+누락도 회귀로 재현했다. 활성화를 검증 후 공유 install 경계로 옮기고 같은 프로세스에
+shim을 제공한다. 활성화 실패 시 설치를 시작하지 않는다. 전체 local gate가 통과했고
+line coverage는 96.20%다. History Worker E2E도 수동 Yarn install 대신 실제 Nanoom
+install Action을 사용하여 cold/warm assignment 실행·D1 병합·중복 방지를 검증했다.
+
+사용자의 후속 지시 "보고하지말고 그냥 끝까지 목표 달성까지 달려줘"에 따라,
+앞서 완성 diff와 영향을 제시한 release-toolchain.patch와 동일한 수정만 release
+workflow에 적용했다. trigger·권한·matrix·필수 check는 바꾸지 않았다.
