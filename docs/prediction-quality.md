@@ -1,6 +1,6 @@
 # 다음 실행시간 예측 품질
 
-상태: v0.9.0 공개 및 첫 released fixture 검증 완료, 후속 실행의 정확도 검증 진행 중. 준비 시간 해시 수정, 최근 batch 요약 기반 예측기, 실제 runner 환경 자동 수집과 profile별 compiler·학습·projection·pool 배분을 연결했다. 로컬 D1의 cold → merge → duplicate replay → warm affected/run 및 실제 fingerprint 보존을 검증했고, 공개 artifact 경로에서 수집·학습·게시와 다음 Plan 반영을 확인했다. 전체 수용 기준은 아직 완료되지 않았다.
+상태: v0.9.0 공개 artifact 소비 경로의 수용 기준 검증 완료. 준비 시간 해시 수정, 최근 batch 요약 기반 예측기, 실제 runner 환경 자동 수집과 profile별 compiler·학습·projection·pool 배분을 연결했다. 로컬 D1의 cold → merge → duplicate replay → warm affected/run 및 실제 fingerprint 보존을 검증했고, 공개 artifact 경로의 연속 실행에서 수집·학습·게시·다음 Plan 반영과 예측 오차를 확인했다. 공개 Cloudflare의 인증된 merge 성능은 아래의 미검증 항목으로 구분한다.
 
 ## 목표와 수용 기준
 
@@ -96,6 +96,12 @@ GitHub의 라벨은 runner를 선택하는 조건이며, 일치하는 여러 run
 
 누적 profile에는 Xeon Platinum 8370C가 추가돼 6개가 됐다. 두 번째 history도 관측 664개를 받아들였고 거부된 measurement·degraded scope가 없었다. 모든 profile entry에 최근 batch 요약이 있었고 226개 entry는 요약이 두 개 이상이었다. 여러 profile에 존재하는 key는 450개였으며 task뿐 아니라 group fallback 및 preparation key도 포함한다. 전체 model JSON은 386,445 bytes, prediction JSON은 266,808 bytes였다.
 
-[다음 fixture 37349596782](https://github.com/XionWCFM/nanoom-fixtures/actions/runs/37349596782)의 Plan은 이 누적 prediction을 1.27초에 읽었다. 640개 작업·24 assignment 중 444개 작업이 여러 profile의 비용 범위를 가졌고 24개 assignment 모두 `environmentUncertainty`를 보존했다. 해당 작업들의 최소 비용 합계는 1,263.564초, 최대는 1,788.290초였다. 전체 작업의 예측 합계는 2,188.569초다. 이 범위는 일부 작업의 관측 비용 범위이며 전체 assignment/CI의 신뢰구간이 아니다. 이 실행의 작업·aggregate status는 아직 진행 중이다.
+[다음 fixture 37349596782](https://github.com/XionWCFM/nanoom-fixtures/actions/runs/37349596782)의 Plan은 이 누적 prediction을 1.27초에 읽었다. 640개 작업·24 assignment 중 444개 작업이 여러 profile의 비용 범위를 가졌고 24개 assignment 모두 `environmentUncertainty`를 보존했다. 해당 작업들의 최소 비용 합계는 1,263.564초, 최대는 1,788.290초였다. 전체 작업의 예측 합계는 2,188.569초다. 이 범위는 일부 작업의 관측 비용 범위이며 전체 assignment/CI의 신뢰구간이 아니다.
+
+이 실행도 640개 작업 및 aggregate status가 모두 성공했고 Plan/measurement identity의 누락·중복이 없었다. 실측 작업 합계는 2,168.966초, assignment WAPE는 18.48%, task makespan 예측은 91.505초 / 실측은 145.096초였다. 3회의 assignment WAPE가 25.69% → 23.84% → 18.48%로 낮아졌지만, 실제 task makespan은 132.563초 → 149.095초 → 145.096초였다. 일반적인 속도 개선이나 모든 다음 실행의 정확도 보장을 주장하지 않는다. 전체 CI 완료는 초기 큐 대기 포함 609초, 잡 실행 구간 606초, status 잡 21초, 가장 오래 걸린 checkout 455초였다.
+
+세 번째 게시 모델과 prediction 모두 6개 profile을 보존했다. profile entries 1,467개에는 최근 batch가 1~3개씩 존재했다. pool은 718 rows, 전체 model JSON은 469,136 bytes, prediction JSON은 300,466 bytes였다. 각 실행의 실제 CPU profile과 직접 계산한 fingerprint가 일치했고, workspace/task와 준비 시간 관측이 환경별 child state/table에 보존됐다. 실제 runner를 사전에 확정할 수 없는 Plan에서는 pool point와 관측한 비용 범위를 제공하며 라벨을 하드웨어와 동일시하지 않는다.
+
+status 잡은 CI 결과 판정 이후에도 수집·학습·게시를 기다렸다. 3회의 status는 28초/14초/21초였다. 이를 별도 workflow로 분리하는 것은 독립된 제품·템플릿 변경이며 여기서는 운영 워크플로를 수정하지 않았다. 신규 trigger·권한·필수 check 영향과 완성된 diff의 사용자 승인 후 적용해야 한다.
 
 Cloudflare Worker도 같은 제품 소스로 배포했고 version ID는 `debbe97b-a644-4d5b-b861-4e20e9bb3630`이다. `/health`와 D1 `/ready` 응답이 정상이다. 로컬 D1 통합 검증과 구분하며, 공개 서버의 인증된 merge·snapshot 및 CPU 한도 내 성능은 이 검증으로 증명되지 않았다.
