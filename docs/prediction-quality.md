@@ -1,6 +1,6 @@
 # 다음 실행시간 예측 품질
 
-상태: 개선 작업 진행 중. 준비 시간 해시 수정, 최근 batch 요약 기반 예측기, 실제 runner 환경 자동 수집은 로컬 구현됐다. 환경 profile별 compiler·학습·projection·pool 배분을 연결했다. 로컬 D1의 cold → merge → duplicate replay → warm affected/run 및 실제 fingerprint 보존도 검증했다. 새 릴리즈·released fixture 검증은 아직 완료되지 않았다.
+상태: v0.9.0 공개 및 첫 released fixture 검증 완료, 후속 실행의 정확도 검증 진행 중. 준비 시간 해시 수정, 최근 batch 요약 기반 예측기, 실제 runner 환경 자동 수집과 profile별 compiler·학습·projection·pool 배분을 연결했다. 로컬 D1의 cold → merge → duplicate replay → warm affected/run 및 실제 fingerprint 보존을 검증했고, 공개 artifact 경로에서 수집·학습·게시와 다음 Plan 반영을 확인했다. 전체 수용 기준은 아직 완료되지 않았다.
 
 ## 목표와 수용 기준
 
@@ -81,3 +81,21 @@ GitHub의 라벨은 runner를 선택하는 조건이며, 일치하는 여러 run
 [PR #115 CI 37342038038](https://github.com/XionWCFM/nanoom/actions/runs/37342038038)은 구현 커밋 `afb0251aef33967867fab0847fa47ecc0e7d4a1e`에서 계획·Linux check·macOS test·Windows test·CI status가 모두 성공했다. 운영 단계는 공개 v0.8.0을 사용했으며 내부 개발 검증이 v0.9.0 후보 소스를 검사했다. 이 결과는 v0.9.0 released consumer 증거가 아니다.
 
 후속 보완은 5초 → 1초 비용 감소의 prequential 검증과 공개 예제의 런타임 검증이다. 감소 trace WAPE는 기존 평균 63.79% → 후보 40.00%였다. 기존 ModelState 예제는 pruningDay가 bucket보다 과거여서 실제 core가 거부했다. 날짜를 맞추고 단일 state digest와 model bundle digest를 분리해 publish marker가 bundle을 가리키게 수정했다. Rust 회귀는 예제의 validate → projection → snapshot/marker table 및 digest 일치를 검사한다. 후속 commit의 producer CI는 별도로 확인한다.
+
+## v0.9.0 공개 경로 검증
+
+[릴리즈 37345422739](https://github.com/XionWCFM/nanoom/actions/runs/37345422739)은 5개 플랫폼 빌드·자산 검증·GitHub/npm 발행을 모두 통과했다. `v0.9.0`과 `latest`의 소스는 `f900c08350d647ff53562e367ebdfce22053ad09`다. 공개 macOS arm64 archive의 SHA-256 `dbe3d4bc01c3f6b981f7535c12f02aa05f3f28fb54ab0a2c9f401a5da429282d`가 게시된 checksum과 일치했고 binary가 `nanoom 0.9.0`을 출력했다. npm `@nanoom/cli`의 latest도 `0.9.0`이다.
+
+보완 커밋 `e7cb9168d2f84b8d638549c4db226443b714a6fd`의 [producer CI 37343562730](https://github.com/XionWCFM/nanoom/actions/runs/37343562730)이 통과했고, merge SHA의 [CI 37345335081 attempt 2](https://github.com/XionWCFM/nanoom/actions/runs/37345335081/attempts/2)는 공개 v0.9.0 Action/binary로 계획·Linux·macOS·Windows·CI status를 모두 통과했다. Plan 로그에서 Action SHA와 checksum 검증된 binary 버전을 확인했다.
+
+첫 [released fixture 37346867363](https://github.com/XionWCFM/nanoom-fixtures/actions/runs/37346867363)은 24 assignment·640개 작업 및 aggregate status가 모두 성공했다. Plan과 measurement의 작업 identity를 대조해 누락·중복이 없었다. 준비 시간 24개를 포함한 관측 664개가 적용됐고 거부된 measurement 및 degraded scope는 없었다. 같은 `ubuntu-latest`에서 AMD EPYC 7763/9V74/9V45, Intel Xeon Platinum 8573C/6973P-C의 5개 computing profile을 수집했다. 모든 profile의 정렬 JSON SHA-256을 독립적으로 계산해 fingerprint와 대조했다. 게시된 model과 prediction의 PR #33 scope에 같은 5개 profile 및 최근 batch 요약이 보존됐다. 전체 bundle의 model JSON은 270,430 bytes, prediction JSON은 214,157 bytes였다.
+
+이 실행은 과거 push run `37298255789`의 이력으로 계획했다. assignment WAPE 25.69%, 작업 합계 예측 1,762.5초 / 실측 2,297.247초, task makespan 예측 73.483초 / 실측 132.563초였다. 아직 새 profile 학습 전의 예측이므로 새 모델의 정확도 개선 증거가 아니다. 초기 큐 대기를 포함한 CI 완료는 619초, 첫 잡 시작부터 마지막 잡 완료는 616초, status 잡은 28초, 가장 오래 걸린 checkout은 330초였다. task 합계나 makespan을 전체 CI wall time으로 대체하지 않는다.
+
+[후속 fixture 37348388715](https://github.com/XionWCFM/nanoom-fixtures/actions/runs/37348388715)의 Plan은 첫 실행의 prediction을 1.375초에 읽었다. 640개 작업 모두 exact history였고 예측 작업 합계 2,297.247초가 이전 실측 합계와 일치했다. 24 assignment·640개 작업·aggregate status가 성공했다. 실측 작업 합계 2,079.574초, assignment WAPE 23.84%, task makespan 예측 96.044초 / 실측 149.095초였다. 첫 실행보다 WAPE는 낮지만 makespan은 커졌으며, 다른 CPU 분포와 네트워크 조건의 두 실행만으로 일반적인 개선을 주장하지 않는다. 초기 큐 대기를 포함한 CI 완료는 441초, 잡 실행 구간은 438초, status 잡은 14초, 가장 오래 걸린 checkout은 174초였다.
+
+누적 profile에는 Xeon Platinum 8370C가 추가돼 6개가 됐다. 두 번째 history도 관측 664개를 받아들였고 거부된 measurement·degraded scope가 없었다. 모든 profile entry에 최근 batch 요약이 있었고 226개 entry는 요약이 두 개 이상이었다. 여러 profile에 존재하는 key는 450개였으며 task뿐 아니라 group fallback 및 preparation key도 포함한다. 전체 model JSON은 386,445 bytes, prediction JSON은 266,808 bytes였다.
+
+[다음 fixture 37349596782](https://github.com/XionWCFM/nanoom-fixtures/actions/runs/37349596782)의 Plan은 이 누적 prediction을 1.27초에 읽었다. 640개 작업·24 assignment 중 444개 작업이 여러 profile의 비용 범위를 가졌고 24개 assignment 모두 `environmentUncertainty`를 보존했다. 해당 작업들의 최소 비용 합계는 1,263.564초, 최대는 1,788.290초였다. 전체 작업의 예측 합계는 2,188.569초다. 이 범위는 일부 작업의 관측 비용 범위이며 전체 assignment/CI의 신뢰구간이 아니다. 이 실행의 작업·aggregate status는 아직 진행 중이다.
+
+Cloudflare Worker도 같은 제품 소스로 배포했고 version ID는 `debbe97b-a644-4d5b-b861-4e20e9bb3630`이다. `/health`와 D1 `/ready` 응답이 정상이다. 로컬 D1 통합 검증과 구분하며, 공개 서버의 인증된 merge·snapshot 및 CPU 한도 내 성능은 이 검증으로 증명되지 않았다.
