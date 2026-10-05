@@ -79,6 +79,17 @@ pub struct PredictionSources {
     pub group: usize,
     pub cold: usize,
     pub sample_count: usize,
+    /// Range for the uncertain tasks only; not an interval for total assignment wall time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub environment_uncertainty: Option<EnvironmentUncertainty>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnvironmentUncertainty {
+    pub task_count: usize,
+    pub minimum_task_sum_ms: u64,
+    pub maximum_task_sum_ms: u64,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -93,6 +104,7 @@ struct Prediction {
     duration_ms: u64,
     source: PredictionSource,
     sample_count: usize,
+    environment_range: Option<(u64, u64)>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -146,6 +158,7 @@ impl TimingHistory {
                 duration_ms: median(&mut exact),
                 source: PredictionSource::Exact,
                 sample_count: exact.len(),
+                environment_range: None,
             }
         }
     }
@@ -170,12 +183,14 @@ impl TimingHistory {
                 duration_ms: 1,
                 source: PredictionSource::Cold,
                 sample_count: 0,
+                environment_range: None,
             }
         } else {
             Prediction {
                 duration_ms: median(&mut values),
                 source: PredictionSource::Group,
                 sample_count: values.len(),
+                environment_range: None,
             }
         }
     }
@@ -304,6 +319,10 @@ pub fn assign_with_prediction_index(
                         duration_ms,
                         source: PredictionSource::Exact,
                         sample_count: sample_count as usize,
+                        environment_range: predictions
+                            .environment_range(context, group, runner, environment, &key_id, now_ms)
+                            .filter(|range| range.0 > 1)
+                            .map(|(_, min, max)| (min, max)),
                     };
                 }
             }
@@ -324,6 +343,10 @@ pub fn assign_with_prediction_index(
                         duration_ms,
                         source: PredictionSource::Group,
                         sample_count: sample_count as usize,
+                        environment_range: predictions
+                            .environment_range(context, group, runner, environment, &key_id, now_ms)
+                            .filter(|range| range.0 > 1)
+                            .map(|(_, min, max)| (min, max)),
                     };
                 }
             }
@@ -613,6 +636,7 @@ fn cold_prediction() -> Prediction {
         duration_ms: 1,
         source: PredictionSource::Cold,
         sample_count: 0,
+        environment_range: None,
     }
 }
 
@@ -718,6 +742,15 @@ fn assign_with_predictor(
             PredictionSource::Cold => buckets[index].prediction_sources.cold += 1,
         }
         buckets[index].prediction_sources.sample_count += prediction.sample_count;
+        if let Some((min, max)) = prediction.environment_range {
+            let uncertainty = buckets[index]
+                .prediction_sources
+                .environment_uncertainty
+                .get_or_insert_with(EnvironmentUncertainty::default);
+            uncertainty.task_count += 1;
+            uncertainty.minimum_task_sum_ms += min;
+            uncertainty.maximum_task_sum_ms += max;
+        }
         buckets[index].items.push(item);
     }
     buckets
@@ -858,6 +891,7 @@ mod tests {
                     scope,
                     model_updated_at_ms: 5,
                     rows,
+                    environment_predictions: Vec::new(),
                 },
                 model_artifact: ArtifactReference {
                     name: "model-v3".into(),

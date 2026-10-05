@@ -6,6 +6,7 @@ source "$GITHUB_ACTION_PATH/../_setup/artifacts.sh"
 started=$(date +%s)
 static_plan=false
 preparation_observation_status=skipped
+runner_environment=null
 if [[ -n ${ASSIGNMENT_FILE:-} ]]; then
   if [[ -z "$CWD" || "$CWD" == . ]]; then
     if [[ -n ${INSTALL_RESULT:-} ]]; then
@@ -56,6 +57,12 @@ if [[ "$static_plan" == true ]]; then
   mkdir -p "$detail_dir"
   DETAIL_FILE="$detail_dir/assignment.jsonl"
   : > "$DETAIL_FILE"
+  if [[ "$SCHEDULER" == artifact ]]; then
+    if ! runner_environment=$(node "$GITHUB_ACTION_PATH/environment.cjs"); then
+      echo 'Runner environment collection unavailable; execution continues without a fingerprint' >&2
+      runner_environment=null
+    fi
+  fi
 fi
 
 run_item() {
@@ -171,12 +178,12 @@ if [[ "$static_plan" == true ]]; then
           if [[ -f "$lockfile" ]]; then
             if command -v sha256sum >/dev/null 2>&1; then
               lockfile_digest=$(sha256sum < "$lockfile" | awk '{print $1}')
-              checkout_digest=$(jq -c '.checkoutPaths | unique | sort' "$ASSIGNMENT_FILE" | sha256sum | awk '{print $1}')
-              workspace_set_digest=$(jq -c '[.items[].name] | unique | sort' "$ASSIGNMENT_FILE" | sha256sum | awk '{print $1}')
+              checkout_digest=$(jq -cj '.checkoutPaths | unique | sort' "$ASSIGNMENT_FILE" | sha256sum | awk '{print $1}')
+              workspace_set_digest=$(jq -cj '[.items[].name] | unique | sort' "$ASSIGNMENT_FILE" | sha256sum | awk '{print $1}')
             elif command -v shasum >/dev/null 2>&1; then
               lockfile_digest=$(shasum -a 256 < "$lockfile" | awk '{print $1}')
-              checkout_digest=$(jq -c '.checkoutPaths | unique | sort' "$ASSIGNMENT_FILE" | shasum -a 256 | awk '{print $1}')
-              workspace_set_digest=$(jq -c '[.items[].name] | unique | sort' "$ASSIGNMENT_FILE" | shasum -a 256 | awk '{print $1}')
+              checkout_digest=$(jq -cj '.checkoutPaths | unique | sort' "$ASSIGNMENT_FILE" | shasum -a 256 | awk '{print $1}')
+              workspace_set_digest=$(jq -cj '[.items[].name] | unique | sort' "$ASSIGNMENT_FILE" | shasum -a 256 | awk '{print $1}')
             else
               lockfile_digest=''
             fi
@@ -194,7 +201,7 @@ if [[ "$static_plan" == true ]]; then
           preparation_observation_status=incomplete
         fi
       fi
-      jq -sn --argjson identity "$identity" --arg group "$GROUP" --arg runner "$TOOL" --arg environment "$TIMING_ENVIRONMENT" --arg run "$RUN_ID" --argjson attempt "$RUN_ATTEMPT" --argjson preparation "$preparation_observations" --slurpfile details "$DETAIL_FILE" '{version:3,scope:($identity + {group:$group,taskRunner:$runner,timingEnvironment:$environment}),runId:$run,runAttempt:$attempt,observations:[$details[] | select(.status == "success") | .item as $item | .execution as $execution | {executionId:$execution.executionId,observedAtMs:$execution.observedAtMs,group:$group,workspace:$execution.workspace,task:$item.task,shard:($item.shard // null),totalShards:($item.totalShards // null),taskRunner:$runner,timingEnvironment:$environment,durationMs:(if $execution.durationMs > 0 then $execution.durationMs else 1 end)}],preparationObservations:$preparation}' > "$sample_path"
+      jq -sn --argjson identity "$identity" --arg group "$GROUP" --arg runner "$TOOL" --arg environment "$TIMING_ENVIRONMENT" --arg run "$RUN_ID" --argjson attempt "$RUN_ATTEMPT" --argjson preparation "$preparation_observations" --argjson runnerEnvironment "$runner_environment" --slurpfile details "$DETAIL_FILE" '{version:3,scope:($identity + {group:$group,taskRunner:$runner,timingEnvironment:$environment}),runId:$run,runAttempt:$attempt,observations:[$details[] | select(.status == "success") | .item as $item | .execution as $execution | {executionId:$execution.executionId,observedAtMs:$execution.observedAtMs,group:$group,workspace:$execution.workspace,task:$item.task,shard:($item.shard // null),totalShards:($item.totalShards // null),taskRunner:$runner,timingEnvironment:$environment,durationMs:(if $execution.durationMs > 0 then $execution.durationMs else 1 end)}],preparationObservations:$preparation} + (if $runnerEnvironment == null then {} else {runnerEnvironment:$runnerEnvironment} end)' > "$sample_path"
       echo "sample-path=$sample_path" >> "$GITHUB_OUTPUT"
       echo "sample-name=nanoom-measurement-v3-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$sample_name" >> "$GITHUB_OUTPUT"
       echo "upload-started=$(date +%s)" >> "$GITHUB_OUTPUT"
@@ -203,7 +210,7 @@ if [[ "$static_plan" == true ]]; then
       echo 'could not construct a branch or pull-request measurement scope; successful tasks are unchanged and no timing artifact will be uploaded' >&2
     fi
   fi
-  result=$(jq -c --arg measurementStatus "$measurement_status" --arg preparationStatus "$preparation_observation_status" '. + {measurementArtifactStatus:$measurementStatus,preparationObservationStatus:$preparationStatus}' <<<"$result")
+  result=$(jq -c --arg measurementStatus "$measurement_status" --arg preparationStatus "$preparation_observation_status" --argjson runnerEnvironment "$runner_environment" '. + {measurementArtifactStatus:$measurementStatus,preparationObservationStatus:$preparationStatus,runnerEnvironmentFingerprint:($runnerEnvironment.fingerprint // null)}' <<<"$result")
   echo "result=$result" >> "$GITHUB_OUTPUT"
   printf '  Result\n    ✓ items=%s; elapsed=%ss\n  Final JSON\n    %s\n' "$completed_count" "$elapsed" "$result"
   { echo '### nanoom run'; echo; echo "**Result:** $completed_count assignment items succeeded in ${elapsed}s."; echo; echo "Detailed result: \`$DETAIL_FILE\`."; } >> "$GITHUB_STEP_SUMMARY"

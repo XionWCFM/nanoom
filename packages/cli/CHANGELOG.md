@@ -1,5 +1,13 @@
 # @nanoom/cli
 
+## 0.9.0
+
+- Predict the next execution from bounded recent batch summaries, preserving daily aggregates and legacy model reads.
+- Learn workspace and task costs independently for each measured runner environment; automatically fingerprint CPU, memory, cgroup-v2 limits, image, Node, and package-manager profiles.
+- Report environment uncertainty for runner pools and use recent observation proportions so retired environments do not dominate new predictions.
+- Preserve environment-specific history through artifact compilation and the shared Cloudflare D1 core, with replay, scope, expiry, and nesting validation.
+- Align preparation checkout/workspace-set hashes with the planner by excluding trailing newlines.
+
 ## 0.8.0
 
 - Emit project-relative affected workspace paths and activate the package manager after Plan validation in both direct and prepared install paths.

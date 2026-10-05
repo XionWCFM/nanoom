@@ -15,7 +15,7 @@ Nanoom이 보존할 것은 다음 CI의 배분에 필요한 예측값과 이를 
 
 Artifact file envelopes are `MeasurementArtifact {version, scope, runId, runAttempt, observations, preparationObservations?}`, `ModelStateBundle {version, states}`, and `PredictionArtifact {version, predictions}`. The optional preparation array keeps earlier v3 measurement files readable. A prediction entry links one scope's compact table to the canonical ModelStateBundle name and digest. The publish marker is uploaded last; planning downloads that marker only.
 
-동일 key는 하루에 1번이든 10만 번이든 **날짜별 count와 totalDurationMs만 증가**한다. raw duration 배열, command/log, 각 실행의 SHA·workflow metadata를 model에 반복 보관하지 않는다. scope에 공통인 정보는 envelope에 한 번만 저장한다.
+동일 key는 하루에 1번이든 10만 번이든 날짜별 count와 totalDurationMs를 집계하며, 최근 실행 변화에 대응하기 위해 최대 3개의 batch 평균 요약도 보관한다. 원본 duration 배열, command/log, 각 실행의 SHA·workflow metadata를 model에 반복 보관하지 않는다. scope에 공통인 정보는 envelope에 한 번만 저장한다. 요약의 run/attempt는 같은 scope 안에서 batch를 식별하는 최소 정보이며 원본 실행 조회용 ledger가 아니다.
 
 ## 2. 예측 key와 충분 통계
 
@@ -34,7 +34,13 @@ artifact compiler가 현재 attempt의 성공 실행 ID를 먼저 dedup한 뒤 �
 
 각 key의 날짜 bucket은 `[utcEpochDay, observationCount, totalDurationMs, lastObservedAtMs]`다. 오늘 UTC 날짜와 직전 29일 범위에서 **가장 최근 관측이 있었던 7개 날짜**만 남긴다. 30일 경계의 부분 날짜 전체를 제외할 수 있으므로 보관은 보수적으로 최대 30일이다. 버킷 개수는 실행 횟수와 무관하게 최대 7이다.
 
-예측값은 최근 날짜에 가중치를 주는 평균이다. 가장 최근 bucket 날짜를 D, 각 날짜를 d라고 할 때:
+새로 학습한 key의 기본 예측은 최근 batch 평균의 중앙값이다. `recentBatches`는 `[lastObservedAtMs, runId, runAttempt, roundedBatchMeanMs]` 요약을 timestamp/runId/attempt 순으로 정렬해 최신 3개만 보관한다. 실제 현재 batch의 key/day count와 sum으로 정수 half-up 평균을 만들며 과거 prediction을 가짜 관측으로 넣지 않는다. 최신 요약과 7일 이내인 요약만 중앙값에 포함하고, 짝수 개이면 가운데 두 값의 half-up 평균을 쓴다. 드문 실행에서는 이전 요약이 제외되어 최근값을 사용한다. 실패·취소된 관측은 기존과 같이 학습하지 않는다.
+
+30일/day pruning으로 사라진 bucket에 해당하는 요약도 제거한다. 최대 3개 최신 요약을 선택하는 규칙은 batch 도착 순서와 무관하며, 같은 batch replay는 receipt에서 차단해 요약과 count 모두 증가하지 않는다. batch가 같은 key를 하루에 여러 번 실행했다면 그 batch/day의 평균 요약 하나를 사용한다. profile별 row와 미분류 row의 `observationCount`는 보존 bucket 전체의 관측 수이며 중앙값에 사용된 요약 개수와 같지 않다. pool row에서는 최근 가중치에 사용한 관측 수 합을 제공한다.
+
+기존 `recentBatches`가 없는 v3 entry는 날짜 가중 평균으로 읽는다. 새로운 실제 batch를 학습하면 최근 요약 기반으로 전환한다. 새 ModelState 필드는 구버전 strict reader에서 거부될 수 있으므로 새 binary와 Worker를 함께 검증해야 한다. PredictionTable의 5-column row는 유지하지만 batch/model/table에는 환경별 child 배열이 추가된다.
+
+기존 entry의 날짜 가중 평균은 가장 최근 bucket 날짜를 D, 각 날짜를 d라고 할 때:
 
 ```text
 weight(d) = 2 ^ (-(D - d) / 7)
@@ -46,7 +52,13 @@ estimatedMs = round_half_up(
 
 bucket을 날짜 순서로 정렬한 뒤 공용 Rust 함수에서 계산한다. 정수 count/sum을 먼저 병합하므로 동시에 도착한 batch의 순서와 무관하게 같은 bucket이 된다. 부동소수점은 최종 최대 7항의 계산에만 사용한다. key의 관측 수는 보존 bucket count 합, lastObservedAt은 최댓값이다. `validUntilMs = (가장 오래된 포함 bucket의 epochDay + 30) * 86400000`; 그 시각 이후에는 그 추정값을 그대로 사용하지 않는다.
 
-**정확한 최근 7개 실행의 중앙값에서 추정 방식이 바뀐다.** 평균은 이상치에 더 민감할 수 있다. compact하다는 이유만으로 예측 품질 향상을 주장하지 않는다. outlier, 작업량 급변, 드문 실행, 동일 시간 다수 관측 trace에서 기존 방식과 다음 실행 예측 오차·실제 배분 makespan을 비교하고 차이를 보고한다. 전역 task DAG나 머신러닝 학습 pipeline은 추가하지 않는다.
+최근 batch 요약은 날짜 안의 실행 순서를 잃는 문제와 평균의 이상치 영향을 줄이기 위한 변경이다. 모든 workload의 정확도가 좋아진다고 주장하지 않는다. outlier, 작업량 급변, 드문 실행, 동일 시간 다수 관측 trace에서 기존 방식과 다음 실행 예측 오차·실제 배분 makespan을 비교하고 차이를 보고한다. 전역 task DAG나 머신러닝 학습 pipeline은 추가하지 않는다.
+
+준비 시간의 `checkoutDigest`와 `workspaceSetDigest`는 정렬·중복 제거한 JSON 배열의 **줄바꿈 없는 UTF-8 bytes**를 SHA-256으로 해시한다. Action과 Rust scheduler가 동일한 bytes를 사용해야 한다. `jq`의 기본 trailing newline을 해시에 포함하면 기록한 exact key를 planner가 찾을 수 없다. 소비자 shell 계산은 필요하지 않으며 Nanoom Action이 책임진다.
+
+MeasurementArtifact는 선택적 `runnerEnvironment {fingerprint, profile}`를 포함한다. run Action은 OS/arch·CPU 모델·가용 코어·메모리·cgroup-v2 제한·이미지·Node/패키지 매니저 버전을 자동 수집하며 hash에 runner 이름이나 job/run ID를 넣지 않는다. Rust는 canonical profile digest와 값 범위를 검증한다. 없는 metadata를 추측하지 않으며, 지원하지 않는 container 제한은 unknown으로 남긴다. 현재 logical timingEnvironment scope와 실제 측정 profile은 별개다. Profile별 학습·조회 연결이 끝나기 전에는 환경 분리의 완료 증거로 주장하지 않는다.
+
+예측 품질과 runner 환경 식별 개선의 실제 수용 기준·측정은 [예측 품질 검증](prediction-quality.md)에 기록한다. 계산식 테스트 통과를 다음 실행시간 예측 정확도의 증거로 대체하지 않는다.
 
 ## 3. 재시도와 분산 집계
 
@@ -122,3 +134,13 @@ CI 성능 인수는 history off와 비교해 historyFetchMs와 history 갱신 �
 같은 key의 관측 수를 7회에서 700,000회로 늘린 합계 상태에서는 bucket 7개를 유지했다. entry bytes는 정수 자릿수 증가로 352→427이며 실행 수에 비례하는 raw 배열은 없다. 실제 compile/apply의 dedup·동시성 검증을 이 측정으로 대신하지 않는다.
 
 회당 다운로드가 작아져도 GitHub의 run별 artifact 사본 총량이 0이 되지는 않는다. 마지막 시나리오의 model+prediction ZIP을 하루 100회, 30일 보관한다고 계산하면 약 11.1 GiB다(측정 artifact/Plan 제외). planner는 그 합계를 다운로드하지 않는다. 운영 시 총 저장량은 별도로 확인하고 보관기간을 낮출 때의 학습 재구축 빈도를 검증한다. 추가 GC 서비스는 도입하지 않는다.
+
+## 실제 runner profile별 학습
+
+`runnerEnvironment`가 있는 측정은 logical Scope를 바꾸지 않고 `environmentBatches`로 분리한다. child는 부모와 동일 scope/run/attempt/producedAt을 사용하고 중첩을 허용하지 않는다. executionId가 서로 다른 profile로 이동하면 compiler가 거부한다. profile이 없는 측정은 루트 aggregate로 유지한다.
+
+`environmentStates`는 profile마다 독립적으로 최근 요약과 날짜 bucket을 학습한다. 부모 receipt는 모든 child를 포함한 body digest를 검증한다. `environmentPredictions`는 유효한 child projection을 보존한다. 같은 key의 분류된 관측이 있으면 루트의 미분류 관측 대신 해당 key의 최신 유효 관측(미분류 관측 포함)과 7일 이내인 profile별 예측의 최근 관측 수 가중 평균을 사용한다. 가중치 count는 이 기간에 마지막 관측을 가진 날짜 bucket들의 관측 수 합이며, 같은 날짜 안의 부분 기간을 분할하지 않는다. 이전 환경의 유효한 exact 조회는 계속 지원하지만 최근 pool 평균과 범위에서는 제외한다. 정수 half-up 반올림, 가장 이른 contributor expiry, 가장 최근 관측 시각을 사용한다. 알려진 fingerprint 조회는 해당 child만 사용하고 다른 profile로 fallback하지 않는다.
+
+미정 runner의 assignment는 pooled point estimate로 배분하며 `predictionSources.environmentUncertainty`에 여러 유효 profile을 가진 task 수와 해당 task들만의 최솟값 합계·최댓값 합계를 제공한다. 이것은 assignment 전체 wall time의 신뢰 구간이 아니다. affected의 실제 하드웨어를 미래 runner의 하드웨어로 간주하지 않는다. 기본 사용자 경로는 미정 runner pool 예측을 사용한다. core는 이미 fingerprint를 아는 caller를 위한 exact 환경 조회를 제공하며, 기본 템플릿에 소비자의 하드웨어 수집·해시 계산 단계를 요구하지 않는다.
+
+환경 배열은 fingerprint 순으로 정렬하며 최대 32개다. 전체 batch aggregate/model key/table row 제한은 child도 합산한다. 16 MiB model/batch 및 8 MiB table byte 제한은 유지한다. 만료된 profile은 projection에서 제외하고 다음 write에서 비운다. 새 schema를 거부하는 구버전 Worker/binary와 혼용하지 않으며 공개 배포 검증 전에는 완료로 취급하지 않는다.

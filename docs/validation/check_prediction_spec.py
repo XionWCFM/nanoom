@@ -72,6 +72,7 @@ def document_check():
     assert SHA(batch) == vectors['idempotencyKeyForCanonicalBatch']
     assert '"sha256:' + SHA(table) + '"' == vectors['predictionEtag']
     assert SHA(model) == vectors['modelDigest']
+    assert SHA(SCHEMAS['ModelStateBundle']['examples'][0]) == vectors['modelBundleDigest']
     invalid = []
     for field, value in [('unexpected', True), ('aggregates', []), ('version', 2), ('batchId', 'bad'), ('runAttempt', 0)]:
         item = deepcopy(batch)
@@ -98,15 +99,20 @@ def document_check():
             links += 1
     assert set(API['paths']) == {'/health', '/ready', BASE + '/snapshot', BASE + '/observations:merge'}
     assert API['x-runtime-limits']['plannerHistoryBudgetMs'] == 3000
-    print(f'PASS OpenAPI: {len(SCHEMAS)} schemas, {count} examples, 6 JCS vectors, {len(invalid)} invalid cases, {links} local links')
+    print(f'PASS OpenAPI: {len(SCHEMAS)} schemas, {count} examples, 9 JCS vectors, {len(invalid)} invalid cases, {links} local links')
 
 
-def predict(buckets):
+def predict(buckets, recent=()):
     """Design prototype only; Rust implementation must get its own acceptance evidence."""
     latest = max(b[0] for b in buckets)
     weights = [2 ** (-(latest - b[0]) / 7) for b in buckets]
     mean = sum(b[2] * w for b, w in zip(buckets, weights)) / sum(b[1] * w for b, w in zip(buckets, weights))
-    return [math.floor(mean + .5), sum(b[1] for b in buckets), max(b[3] for b in buckets), (min(b[0] for b in buckets) + 30) * 86400000]
+    estimate = math.floor(mean + .5)
+    if recent:
+        durations = sorted(row[3] for row in recent if recent[-1][0] - row[0] <= 7 * 86400000)
+        middle = len(durations) // 2
+        estimate = durations[middle] if len(durations) % 2 else (durations[middle - 1] + durations[middle] + 1) // 2
+    return [estimate, sum(b[1] for b in buckets), max(b[3] for b in buckets), (min(b[0] for b in buckets) + 30) * 86400000]
 
 
 def sizes(value):
@@ -130,12 +136,13 @@ def size_check():
             if key['kind'] == 'preparationExact':
                 key.update(checkoutDigest=SHA([index]), workspaceSetDigest=SHA([str(index)]))
         buckets = [[day - offset, 1, 1000 + ((index * 7919 + offset * 104729) % 300000), now - offset * 86400000] for offset in range(6, -1, -1)]
-        entries.append({'keyId': SHA(key), 'buckets': buckets, 'prediction': predict(buckets)})
+        recent = [[b[3], str(123456789 + b[0]), 1, b[2] // b[1]] for b in buckets[-3:]]
+        entries.append({'keyId': SHA(key), 'buckets': buckets, 'recentBatches': recent, 'prediction': predict(buckets, recent)})
     receipts = sorted([[SHA(['batch', i]), SHA(['body', i]), now - (i % 8) * 86400000] for i in range(4096)])
     print('taskKeys,totalKeys,raw7RecordsJSON,raw7RecordsZIP,modelJSON,modelZIP,predictionJSON,predictionZIP')
     for count in (1000, 10000, 30000):
         selected = sorted(entries[:count] + entries[30000:], key=lambda e: e['keyId'])
-        state = {'version': 3, 'scope': scope, 'updatedAtMs': now, 'pruningDay': day - 29, 'batchAcceptanceAfterMs': now - 7 * 86400000, 'entries': selected, 'receipts': receipts}
+        state = {'version': 3, 'scope': scope, 'updatedAtMs': now, 'pruningDay': day, 'batchAcceptanceAfterMs': now - 7 * 86400000, 'entries': selected, 'receipts': receipts}
         model = {'version': 3, 'states': [state]}
         table = {'version': 3, 'scope': scope, 'modelUpdatedAtMs': now, 'rows': [[e['keyId'], *e['prediction']] for e in selected]}
         artifact = {'version': 3, 'predictions': [{'table': table, 'modelArtifact': {'name': 'nanoom-model-v3-123456789-1', 'sha256': SHA(model)}}]}
@@ -153,7 +160,7 @@ def size_check():
     for b in repeated['buckets']:
         b[1] *= 100000
         b[2] *= 100000
-    repeated['prediction'] = predict(repeated['buckets'])
+    repeated['prediction'] = predict(repeated['buckets'], repeated['recentBatches'])
     assert len(repeated['buckets']) == 7
     assert repeated['prediction'][0] == entries[0]['prediction'][0]
     print(f'PASS repeated observations: 7 -> 700000, buckets remain 7, entry bytes {sizes(entries[0])[0]} -> {sizes(repeated)[0]} (integer digit growth only)')

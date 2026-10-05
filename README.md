@@ -174,6 +174,9 @@ task prediction은 `(group, workspace, task, shard, totalShards, runner, environ
 
 배치는 configured distribution tier의 concurrency 상한 안에서 후보 assignment 수를 비교합니다. task와 preparation 이력이 모두 warm이면 preparation+task makespan, 총 runner time, sparse checkout 경로 수, assignment 수, 안정적인 배치 순서로 선택합니다. 후보는 1·2의 거듭제곱, 선택된 tier의 concurrency 설정값, 상한이며 중복은 제거합니다. task history가 cold이거나 후보 중 preparation 예측을 만들 수 없으면 상한 concurrency를 유지합니다. preparation exact key는 group/runner/environment/package manager/version/install mode/lockfile/checkout/workspace-set을 구분하고, fallback key는 checkout/workspace-set만 제외합니다. `affected`는 package-manager 명령을 실행하지 않고 root `package.json`의 `packageManager` 정확한 버전과 lockfile digest를 사용합니다. 선언과 Action의 `packageManager` 입력이 맞지 않거나 버전/lockfile을 확정할 수 없으면 cold-cap을 유지합니다. `result.scheduling`은 `automaticAssignmentCount`, `coldCapAssignmentCount`, `preparationPredictionSources`와 기존 `historyStatus`, `historySourceRunId`, `historyFetchMs`, `predictionSources`, checkout 경로 수를 제공합니다. 실제 CI 개선은 hosted cold→warm wall time과 real trace 오차를 확인하기 전까지 주장하지 않습니다. 배치와 artifact 결정은 [ADR-0014](docs/adr/0014-prediction-state-v3-artifact-history.md), 상세 wire/한도는 [PredictionState v3 명세](docs/prediction-model-spec.md)를 참고하세요.
 
+개발 중인 예측 개선은 workspace별 이력을 실제 runner 환경의 해시별로 분리합니다. `run`이 CPU·가용 코어·메모리·컨테이너 제한·이미지·Node·패키지 매니저 profile과 SHA-256을 자동 기록하며, runner 이름이나 run ID는 해시에 포함하지 않습니다. 다음 runner가 미정이면 해당 task의 최신 관측과 7일 이내인 환경의 관측 비중으로 pool 예측을 만듭니다. 여러 환경이 남으면 assignment의 `predictionSources.environmentUncertainty`에 `taskCount`, `minimumTaskSumMs`, `maximumTaskSumMs`가 표시됩니다. 이 범위는 해당 task들의 환경별 비용 차이이며 전체 CI 시간의 신뢰 구간이 아닙니다. 공개 릴리즈·fixture 검증 상태와 정확도 비교는 [예측 품질 검증](docs/prediction-quality.md)에 기록합니다.
+
+
 group 또는 distribution tier의 `runnerLabels`로 matrix job의 runner를 정할 수 있습니다. 배열은 fallback 순서가 아니라 모든 라벨을 만족해야 하는 AND 조건입니다. tier 설정이 group 설정을 덮어쓰며, 생략하면 workflow의 `ubuntu-latest` fallback을 사용합니다.
 
 ```json

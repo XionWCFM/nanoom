@@ -151,10 +151,15 @@ run_assignments() {
     export TOOL=auto PM=yarn GITHUB_OUTPUT="$tmp/run-$id-$index.out" GITHUB_STEP_SUMMARY="$tmp/run-$id-$index.summary"
     : > "$GITHUB_OUTPUT"
     if ! bash "$GITHUB_ACTION_PATH/run.sh" >"$tmp/run-$id-$index.log" 2>&1; then cat "$tmp/run-$id-$index.log" >&2; return 1; fi
-    result=$(sed -n 's/^result=//p' "$GITHUB_OUTPUT")
+    result=$(sed -n 's/^result=//p' "$GITHUB_OUTPUT" | tail -n 1)
     jq -e '.status == "success" and .executedItemCount > 0' <<<"$result" >/dev/null || { cat "$tmp/run-$id-$index.log" >&2; return 1; }
     sample=$(sed -n 's/^sample-path=//p' "$GITHUB_OUTPUT")
     jq -e '.version == 3 and (.observations | length > 0)' "$sample" >/dev/null || { echo 'run Action emitted no v3 measurements' >&2; return 1; }
+    jq -e --arg fingerprint "$(jq -r .runnerEnvironmentFingerprint <<<"$result")" '
+      .runnerEnvironment.fingerprint == $fingerprint and
+      (.runnerEnvironment.fingerprint | test("^[a-f0-9]{64}$")) and
+      .runnerEnvironment.profile.availableCpus > 0 and .runnerEnvironment.profile.memoryMiB > 0
+    ' "$sample" >/dev/null || { echo 'run Action did not preserve its collected runner environment' >&2; return 1; }
     if [[ "$id" == "$run_id" ]]; then cp "$sample" "$tmp/measurements/$(basename "$sample")"; fi
     index=$((index + 1))
   done <<<"$entries"
@@ -190,6 +195,14 @@ assert_snapshots() {
       echo "snapshot for $scope_id has no prediction samples" >&2
       return 1
     }
+    jq -e '.scope as $scope | (.environmentPredictions | length > 0) and
+      all(.environmentPredictions[]; (.table.rows | length > 0) and
+        .table.scope == $scope)' "$destination/$scope_id.json" >/dev/null || {
+      echo 'D1 snapshot lost environment-specific history or changed its logical scope' >&2; return 1;
+    }
+    while IFS= read -r fingerprint; do
+      jq -e --arg fingerprint "$fingerprint" 'any(.environmentPredictions[]; .environment.fingerprint == $fingerprint)'         "$destination/$scope_id.json" >/dev/null || { echo 'D1 snapshot omitted a measured environment fingerprint' >&2; return 1; }
+    done < <(jq -r '.runnerEnvironment.fingerprint' "$tmp"/measurements/*.json | sort -u)
   done < <(jq -r '.[].scopeId' <<<"$scopes")
 }
 

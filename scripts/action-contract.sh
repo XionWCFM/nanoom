@@ -93,7 +93,8 @@ grep -q 'all needed jobs succeeded or were skipped' .github/actions/status/run.s
 grep -q 'Optional newline-delimited job=result pairs' .github/actions/status/action.yml
 bash scripts/status-action-test.sh
 bash scripts/coordinator-contract-test.sh
-# Includes native Windows checkout paths and canonical workspace boundary checks.
+# Includes native Windows checkout paths, canonical workspace boundaries, and
+# independent verification that preparation digests match the planner's JSON bytes.
 bash scripts/assignment-action-test.sh
 bash scripts/preparation-clock-test.sh
 grep -Fq 'version:3,scope:' .github/actions/run/run.sh

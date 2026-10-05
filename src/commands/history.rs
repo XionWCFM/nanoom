@@ -1,6 +1,6 @@
 use crate::error::Result;
 use crate::prediction::{
-    apply_batch, canonical_bytes, compile_batch_with_preparation, digest_value, hex_digest,
+    apply_batch, canonical_bytes, compile_measurements, digest_value, hex_digest,
     project_predictions, ApplyOutcome, MeasurementArtifact, ModelStateBundle, PredictionArtifact,
     PredictionArtifactBundle, Scope, VERSION,
 };
@@ -83,7 +83,7 @@ pub fn execute(args: HistoryArgs) -> Result<()> {
             .as_millis() as u64
     });
     let (mut states, previous_model_degraded) = load_previous_states(&args)?;
-    let mut measurements: BTreeMap<String, (Scope, Vec<_>, Vec<_>)> = BTreeMap::new();
+    let mut measurements: BTreeMap<String, (Scope, Vec<_>, Vec<_>, Vec<_>)> = BTreeMap::new();
     let mut rejected_measurement_count = 0_u64;
     for path in &args.inputs {
         let measurement = match MeasurementArtifact::load(path) {
@@ -114,14 +114,21 @@ pub fn execute(args: HistoryArgs) -> Result<()> {
             .scope
             .id()
             .map_err(crate::error::Error::InvalidConfig)?;
-        let (scope, observations, preparation_observations) = measurements
-            .entry(scope_id)
-            .or_insert_with(|| (measurement.scope.clone(), Vec::new(), Vec::new()));
+        let (scope, observations, preparation_observations, artifacts) =
+            measurements.entry(scope_id).or_insert_with(|| {
+                (
+                    measurement.scope.clone(),
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                )
+            });
         if *scope != measurement.scope {
             return Err(crate::error::Error::InvalidConfig(
                 "scope ID collision while grouping measurements".into(),
             ));
         }
+        artifacts.push(measurement.clone());
         observations.extend(measurement.observations);
         preparation_observations.extend(measurement.preparation_observations);
     }
@@ -131,7 +138,7 @@ pub fn execute(args: HistoryArgs) -> Result<()> {
     let mut degraded_scope_count = 0_u64;
     let mut accepted_observation_count = 0_u64;
     let mut emitted_batch_count = 0_u64;
-    for (scope_id, (scope, observations, preparation_observations)) in measurements {
+    for (scope_id, (scope, observations, preparation_observations, artifacts)) in measurements {
         let produced_at_ms = observations
             .iter()
             .map(|observation| observation.observed_at_ms)
@@ -142,13 +149,12 @@ pub fn execute(args: HistoryArgs) -> Result<()> {
             )
             .max()
             .unwrap_or(now_ms);
-        let batch = match compile_batch_with_preparation(
+        let batch = match compile_measurements(
             scope.clone(),
             args.run_id.clone(),
             args.run_attempt,
             produced_at_ms,
-            &observations,
-            &preparation_observations,
+            &artifacts,
         ) {
             Ok(batch) => batch,
             Err(error) => {

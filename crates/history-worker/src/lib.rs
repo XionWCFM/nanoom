@@ -516,8 +516,18 @@ fn merge_result(
             "created"
         },
         applied,
-        received_aggregate_count: batch.aggregates.len(),
-        retained_key_count: state.entries.len(),
+        received_aggregate_count: batch.aggregates.len()
+            + batch
+                .environment_batches
+                .iter()
+                .map(|child| child.batch.aggregates.len())
+                .sum::<usize>(),
+        retained_key_count: state.entries.len()
+            + state
+                .environment_states
+                .iter()
+                .map(|child| child.state.entries.len())
+                .sum::<usize>(),
         pruned_bucket_count,
         receipt_count: state.receipts.len(),
         model_updated_at_ms: state.updated_at_ms,
