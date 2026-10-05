@@ -226,6 +226,26 @@ bash "$GITHUB_ACTION_PATH/run.sh" >/dev/null
 telemetry_sample=$(sed -n 's/^sample-path=//p' "$GITHUB_OUTPUT")
 jq -e '.preparationObservations | length == 1' "$telemetry_sample" >/dev/null
 jq -e '.preparationObservations[0] | .packageManager == "pnpm" and .packageManagerVersion == "10.0.0" and .installMode == "focused" and .durationMs >= 0 and (.lockfileDigest | test("^[0-9a-f]{64}$")) and (.checkoutDigest | test("^[0-9a-f]{64}$")) and (.workspaceSetDigest | test("^[0-9a-f]{64}$"))' "$telemetry_sample" >/dev/null
+python3 - "$ASSIGNMENT_FILE" "$telemetry_sample" <<'PY'
+import hashlib
+import json
+import sys
+
+assignment, measurement = [json.load(open(path)) for path in sys.argv[1:]]
+preparation = measurement['preparationObservations'][0]
+environment = measurement['runnerEnvironment']
+assert environment['profile']['availableCpus'] > 0
+assert environment['profile']['memoryMiB'] > 0
+assert environment['fingerprint'] == hashlib.sha256(json.dumps(
+    environment['profile'], sort_keys=True, ensure_ascii=False, separators=(',', ':')
+).encode()).hexdigest()
+for field, values in (
+    ('checkoutDigest', assignment['checkoutPaths']),
+    ('workspaceSetDigest', [item['name'] for item in assignment['items']]),
+):
+    encoded = json.dumps(sorted(set(values)), ensure_ascii=False, separators=(',', ':')).encode()
+    assert preparation[field] == hashlib.sha256(encoded).hexdigest(), field
+PY
 result=$(sed -n 's/^result=//p' "$GITHUB_OUTPUT")
 jq -e '.preparationObservationStatus == "recorded"' <<<"$result" >/dev/null
 

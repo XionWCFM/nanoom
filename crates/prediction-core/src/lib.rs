@@ -183,6 +183,74 @@ pub struct MeasurementArtifact {
     pub observations: Vec<SuccessfulObservation>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub preparation_observations: Vec<PreparationObservation>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runner_environment: Option<RunnerEnvironment>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RunnerEnvironment {
+    pub fingerprint: String,
+    pub profile: RunnerProfile,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RunnerProfile {
+    pub version: u8,
+    pub os: String,
+    pub arch: String,
+    pub cpu_model: String,
+    pub available_cpus: u64,
+    pub memory_mi_b: u64,
+    pub cpu_quota_milli: Option<u64>,
+    pub memory_limit_mi_b: Option<u64>,
+    pub container_limits: String,
+    pub image: String,
+    pub node_version: String,
+    pub package_manager: String,
+    pub package_manager_version: String,
+}
+
+impl RunnerEnvironment {
+    pub fn validate(&self) -> Result<(), String> {
+        let profile = &self.profile;
+        if profile.version != 1
+            || profile.available_cpus == 0
+            || profile.available_cpus > MAX_SAFE_INTEGER
+            || profile.memory_mi_b == 0
+            || profile.memory_mi_b > MAX_SAFE_INTEGER
+            || profile
+                .cpu_quota_milli
+                .is_some_and(|value| value == 0 || value > MAX_SAFE_INTEGER)
+            || profile
+                .memory_limit_mi_b
+                .is_some_and(|value| value == 0 || value > MAX_SAFE_INTEGER)
+            || !matches!(profile.container_limits.as_str(), "cgroup-v2" | "unknown")
+        {
+            return Err("invalid runner environment capacity".into());
+        }
+        for value in [
+            &profile.os,
+            &profile.arch,
+            &profile.cpu_model,
+            &profile.container_limits,
+            &profile.node_version,
+            &profile.package_manager,
+            &profile.package_manager_version,
+        ] {
+            if value.is_empty() || value.len() > 256 || has_control(value) {
+                return Err("invalid runner environment field".into());
+            }
+        }
+        if profile.image.len() > 256
+            || has_control(&profile.image)
+            || self.fingerprint != digest_value(profile)?
+        {
+            return Err("runner environment fingerprint does not match its profile".into());
+        }
+        Ok(())
+    }
 }
 
 impl MeasurementArtifact {
@@ -202,6 +270,9 @@ impl MeasurementArtifact {
             return Err("invalid or empty v3 MeasurementArtifact".into());
         }
         self.scope.validate()?;
+        if let Some(environment) = &self.runner_environment {
+            environment.validate()?;
+        }
         if self.observations.len() + self.preparation_observations.len() > MAX_BATCH_COUNT as usize
         {
             return Err("MeasurementArtifact exceeds 50000 observations".into());
@@ -354,6 +425,30 @@ impl PredictionIndex {
             })
     }
 
+    pub fn environment_range(
+        &self,
+        context: &PredictionContext,
+        group: &str,
+        task_runner: &str,
+        environment: &str,
+        key_id: &str,
+        now_ms: u64,
+    ) -> Option<(usize, u64, u64)> {
+        context
+            .candidates(group, task_runner, environment)
+            .into_iter()
+            .filter_map(|scope| scope.id().ok().map(|id| (scope, id)))
+            .find_map(|(scope, id)| {
+                self.tables
+                    .get(&id)
+                    .filter(|table| {
+                        table.scope == scope && table.estimate(key_id, now_ms).is_some()
+                    })
+                    .map(|table| table.environment_range(key_id, now_ms))
+            })
+            .flatten()
+    }
+
     pub fn has_valid_rows(&self, now_ms: u64) -> bool {
         self.tables
             .values()
@@ -368,6 +463,15 @@ pub struct PredictionTable {
     pub scope: Scope,
     pub model_updated_at_ms: u64,
     pub rows: Vec<PredictionRow>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub environment_predictions: Vec<EnvironmentPrediction>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct EnvironmentPrediction {
+    pub environment: RunnerEnvironment,
+    pub table: Box<PredictionTable>,
 }
 
 impl PredictionTable {
@@ -397,10 +501,73 @@ impl PredictionTable {
             }
             previous = Some(row.key_id().to_owned());
         }
+        if self.environment_predictions.len() > 32 {
+            return Err("too many runner environments".into());
+        }
+        let mut previous_environment: Option<&str> = None;
+        let mut total_rows = self.rows.len();
+        for child in &self.environment_predictions {
+            child.environment.validate()?;
+            let fingerprint = child.environment.fingerprint.as_str();
+            if previous_environment.is_some_and(|previous| previous >= fingerprint)
+                || !child.table.environment_predictions.is_empty()
+                || child.table.scope != self.scope
+            {
+                return Err("invalid or unsorted environment predictions".into());
+            }
+            child.table.validate()?;
+            total_rows += child.table.rows.len();
+            previous_environment = Some(fingerprint);
+        }
+        if total_rows > MAX_KEYS {
+            return Err("environment prediction rows exceed 50000".into());
+        }
         if canonical_bytes(self)?.len() > MAX_PREDICTION_BYTES {
             return Err("PredictionTable exceeds 8 MiB".into());
         }
         Ok(())
+    }
+
+    /// A known environment never falls back to a different machine profile.
+    pub fn estimate_for_environment(
+        &self,
+        key_id: &str,
+        fingerprint: &str,
+        now_ms: u64,
+    ) -> Option<(u64, u64)> {
+        self.environment_predictions
+            .iter()
+            .find(|child| child.environment.fingerprint == fingerprint)
+            .and_then(|child| child.table.estimate(key_id, now_ms))
+    }
+
+    /// Valid environment-specific estimates reveal uncertainty in the pooled estimate.
+    pub fn environment_range(&self, key_id: &str, now_ms: u64) -> Option<(usize, u64, u64)> {
+        let latest = self
+            .rows
+            .binary_search_by(|row| row.key_id().cmp(key_id))
+            .ok()
+            .map(|index| self.rows[index].3)?;
+        let cutoff = latest.saturating_sub(7 * DAY_MS);
+        let estimates: Vec<_> = self
+            .environment_predictions
+            .iter()
+            .filter_map(|child| {
+                child
+                    .table
+                    .rows
+                    .binary_search_by(|row| row.key_id().cmp(key_id))
+                    .ok()
+                    .map(|index| &child.table.rows[index])
+                    .filter(|row| row.3 >= cutoff && now_ms < row.4)
+                    .map(|row| row.1)
+            })
+            .collect();
+        Some((
+            estimates.len(),
+            *estimates.iter().min()?,
+            *estimates.iter().max()?,
+        ))
     }
 
     pub fn estimate(&self, key_id: &str, now_ms: u64) -> Option<(u64, u64)> {
@@ -590,6 +757,15 @@ pub struct ObservationBatch {
     pub run_attempt: u32,
     pub produced_at_ms: u64,
     pub aggregates: Vec<AggregateObservation>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub environment_batches: Vec<EnvironmentBatch>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct EnvironmentBatch {
+    pub environment: RunnerEnvironment,
+    pub batch: Box<ObservationBatch>,
 }
 
 impl ObservationBatch {
@@ -608,7 +784,9 @@ impl ObservationBatch {
         if self.batch_id != expected_id {
             return Err("ObservationBatch batchId does not match scope/run/attempt".into());
         }
-        if self.aggregates.is_empty() || self.aggregates.len() > MAX_KEYS {
+        if (self.aggregates.is_empty() && self.environment_batches.is_empty())
+            || self.aggregates.len() > MAX_KEYS
+        {
             return Err("ObservationBatch aggregate count is outside limits".into());
         }
         let mut previous: Option<(&str, u64)> = None;
@@ -621,6 +799,30 @@ impl ObservationBatch {
                 );
             }
             previous = Some(key);
+        }
+        let mut previous_environment: Option<&str> = None;
+        if self.environment_batches.len() > 32 {
+            return Err("too many runner environments".into());
+        }
+        let mut total_rows = self.aggregates.len();
+        for environment in &self.environment_batches {
+            environment.environment.validate()?;
+            let fingerprint = environment.environment.fingerprint.as_str();
+            if previous_environment.is_some_and(|previous| previous >= fingerprint)
+                || !environment.batch.environment_batches.is_empty()
+                || environment.batch.scope != self.scope
+                || environment.batch.run_id != self.run_id
+                || environment.batch.run_attempt != self.run_attempt
+                || environment.batch.produced_at_ms != self.produced_at_ms
+            {
+                return Err("invalid or unsorted environment batches".into());
+            }
+            environment.batch.validate(now_ms)?;
+            total_rows += environment.batch.aggregates.len();
+            previous_environment = Some(fingerprint);
+        }
+        if total_rows > MAX_KEYS {
+            return Err("environment batch rows exceed 50000".into());
         }
         if canonical_bytes(self)?.len() > 16 * 1024 * 1024 {
             return Err("ObservationBatch exceeds 16 MiB".into());
@@ -643,6 +845,15 @@ pub struct ModelState {
     pub batch_acceptance_after_ms: u64,
     pub entries: Vec<ModelEntry>,
     pub receipts: Vec<BatchReceipt>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub environment_states: Vec<EnvironmentState>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct EnvironmentState {
+    pub environment: RunnerEnvironment,
+    pub state: Box<ModelState>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -683,8 +894,17 @@ impl ModelStateBundle {
 pub struct ModelEntry {
     pub key_id: String,
     pub buckets: Vec<DayBucket>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub recent_batches: Vec<RecentBatch>,
     pub prediction: ModelPrediction,
 }
+
+/// Observation timestamp, run ID, attempt, rounded batch mean.
+/// Scope plus run/attempt reconstructs the immutable batch identity without
+/// repeating a 64-character digest in every key.
+/// Retaining the newest three summaries is independent of batch arrival order.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RecentBatch(pub u64, pub String, pub u32, pub u64);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -702,6 +922,100 @@ pub struct BatchReceipt(pub String, pub String, pub u64);
 pub enum ApplyOutcome {
     Applied { pruned_buckets: u64 },
     Duplicate,
+}
+
+/// Compile one logical scope while preserving the machines that produced each observation.
+pub fn compile_measurements(
+    scope: Scope,
+    run_id: String,
+    run_attempt: u32,
+    produced_at_ms: u64,
+    measurements: &[MeasurementArtifact],
+) -> Result<ObservationBatch, String> {
+    let mut observations = Vec::new();
+    let mut preparations = Vec::new();
+    let mut identities = BTreeMap::new();
+    type EnvironmentObservations = (
+        Option<RunnerEnvironment>,
+        Vec<SuccessfulObservation>,
+        Vec<PreparationObservation>,
+    );
+    let mut groups: BTreeMap<String, EnvironmentObservations> = BTreeMap::new();
+    for measurement in measurements {
+        measurement.validate()?;
+        if measurement.scope != scope
+            || measurement.run_id != run_id
+            || measurement.run_attempt != run_attempt
+        {
+            return Err("measurement scope or run identity mismatch".into());
+        }
+        let fingerprint = measurement
+            .runner_environment
+            .as_ref()
+            .map(|environment| environment.fingerprint.clone())
+            .unwrap_or_default();
+        for id in measurement
+            .observations
+            .iter()
+            .map(|row| &row.execution_id)
+            .chain(
+                measurement
+                    .preparation_observations
+                    .iter()
+                    .map(|row| &row.execution_id),
+            )
+        {
+            if identities
+                .insert(id.clone(), fingerprint.clone())
+                .is_some_and(|prior| prior != fingerprint)
+            {
+                return Err("executionId belongs to conflicting runner environments".into());
+            }
+        }
+        let group = groups.entry(fingerprint).or_insert_with(|| {
+            (
+                measurement.runner_environment.clone(),
+                Vec::new(),
+                Vec::new(),
+            )
+        });
+        if group.0 != measurement.runner_environment {
+            return Err("runner environment fingerprint collision".into());
+        }
+        group.1.extend(measurement.observations.clone());
+        group.2.extend(measurement.preparation_observations.clone());
+        observations.extend(measurement.observations.clone());
+        preparations.extend(measurement.preparation_observations.clone());
+    }
+    // Validate deduplication and conflicting rows globally before partitioning.
+    let mut batch = compile_batch_with_preparation(
+        scope.clone(),
+        run_id.clone(),
+        run_attempt,
+        produced_at_ms,
+        &observations,
+        &preparations,
+    )?;
+    batch.aggregates.clear();
+    for (_, (environment, observations, preparations)) in groups {
+        let child = compile_batch_with_preparation(
+            scope.clone(),
+            run_id.clone(),
+            run_attempt,
+            produced_at_ms,
+            &observations,
+            &preparations,
+        )?;
+        match environment {
+            Some(environment) => batch.environment_batches.push(EnvironmentBatch {
+                environment,
+                batch: Box::new(child),
+            }),
+            None => batch.aggregates = child.aggregates,
+        }
+    }
+    batch.validate(produced_at_ms)?;
+    Ok(batch)
 }
 
 pub fn compile_batch(
@@ -847,6 +1161,7 @@ pub fn compile_batch_with_preparation(
         run_id,
         run_attempt,
         produced_at_ms,
+        environment_batches: Vec::new(),
         aggregates: aggregates
             .into_iter()
             .map(
@@ -886,6 +1201,7 @@ pub fn apply_batch(
         batch_acceptance_after_ms: acceptance_after,
         entries: Vec::new(),
         receipts: Vec::new(),
+        environment_states: Vec::new(),
     });
     validate_model(&state)?;
     if state.scope != batch.scope {
@@ -917,7 +1233,9 @@ pub fn apply_batch(
 
     let mut pruned_buckets = 0_u64;
     let mut by_key: BTreeMap<String, BTreeMap<u64, DayBucket>> = BTreeMap::new();
+    let mut recent_by_key = BTreeMap::new();
     for entry in state.entries.drain(..) {
+        recent_by_key.insert(entry.key_id.clone(), entry.recent_batches);
         for bucket in entry.buckets {
             if bucket.0 >= cutoff_day && bucket.0 <= effective_today {
                 by_key
@@ -950,6 +1268,21 @@ pub fn apply_batch(
             .filter(|value| *value <= MAX_SAFE_INTEGER)
             .ok_or("model duration sum overflow")?;
         bucket.3 = bucket.3.max(aggregate.last_observed_at_ms);
+        // Integer half-up rounding avoids platform-dependent float conversion.
+        let mean = aggregate.total_duration_ms / aggregate.observation_count
+            + u64::from(
+                aggregate.total_duration_ms % aggregate.observation_count
+                    >= aggregate.observation_count.div_ceil(2),
+            );
+        recent_by_key
+            .entry(aggregate.key_id.clone())
+            .or_insert_with(Vec::new)
+            .push(RecentBatch(
+                aggregate.last_observed_at_ms,
+                batch.run_id.clone(),
+                batch.run_attempt,
+                mean,
+            ));
     }
 
     let mut entries = Vec::new();
@@ -960,10 +1293,17 @@ pub fn apply_batch(
             pruned_buckets = pruned_buckets.saturating_add(drop_count as u64);
             buckets.drain(..drop_count);
         }
-        if let Some(prediction) = derive_prediction(&buckets) {
+        let mut recent_batches = recent_by_key.remove(&key_id).unwrap_or_default();
+        recent_batches.retain(|recent| buckets.iter().any(|bucket| bucket.0 == recent.0 / DAY_MS));
+        recent_batches.sort_by(|a, b| (a.0, &a.1, a.2).cmp(&(b.0, &b.1, b.2)));
+        if recent_batches.len() > 3 {
+            recent_batches.drain(..recent_batches.len() - 3);
+        }
+        if let Some(prediction) = derive_recent_prediction(&buckets, &recent_batches) {
             entries.push(ModelEntry {
                 key_id,
                 buckets,
+                recent_batches,
                 prediction,
             });
         }
@@ -991,6 +1331,71 @@ pub fn apply_batch(
     state.batch_acceptance_after_ms = state.batch_acceptance_after_ms.max(acceptance_after);
     state.entries = entries;
     state.receipts = receipts;
+    let mut environments: BTreeMap<_, _> = std::mem::take(&mut state.environment_states)
+        .into_iter()
+        .map(|item| (item.environment.fingerprint.clone(), item))
+        .collect();
+    for incoming in &batch.environment_batches {
+        let prior = environments.remove(&incoming.environment.fingerprint);
+        if prior
+            .as_ref()
+            .is_some_and(|prior| prior.environment != incoming.environment)
+        {
+            return Err("runner environment fingerprint collision".into());
+        }
+        let (child, outcome) =
+            apply_batch(prior.map(|prior| *prior.state), &incoming.batch, now_ms)?;
+        if let ApplyOutcome::Applied {
+            pruned_buckets: count,
+        } = outcome
+        {
+            pruned_buckets = pruned_buckets.saturating_add(count);
+        }
+        environments.insert(
+            incoming.environment.fingerprint.clone(),
+            EnvironmentState {
+                environment: incoming.environment.clone(),
+                state: Box::new(child),
+            },
+        );
+    }
+    for child in environments.values_mut() {
+        let today = child.state.pruning_day.max(today);
+        let cutoff = today.saturating_sub(BUCKET_HORIZON_DAYS - 1);
+        child.state.entries.retain_mut(|entry| {
+            let before = entry.buckets.len();
+            entry
+                .buckets
+                .retain(|bucket| bucket.0 >= cutoff && bucket.0 <= today);
+            pruned_buckets = pruned_buckets.saturating_add((before - entry.buckets.len()) as u64);
+            entry.recent_batches.retain(|recent| {
+                entry
+                    .buckets
+                    .iter()
+                    .any(|bucket| bucket.0 == recent.0 / DAY_MS)
+            });
+            if let Some(prediction) =
+                derive_recent_prediction(&entry.buckets, &entry.recent_batches)
+            {
+                entry.prediction = prediction;
+                true
+            } else {
+                false
+            }
+        });
+        child
+            .state
+            .receipts
+            .retain(|receipt| now_ms.saturating_sub(receipt.2) < RECEIPT_RETENTION_MS);
+        child.state.pruning_day = today;
+        child.state.updated_at_ms = child.state.updated_at_ms.max(now_ms);
+        child.state.batch_acceptance_after_ms =
+            child.state.batch_acceptance_after_ms.max(acceptance_after);
+    }
+    state.environment_states = environments
+        .into_values()
+        .filter(|item| !item.state.entries.is_empty())
+        .collect();
     validate_model(&state)?;
     let bytes = canonical_bytes(&state)?;
     if bytes.len() > MAX_MODEL_BYTES {
@@ -1011,7 +1416,13 @@ pub fn project_predictions(state: &ModelState, now_ms: u64) -> Result<Prediction
             .filter(|bucket| bucket.0 >= cutoff_day && bucket.0 <= today)
             .cloned()
             .collect();
-        let Some(prediction) = derive_prediction(&buckets) else {
+        let recent: Vec<_> = entry
+            .recent_batches
+            .iter()
+            .filter(|recent| buckets.iter().any(|bucket| bucket.0 == recent.0 / DAY_MS))
+            .cloned()
+            .collect();
+        let Some(prediction) = derive_recent_prediction(&buckets, &recent) else {
             continue;
         };
         if now_ms >= prediction.3 {
@@ -1025,12 +1436,74 @@ pub fn project_predictions(state: &ModelState, now_ms: u64) -> Result<Prediction
             prediction.3,
         ));
     }
-    rows.sort_by(|a, b| a.0.cmp(&b.0));
+    let mut environment_predictions = Vec::new();
+    let mut latest_by_key: BTreeMap<String, u64> =
+        rows.iter().map(|row| (row.0.clone(), row.3)).collect();
+    for child in &state.environment_states {
+        let table = project_predictions(&child.state, now_ms)?;
+        if table.rows.is_empty() {
+            continue;
+        }
+        for row in &table.rows {
+            latest_by_key
+                .entry(row.0.clone())
+                .and_modify(|last| *last = (*last).max(row.3))
+                .or_insert(row.3);
+        }
+        environment_predictions.push(EnvironmentPrediction {
+            environment: child.environment.clone(),
+            table: Box::new(table),
+        });
+    }
+    let mut pooled: BTreeMap<String, (u128, u64, u64, u64)> = BTreeMap::new();
+    for child in &environment_predictions {
+        let model = &state
+            .environment_states
+            .iter()
+            .find(|item| item.environment == child.environment)
+            .ok_or("missing environment model")?
+            .state;
+        for row in &child.table.rows {
+            let cutoff = latest_by_key[&row.0].saturating_sub(7 * DAY_MS);
+            if row.3 < cutoff {
+                continue;
+            }
+            let entry = model
+                .entries
+                .binary_search_by(|entry| entry.key_id.cmp(&row.0))
+                .map(|index| &model.entries[index])
+                .map_err(|_| "missing environment key")?;
+            let count = entry
+                .buckets
+                .iter()
+                .filter(|bucket| bucket.3 >= cutoff)
+                .map(|bucket| bucket.1)
+                .sum::<u64>();
+            let value = pooled.entry(row.0.clone()).or_insert((0, 0, 0, u64::MAX));
+            value.0 += u128::from(row.1) * u128::from(count);
+            value.1 = value
+                .1
+                .checked_add(count)
+                .filter(|count| *count <= MAX_SAFE_INTEGER)
+                .ok_or("pooled observation count overflow")?;
+            value.2 = value.2.max(row.3);
+            value.3 = value.3.min(row.4);
+        }
+    }
+    let mut merged: BTreeMap<_, _> = rows.into_iter().map(|row| (row.0.clone(), row)).collect();
+    for (key, (total, count, last, expiry)) in pooled {
+        let estimate = (total + u128::from(count / 2)) / u128::from(count);
+        merged.insert(
+            key.clone(),
+            PredictionRow(key, estimate as u64, count, last, expiry),
+        );
+    }
     let table = PredictionTable {
         version: VERSION,
         scope: state.scope.clone(),
         model_updated_at_ms: state.updated_at_ms,
-        rows,
+        rows: merged.into_values().collect(),
+        environment_predictions,
     };
     if canonical_bytes(&table)?.len() > MAX_PREDICTION_BYTES {
         return Err("PredictionTable exceeds 8 MiB".into());
@@ -1050,6 +1523,27 @@ pub fn validate_model(state: &ModelState) -> Result<(), String> {
         || state.receipts.len() > MAX_RECEIPTS
     {
         return Err("ModelState exceeds a field or collection limit".into());
+    }
+    if state.environment_states.len() > 32 {
+        return Err("too many runner environments".into());
+    }
+    let mut previous_environment: Option<&str> = None;
+    let mut total_keys = state.entries.len();
+    for child in &state.environment_states {
+        child.environment.validate()?;
+        let fingerprint = child.environment.fingerprint.as_str();
+        if previous_environment.is_some_and(|previous| previous >= fingerprint)
+            || !child.state.environment_states.is_empty()
+            || child.state.scope != state.scope
+        {
+            return Err("invalid or unsorted environment states".into());
+        }
+        validate_model(&child.state)?;
+        total_keys += child.state.entries.len();
+        previous_environment = Some(fingerprint);
+    }
+    if total_keys > MAX_KEYS {
+        return Err("environment model keys exceed 50000".into());
     }
     let mut previous_key: Option<&str> = None;
     for entry in &state.entries {
@@ -1075,7 +1569,29 @@ pub fn validate_model(state: &ModelState) -> Result<(), String> {
         }) {
             return Err("ModelState bucket is outside its pruning horizon".into());
         }
-        if derive_prediction(&entry.buckets).as_ref() != Some(&entry.prediction) {
+        if entry.recent_batches.len() > 3 {
+            return Err("ModelState recent batch count exceeds three".into());
+        }
+        let mut previous_recent = None;
+        for recent in &entry.recent_batches {
+            if !valid_positive_decimal(&recent.1)
+                || recent.2 == 0
+                || recent.0 > MAX_SAFE_INTEGER
+                || recent.3 > MAX_DURATION_MS
+                || !entry
+                    .buckets
+                    .iter()
+                    .any(|bucket| bucket.0 == recent.0 / DAY_MS && recent.0 <= bucket.3)
+                || previous_recent
+                    .is_some_and(|previous| previous >= (recent.0, recent.1.as_str(), recent.2))
+            {
+                return Err("ModelState recent batches are invalid or unsorted".into());
+            }
+            previous_recent = Some((recent.0, recent.1.as_str(), recent.2));
+        }
+        if derive_recent_prediction(&entry.buckets, &entry.recent_batches).as_ref()
+            != Some(&entry.prediction)
+        {
             return Err("ModelState cached prediction does not match its buckets".into());
         }
     }
@@ -1114,6 +1630,28 @@ pub fn batch_id(scope: &Scope, run_id: &str, run_attempt: u32) -> Result<String,
     let scope_id = scope.id()?;
     let value = serde_json::json!([scope_id, run_id, run_attempt]);
     digest_value(&value)
+}
+
+fn derive_recent_prediction(
+    buckets: &[DayBucket],
+    recent: &[RecentBatch],
+) -> Option<ModelPrediction> {
+    let mut prediction = derive_prediction(buckets)?;
+    if let Some(latest) = recent.last() {
+        let mut durations: Vec<_> = recent
+            .iter()
+            .filter(|value| latest.0.saturating_sub(value.0) <= 7 * DAY_MS)
+            .map(|value| value.3)
+            .collect();
+        durations.sort_unstable();
+        let middle = durations.len() / 2;
+        prediction.0 = if durations.len().is_multiple_of(2) {
+            durations[middle - 1] + (durations[middle] - durations[middle - 1]).div_ceil(2)
+        } else {
+            durations[middle]
+        };
+    }
+    Some(prediction)
 }
 
 fn derive_prediction(buckets: &[DayBucket]) -> Option<ModelPrediction> {
@@ -1749,6 +2287,7 @@ mod tests {
             run_attempt: 1,
             observations: vec![row.clone()],
             preparation_observations: Vec::new(),
+            runner_environment: None,
         };
 
         let mut invalid = artifact.clone();
@@ -1879,5 +2418,83 @@ mod tests {
         assert_eq!(prediction.0, 100);
         assert_eq!(prediction.1, 3);
         assert_eq!(prediction.2, (older_day + 7) * DAY_MS);
+    }
+
+    #[test]
+    fn recent_batches_are_bounded_order_independent_and_replay_safe() {
+        let at = 1_790_208_000_000;
+        let batches: Vec<_> = [1_000, 1_000, 20_000, 1_000, 1_000]
+            .into_iter()
+            .enumerate()
+            .map(|(index, duration)| {
+                let time = at + index as u64 * 1_000;
+                compile_batch(
+                    scope(),
+                    (index + 1).to_string(),
+                    1,
+                    time,
+                    &[observation(&index.to_string(), time, duration)],
+                )
+                .unwrap()
+            })
+            .collect();
+        let mut forward = None;
+        let mut reverse = None;
+        for batch in &batches {
+            forward = Some(apply_batch(forward, batch, at + 10_000).unwrap().0);
+        }
+        for batch in batches.iter().rev() {
+            reverse = Some(apply_batch(reverse, batch, at + 10_000).unwrap().0);
+        }
+        let state = forward.unwrap();
+        assert_eq!(state, reverse.unwrap());
+        for entry in &state.entries {
+            assert_eq!(entry.recent_batches.len(), 3);
+            assert_eq!(entry.prediction.0, 1_000);
+            assert_eq!(entry.prediction.1, 5);
+        }
+        let (replay, outcome) =
+            apply_batch(Some(state.clone()), batches.last().unwrap(), at + 10_000).unwrap();
+        assert_eq!(outcome, ApplyOutcome::Duplicate);
+        assert_eq!(state, replay);
+        let mut corrupt = state.clone();
+        corrupt.entries[0].recent_batches[0].3 = MAX_DURATION_MS + 1;
+        assert!(validate_model(&corrupt).is_err());
+        let mut corrupt = state.clone();
+        corrupt.entries[0].recent_batches.swap(0, 1);
+        assert!(validate_model(&corrupt).is_err());
+        assert!(project_predictions(&state, at + 31 * DAY_MS)
+            .unwrap()
+            .rows
+            .is_empty());
+    }
+
+    #[test]
+    fn recent_batches_drop_stale_values_and_legacy_states_remain_readable() {
+        let at = 1_790_208_000_000;
+        let first =
+            compile_batch(scope(), "1".into(), 1, at, &[observation("a", at, 1_000)]).unwrap();
+        let (mut state, _) = apply_batch(None, &first, at).unwrap();
+        for entry in &mut state.entries {
+            entry.recent_batches.clear();
+        }
+        validate_model(&state).unwrap();
+        let time = at + 12 * DAY_MS;
+        let second = compile_batch(
+            scope(),
+            "2".into(),
+            1,
+            time,
+            &[observation("b", time, 8_000)],
+        )
+        .unwrap();
+        let (state, _) = apply_batch(Some(state), &second, time).unwrap();
+        assert!(state
+            .entries
+            .iter()
+            .all(|entry| entry.prediction.0 == 8_000));
+        let serialized = canonical_bytes(&state).unwrap();
+        let restored: ModelState = serde_json::from_slice(&serialized).unwrap();
+        validate_model(&restored).unwrap();
     }
 }

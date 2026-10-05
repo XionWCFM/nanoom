@@ -742,6 +742,8 @@ components:
           type: integer
           minimum: 1
           maximum: 2147483647
+        runnerEnvironment:
+          $ref: '#/components/schemas/RunnerEnvironment'
         observations:
           type: array
           items:
@@ -912,6 +914,11 @@ components:
           items:
             $ref: '#/components/schemas/PredictionRow'
           maxItems: 50000
+        environmentPredictions:
+          type: array
+          maxItems: 32
+          items:
+            $ref: '#/components/schemas/EnvironmentPrediction'
       description: Public compact read projection. At most 8 MiB JSON. Planner downloads only this table.
         No row may be used after validUntilMs. On server reads, expired contributors may be pruned and
         predictions reprojected from remaining buckets without mutating D1. If no valid row exists return
@@ -978,7 +985,19 @@ components:
           items:
             $ref: '#/components/schemas/AggregateObservation'
           maxItems: 50000
-          minItems: 1
+        environmentBatches:
+          type: array
+          maxItems: 32
+          items:
+            $ref: '#/components/schemas/EnvironmentBatch'
+      anyOf:
+      - properties:
+          aggregates:
+            minItems: 1
+      - required: [environmentBatches]
+        properties:
+          environmentBatches:
+            minItems: 1
       description: Immutable one-batch-per-scope/run/attempt. batchId=SHA256(JCS([scopeId,runId,runAttempt])).
         Maximum 16 MiB / 50000 aggregate rows. Only observations actually executed in this attempt. Current-attempt
         telemetry is finalized once; do not rebuild a retry with changed content/timestamp. Batch age
@@ -1050,6 +1069,34 @@ components:
       maxItems: 4
       description: '[utcEpochDay, count, sumDurationMs, lastObservedAtMs]; integer merge. Keep latest
         7 observed UTC days in today and previous 29 days.'
+    RunnerEnvironment:
+      type: object
+      additionalProperties: false
+      required: [fingerprint, profile]
+      properties:
+        fingerprint:
+          $ref: '#/components/schemas/Digest'
+        profile:
+          type: object
+          additionalProperties: false
+          required: [version, os, arch, cpuModel, availableCpus, memoryMiB, cpuQuotaMilli, memoryLimitMiB, containerLimits, image, nodeVersion, packageManager, packageManagerVersion]
+          properties:
+            version: {const: 1}
+            os: {type: string, minLength: 1, maxLength: 256}
+            arch: {type: string, minLength: 1, maxLength: 256}
+            cpuModel: {type: string, minLength: 1, maxLength: 256}
+            availableCpus: {type: integer, minimum: 1, maximum: 9007199254740991}
+            memoryMiB: {type: integer, minimum: 1, maximum: 9007199254740991}
+            cpuQuotaMilli: {type: [integer, 'null'], minimum: 1, maximum: 9007199254740991}
+            memoryLimitMiB: {type: [integer, 'null'], minimum: 1, maximum: 9007199254740991}
+            containerLimits: {enum: [cgroup-v2, unknown]}
+            image: {type: string, maxLength: 256}
+            nodeVersion: {type: string, minLength: 1, maxLength: 256}
+            packageManager: {type: string, minLength: 1, maxLength: 256}
+            packageManagerVersion: {type: string, minLength: 1, maxLength: 256}
+      description: 'Optional observed execution environment. SHA-256 of canonical profile JSON;
+        excludes hostname, runner name, job/run IDs and load. Unknown container limits are explicit.
+        This is not the future runner selected for a Plan.'
     ModelEntry:
       type: object
       additionalProperties: false
@@ -1066,6 +1113,27 @@ components:
             $ref: '#/components/schemas/DayBucket'
           maxItems: 7
           minItems: 1
+        recentBatches:
+          type: array
+          maxItems: 3
+          items:
+            type: array
+            prefixItems:
+            - $ref: '#/components/schemas/EpochMs'
+            - type: string
+              pattern: ^[1-9][0-9]{0,19}$
+            - type: integer
+              minimum: 1
+              maximum: 4294967295
+            - type: integer
+              minimum: 0
+              maximum: 604800000
+            items: false
+            minItems: 4
+            maxItems: 4
+          description: 'Newest three [lastObservedAtMs,runId,runAttempt,roundedBatchMeanMs] summaries,
+            sorted by timestamp, runId and attempt. Scope/run/attempt identifies the immutable batch.
+            Optional in legacy states.'
         prediction:
           type: array
           prefixItems:
@@ -1081,8 +1149,9 @@ components:
           minItems: 4
           maxItems: 4
       description: 'Updater-only state. prediction columns omit keyId: [estimatedMs,count,lastSeenMs,validUntilMs].
-        Rounded recency-weighted mean of daily aggregates, half-life seven days. Raw observation arrays
-        and per-execution provenance prohibited.'
+        Median of the newest three batch summaries within seven days of the latest observation.
+        Legacy entries without summaries use the rounded daily recency-weighted mean.
+        Raw observation arrays and per-execution provenance prohibited.'
     BatchReceipt:
       type: array
       prefixItems:
@@ -1128,6 +1197,11 @@ components:
           items:
             $ref: '#/components/schemas/BatchReceipt'
           maxItems: 4096
+        environmentStates:
+          type: array
+          maxItems: 32
+          items:
+            $ref: '#/components/schemas/EnvironmentState'
       description: >-
         Internal/updater-only. Artifact JSON supports up to 16 MiB. The free D1 Worker accepts a stored row up to 1.9 MB.
         D1 stores one canonical model row per scope. Artifact backend publishes this separately before the prediction artifact. Never
@@ -1276,6 +1350,48 @@ components:
           modelArtifact:
             name: nanoom-model-v3-123456789-1
             sha256: ada20f873e74812b9e056d9134c73ae06102c808739d5fd1c73f0b40e800302b
+    EnvironmentPrediction:
+      type: object
+      additionalProperties: false
+      required: [environment, table]
+      properties:
+        environment:
+          $ref: '#/components/schemas/RunnerEnvironment'
+        table:
+          allOf:
+          - $ref: '#/components/schemas/PredictionTable'
+          - properties:
+              environmentPredictions:
+                maxItems: 0
+      description: Same logical scope as parent. Children sorted uniquely by environment fingerprint; no nested environments. Collection limits include all child rows or entries.
+    EnvironmentBatch:
+      type: object
+      additionalProperties: false
+      required: [environment, batch]
+      properties:
+        environment:
+          $ref: '#/components/schemas/RunnerEnvironment'
+        batch:
+          allOf:
+          - $ref: '#/components/schemas/ObservationBatch'
+          - properties:
+              environmentBatches:
+                maxItems: 0
+      description: Same logical scope as parent. Children sorted uniquely by environment fingerprint; no nested environments. Collection limits include all child rows or entries.
+    EnvironmentState:
+      type: object
+      additionalProperties: false
+      required: [environment, state]
+      properties:
+        environment:
+          $ref: '#/components/schemas/RunnerEnvironment'
+        state:
+          allOf:
+          - $ref: '#/components/schemas/ModelState'
+          - properties:
+              environmentStates:
+                maxItems: 0
+      description: Same logical scope as parent. Children sorted uniquely by environment fingerprint; no nested environments. Collection limits include all child rows or entries.
 externalDocs:
   description: Implementation and operational contract
   url: ../history-server-spec.md
