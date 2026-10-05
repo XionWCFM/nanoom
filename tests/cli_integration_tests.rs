@@ -76,6 +76,45 @@ fn binary_path() -> std::path::PathBuf {
     path.join("nanoom")
 }
 
+#[test]
+fn local_run_uses_explicit_revisions_instead_of_an_unresolvable_implicit_base() {
+    let dir = tempdir().unwrap();
+    setup_monorepo(dir.path());
+    init_git_repo(dir.path());
+    fs::write(dir.path().join("packages/pkg-a/changed.txt"), "changed").unwrap();
+    for args in [
+        vec!["add", "."],
+        vec!["commit", "-m", "change", "--no-gpg-sign"],
+    ] {
+        assert!(Command::new("git")
+            .arg("-C")
+            .arg(dir.path())
+            .args(args)
+            .output()
+            .unwrap()
+            .status
+            .success());
+    }
+    let (success, stdout, stderr) = run_cli_parts(
+        dir.path(),
+        &["run", "ci", "test", "--base", "HEAD~1", "--json"],
+        &[],
+    );
+    assert!(success, "{stderr}");
+    let result: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(result["projects"], serde_json::json!(["pkg-a"]));
+    assert_eq!(result["executions"][0]["workspace"], "pkg-a");
+    assert!(!run_cli_parts(dir.path(), &["run", "ci", "test", "--json"], &[]).0);
+    assert!(
+        !run_cli_parts(
+            dir.path(),
+            &["run", "ci", "test", "--all", "--base", "HEAD~1"],
+            &[]
+        )
+        .0
+    );
+}
+
 fn run_cli(cwd: &Path, args: &[&str], envs: &[(&str, &str)]) -> (bool, String) {
     let (success, stdout, stderr) = run_cli_parts(cwd, args, envs);
     (success, format!("{}{}", stdout, stderr))
@@ -117,6 +156,73 @@ fn json_mode_returns_json_error_and_nonzero_exit() {
     assert_eq!(value["status"], "failure");
     assert!(value["error"].as_str().is_some());
     assert!(stderr.contains("error:"));
+}
+
+#[test]
+fn metadata_commands_work_without_repository_configuration() {
+    let dir = tempdir().unwrap();
+    for config in [None, Some("invalid JSON")] {
+        if let Some(contents) = config {
+            fs::write(dir.path().join("nanoom.config.json"), contents).unwrap();
+        }
+        for args in [
+            vec!["status", "run", "--results", "run=success", "--json"],
+            vec!["cache-key", "--runner", "pnpm", "--task", "test", "--json"],
+        ] {
+            let (success, stdout, stderr) = run_cli_parts(dir.path(), &args, &[]);
+            assert!(success, "{args:?}: {stderr}");
+            serde_json::from_str::<serde_json::Value>(&stdout).unwrap();
+        }
+    }
+    fs::write(dir.path().join("selected.json"), "selected config").unwrap();
+    let args = [
+        "cache-key",
+        "--runner",
+        "pnpm",
+        "--task",
+        "test",
+        "-c",
+        "selected.json",
+        "--json",
+    ];
+    let key =
+        |output: String| serde_json::from_str::<serde_json::Value>(&output).unwrap()["key"].clone();
+    let (success, stdout, stderr) = run_cli_parts(dir.path(), &args, &[]);
+    assert!(success, "{stderr}");
+    let before = key(stdout);
+    fs::write(dir.path().join("selected.json"), "changed config").unwrap();
+    let (success, stdout, stderr) = run_cli_parts(dir.path(), &args, &[]);
+    assert!(success, "{stderr}");
+    assert_ne!(before, key(stdout));
+    for cwd in ["missing", "selected.json"] {
+        assert!(
+            !run_cli_parts(
+                dir.path(),
+                &[
+                    "-C",
+                    cwd,
+                    "cache-key",
+                    "--runner",
+                    "pnpm",
+                    "--task",
+                    "test",
+                    "--json"
+                ],
+                &[]
+            )
+            .0
+        );
+    }
+    fs::create_dir(dir.path().join("yarn.lock")).unwrap();
+    assert!(!run_cli_parts(dir.path(), &args, &[]).0);
+    assert!(
+        !run_cli_parts(
+            dir.path(),
+            &["status", "run", "--results", "run=failure", "--json"],
+            &[]
+        )
+        .0
+    );
 }
 
 #[test]
@@ -549,7 +655,7 @@ fn test_run_unknown_group_fails() {
     setup_monorepo(dir.path());
     init_git_repo(dir.path());
 
-    let (success, output) = run_cli(dir.path(), &["run", "no-such-group", "test"], &[]);
+    let (success, output) = run_cli(dir.path(), &["run", "no-such-group", "test", "--all"], &[]);
     assert!(!success);
     assert!(output.contains("not found"));
 }

@@ -17,6 +17,10 @@
     "e2e": {
       "tasks": ["test:e2e"],
       "rules": [
+        { "name": "@adv/design-system", "ignore": true },
+        { "name": "@adv/db-migrations", "ignore": true },
+        { "name": "@adv/legacy-admin", "ignore": true },
+        { "name": "@adv/mobile", "ignore": true },
         { "name": "@adv/web", "shard": [{ "task": "test:e2e", "shard": 2 }] }
       ]
     }

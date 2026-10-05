@@ -1,5 +1,9 @@
 # Nanoom 개선 실행 계획 — LUNA 작업 명세
 
+> 이 문서는 작성 당시의 설계·조사·실행 기록이다. 현재 공개 계약과 작업 기준은
+> [SPEC.md](SPEC.md), [AGENTS.md](AGENTS.md), [CI 철학](docs/ci-philosophy.md)을 따른다.
+> 과거 branch/PR 상태와 후보 검증을 현재 구현 상태나 이번 수정의 완료 증거로 사용하지 않는다.
+
 상태: **A1~A6 local 구현·gates 완료. OpenAPI schema/examples/digest validation 통과. A7은 producer candidate `0d29332882ed303a22a24bb15c8464cc406eb57a`로 producer/consumer hosted 검증을 완료했다([CHECKLIST.md](CHECKLIST.md)). A5 전체 CI wall time과 historical median 대비 prediction error는 미실시이며, 실제 artifact 크기는 측정했다. Cloudflare Workers Free + D1 hosted health/protected merge/warm consumer 통과. S2 lost-response/corrupt-row/capacity 경계, Worker CPU/usage, 실제 GHES와 release consumer는 미실시다.** 기준 release source `539b2c08cc7e2543f3a0cdd10fbdba451b2502d5`(v0.6.0). 현재 작업은 `codex/prediction-state-v3` draft PR #89. 조사일 2026-09-25. 이 문서의 나머지 proposed 동작을 released product 기능으로 설명하지 않는다.
 
 ## 다른 세션에서 시작하기

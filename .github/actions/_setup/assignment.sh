@@ -35,7 +35,13 @@ nanoom_validate_assignment_file() {
     return 1
   }
   cwd_real=$(cd "$cwd_path" && pwd -P)
-  [[ "$cwd_real" == "$workspace_real" || "$cwd_real" == "$workspace_real/.nanoom/"* ]] || {
+  local checkout_root
+  checkout_root=$(git -C "$cwd_real" rev-parse --show-toplevel 2>/dev/null) || {
+    echo "assignment checkout must be the job workspace or isolated below $workspace_real/.nanoom: $cwd_real" >&2
+    return 1
+  }
+  checkout_root=$(cd "$checkout_root" && pwd -P)
+  [[ "$checkout_root" == "$workspace_real" || "$checkout_root" == "$workspace_real/.nanoom/"* ]] || {
     echo "assignment checkout must be the job workspace or isolated below $workspace_real/.nanoom: $cwd_real" >&2
     return 1
   }
@@ -68,6 +74,7 @@ nanoom_validate_assignment_file() {
     echo "assignment file does not match the current run identity or has no planned items" >&2
     return 1
   }
+  nanoom_assignment_cwd "$assignment_file" "$cwd_real" >/dev/null || return 1
   current_head=$(git -C "$cwd_real" rev-parse --verify 'HEAD^{commit}')
   expected_head=$(jq -er '.current.head' "$assignment_file")
   [[ "$current_head" == "$expected_head" ]] || {
@@ -92,4 +99,22 @@ nanoom_validate_assignment_file() {
   rm -rf -- "$validation_dir"
   echo "assignment file failed Plan digest, schema, provenance, or selection validation" >&2
   return 1
+}
+
+# The Plan owns the execution directory; cwd identifies its checked-out repository.
+nanoom_assignment_cwd() {
+  local assignment=$1 supplied=$2 checkout_root supplied_real directory expected
+  if [[ "$supplied" != /* && "$supplied" != [[:alpha:]]:[\\/]* ]]; then supplied="$GITHUB_WORKSPACE/$supplied"; fi
+  supplied_real=$(cd "$supplied" && pwd -P) || return 1
+  checkout_root=$(git -C "$supplied_real" rev-parse --show-toplevel) || return 1
+  checkout_root=$(cd "$checkout_root" && pwd -P)
+  directory=$(jq -r '.workingDirectory // empty' "$assignment") || return 1
+  expected="$checkout_root${directory:+/$directory}"
+  [[ "$(cd "$expected" && pwd -P)" == "$expected" ]] || {
+    echo 'planned working directory must exist inside its checkout without symlink redirection' >&2; return 1
+  }
+  [[ "$supplied_real" == "$checkout_root" || "$supplied_real" == "$expected" ]] || {
+    echo 'assignment cwd does not match the planned working directory' >&2; return 1
+  }
+  printf '%s' "$expected"
 }

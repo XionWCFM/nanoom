@@ -1,6 +1,6 @@
 # nanoom Code Principles & Conventions
 
-This document serves as the constitution for the nanoom codebase. All contributors must adhere to these principles without exception.
+The repository root AGENTS.md and ADR-0015 are authoritative. These implementation conventions complement the released-product and template-first principles. The current public contract is in SPEC.md; historical plans do not override it.
 
 ---
 
@@ -49,20 +49,18 @@ This document serves as the constitution for the nanoom codebase. All contributo
 ## 5. Error Handling
 
 - **NEVER** use `unwrap()`, `expect()`, `panic!()` in production paths
-- **Application errors**: Use `anyhow::Result<T>` (returning to user)
-- **Library errors**: Use `thiserror::Error` (structured, matchable)
+- **Errors**: Use the shared `crate::error::Result` and `thiserror::Error` variants.
 - **Error messages must be actionable**: What failed, why, how to fix
 - **CI errors**: Use `::error` GitHub Actions annotation format
 - **Propagation**: Use `?` operator
-- **Context enrichment**: Use `.context("...")` at each level
+- **Context enrichment**: Convert boundary errors into actionable existing Error variants.
 
 ```rust
 // Good
 fn parse_config(path: &Path) -> Result<Config> {
-    let content = fs::read_to_string(path)
-        .context("Failed to read config file")?;
-    serde_json::from_str(&content)
-        .context("Invalid JSON in config file")
+    let content = fs::read_to_string(path)?;
+    let config = serde_json::from_str(&content)?;
+    Ok(config)
 }
 
 // Bad - never do this
@@ -78,8 +76,8 @@ fn parse_config(path: &Path) -> Config {
 
 - **Prefer real implementations over mocks**: Test actual git, actual filesystem, actual CLI
 - **Unit tests**: Test pure functions in isolation (parser, mapper, calculator)
-- **Integration tests**: Test full CLI commands with real git repos (in-memory via gitoxide)
-- **Property-based tests**: `proptest` for edge cases in glob matching, path mapping
+- **Integration tests**: Test full CLI commands with real filesystem repositories and Git subprocesses.
+- **Edge cases**: Reuse the existing test harness for glob, path and error boundaries.
 - **Test organization**: `#[cfg(test)]` modules in same file, integration tests in `tests/`
 - **Coverage**: `cargo llvm-cov`, fail CI if < 96%
 
@@ -108,14 +106,14 @@ mod tests {
 - Use **sync API** for local operations (`rev-parse`, `diff`, `merge-base`)
 - Use **async API** only for network fetch
 - Always check `is_shallow_repository()` before `merge-base`
-- Implement **retry with deepening** (128 commits at a time)
+- Deepen shallow history using the existing bounded 32/128/512/2048 progression and configured cap.
 - Convert gitoxide errors to our error types with context
 
 ---
 
 ## 8. Configuration Design
 
-- All config via `nanoom.config.json` (no env vars for config)
+- Repository config uses `nanoom.config.json`; explicit CLI overrides and native GitHub Action context remain supported.
 - **JSON Schema** generated from Rust types via `schemars`
 - Validation at parse time with clear error messages
 - Unknown fields = error (strict parsing)
@@ -126,15 +124,13 @@ mod tests {
 ## 9. CLI Design (clap derive)
 
 - Single binary, subcommands for each operation
-- **Global flags**: `--config`, `--verbose`, `--json-output`
+- **Global flags**: `--config`, `--cwd`, `--verbose`; machine-output subcommands provide `--json`.
 - Subcommand-specific args
 - **Help text**: Concise, examples in `long_help`
 - **Exit codes**:
   - `0` = success
   - `1` = general error
   - `2` = usage error
-  - `3` = config error
-  - `4` = git error
 
 ---
 

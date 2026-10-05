@@ -60,7 +60,24 @@ checkout_path=".nanoom/$RUN_ID/$RUN_ATTEMPT/$GITHUB_JOB/$MATRIX_INDEX"
 printf 'assignment-file=%s\n' "$selected_dir/assignment.json" >> "$GITHUB_OUTPUT"
 printf 'paths-file=%s\n' "$selected_dir/paths.txt" >> "$GITHUB_OUTPUT"
 printf 'head=%s\n' "$head" >> "$GITHUB_OUTPUT"
-printf 'cwd=%s\n' "${SELECT_CWD:-${GITHUB_WORKSPACE%/}/$checkout_path}" >> "$GITHUB_OUTPUT"
+working_directory=$(jq -r '.workingDirectory // empty' "$selected_dir/assignment.json")
+if [[ -n ${SELECT_CWD:-} ]]; then
+  source "$GITHUB_ACTION_PATH/../_setup/assignment.sh"
+  selected_cwd=$(nanoom_assignment_cwd "$selected_dir/assignment.json" "$SELECT_CWD")
+else
+  selected_cwd="${GITHUB_WORKSPACE%/}/$checkout_path${working_directory:+/$working_directory}"
+fi
+printf 'cwd=%s\n' "$selected_cwd" >> "$GITHUB_OUTPUT"
+# Root metadata makes the planned cwd exist before prepare applies cone paths.
+initial_sparse='/*
+!/*/'
+if [[ -n "$working_directory" ]]; then
+  escaped_directory=$(printf '%s' "$working_directory" | sed 's/[][?* ]/\\&/g')
+  initial_sparse="$initial_sparse
+/$escaped_directory/*
+!/$escaped_directory/*/"
+fi
+printf 'initial-sparse-checkout<<NANOOM_SPARSE\n%s\nNANOOM_SPARSE\n' "$initial_sparse" >> "$GITHUB_OUTPUT"
 printf 'checkout-path=%s\n' "$checkout_path" >> "$GITHUB_OUTPUT"
 printf 'group=%s\n' "$GROUP" >> "$GITHUB_OUTPUT"
 printf 'assignment-id=%s\n' "$ASSIGNMENT_ID" >> "$GITHUB_OUTPUT"

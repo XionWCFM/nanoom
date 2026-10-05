@@ -11,7 +11,7 @@ pub struct GitRepo {
 impl GitRepo {
     pub fn open(path: &Path) -> Result<Self> {
         let repo = open(path).map_err(|e| Error::GitError(e.to_string()))?;
-        let workdir = repo.workdir().unwrap_or(path).to_path_buf();
+        let workdir = repo.workdir().unwrap_or(path).canonicalize()?;
         Ok(Self { repo, workdir })
     }
 
@@ -167,7 +167,7 @@ impl GitRepo {
 }
 
 pub fn detect_git_root(path: &Path) -> Result<PathBuf> {
-    let repo = open(path).map_err(|e| Error::GitError(e.to_string()))?;
+    let repo = gix::discover(path).map_err(|e| Error::GitError(e.to_string()))?;
     Ok(repo.workdir().unwrap_or(path).to_path_buf())
 }
 
@@ -389,7 +389,7 @@ mod tests {
     fn test_git_repo_open_and_workdir() {
         let dir = init_repo();
         let repo = GitRepo::open(dir.path()).unwrap();
-        assert_eq!(repo.workdir(), dir.path());
+        assert_eq!(repo.workdir(), dir.path().canonicalize().unwrap());
     }
 
     #[test]
@@ -462,6 +462,9 @@ mod tests {
 
         let repo = GitRepo::open(dir.path()).unwrap();
         let mut files = repo.get_changed_files(&base, None).unwrap();
+        assert!(files
+            .iter()
+            .all(|file| file.starts_with(dir.path().canonicalize().unwrap())));
         files.sort();
         let names: Vec<String> = files
             .iter()

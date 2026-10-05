@@ -7,6 +7,10 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
+    /// Runtime origin, never supplied by repository configuration or schema.
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub source_path: Option<PathBuf>,
     #[serde(rename = "$schema", default)]
     pub schema: Option<String>,
 
@@ -191,6 +195,7 @@ impl Config {
             }
         }
         config.validate()?;
+        config.source_path = Some(config_file.canonicalize()?);
         Ok(config)
     }
 

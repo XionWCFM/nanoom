@@ -251,6 +251,7 @@ pub async fn execute(
             cwd,
             &crate::plan::resolve_path(cwd, plan_context),
             &crate::plan::resolve_path(cwd, plan_output),
+            config.source_path.as_deref(),
         )?),
         _ => None,
     };

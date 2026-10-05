@@ -6,7 +6,7 @@ inputs:
   group: {description: "Plan group selected for this assignment", default: ''}
   assignmentId: {description: "Assignment ID provided by the affected matrix", default: ''}
   matrix: {description: "scheduler=http continuous agent only; static inline matrices are not accepted", default: ''}
-  packageManager: {description: "Package manager override: auto, pnpm, or yarn", default: auto}
+  packageManager: {description: "Package manager override: auto, pnpm, yarn, or npm", default: auto}
   cwd: {description: "Consumer working directory", default: .}
   version: {description: "Action ref (version tag or latest), explicit release tag, or local for repository tests", default: action}
   releaseBaseUrl: {description: "HTTPS origin hosting Nanoom release assets; use your GitHub Enterprise Server URL when it mirrors releases", default: "https://github.com"}
@@ -54,12 +54,6 @@ runs:
         GITHUB_JOB: ${{ github.job }}
         MATRIX_INDEX: ${{ strategy.job-index || 0 }}
       run: bash "$GITHUB_ACTION_PATH/../prepare/select.sh"
-    - name: Activate the repository package manager
-      if: inputs.assignmentFile == '' && inputs.plan != ''
-      shell: bash
-      env:
-        CWD: ${{ steps.select.outputs.cwd || inputs.cwd }}
-      run: bash "$GITHUB_ACTION_PATH/activate.sh"
     - name: Install focused dependencies
       id: install
       shell: bash

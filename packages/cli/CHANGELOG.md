@@ -1,5 +1,18 @@
 # @nanoom/cli
 
+## 0.8.0
+
+- Emit project-relative affected workspace paths and activate the package manager after Plan validation in both direct and prepared install paths.
+- Clean up the complete isolated checkout when running a nested project, while rejecting the primary repository as a deletion target.
+- Preserve nested project working directories through Plan selection, repository-relative sparse checkout, focused install, and run; detect Git roots and normalize relative affected paths.
+- Add npm focused install and local run revision inputs; include root tooling, internal dependency closures, and development dependencies in focused installs.
+- Treat root execution inputs and declared internal tooling as global changes, and preserve custom configuration paths through Plan selection and file-level checkout.
+- Record preparation timing in the default four-step template and preserve cold Plans when warm replanning is interrupted.
+- Bound current-attempt measurement downloads on GitHub.com and GHES, preserve distinct artifacts for long job names, and respect npm shrinkwrap in preparation predictions.
+- Honor explicit required jobs without requiring unrelated skipped groups, and reject invalid or ambiguous package-manager declarations.
+- Keep metadata commands independent of configuration parsing and hash the selected configuration and package-manager inputs in cache keys.
+- Repair the default examples and cross-platform validation paths.
+
 ## 0.7.7
 
 - Resolve annotated base/head tags to commit identities for affected comparisons.

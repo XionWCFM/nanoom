@@ -1,5 +1,9 @@
 # Nanoom 공개 인터페이스·UX·기본값 감사
 
+> 이 문서는 작성 당시의 설계·조사·실행 기록이다. 현재 공개 계약과 작업 기준은
+> [SPEC.md](SPEC.md), [AGENTS.md](AGENTS.md), [CI 철학](docs/ci-philosophy.md)을 따른다.
+> 과거 branch/PR 상태와 후보 검증을 현재 구현 상태나 이번 수정의 완료 증거로 사용하지 않는다.
+
 - 기준 커밋: `93884a7d1673bf8a2a1fcb78a131cbb5823c6194` (`main`)
 - 감사일: 2026-08-26
 - 범위: CLI, `nanoom.config.json`, composite Actions, npm wrapper/release, 영·한 문서와 예제, fixture, 기여자 경로

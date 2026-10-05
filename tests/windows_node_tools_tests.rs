@@ -94,9 +94,6 @@ fn windows_package_managers_execute_focused_and_full_installs() {
             ),
         );
         for focused in [false, true] {
-            if focused && pm == "npm" {
-                continue;
-            }
             let mut command = Command::new(env!("CARGO_BIN_EXE_nanoom"));
             command
                 .arg("-C")
@@ -112,9 +109,13 @@ fn windows_package_managers_execute_focused_and_full_installs() {
     }
     let calls = fs::read_to_string(log).unwrap().replace('"', "");
     assert!(
-        calls.contains("pnpm install --frozen-lockfile --filter . --filter app..."),
+        calls.contains("pnpm install --frozen-lockfile --prod=false --filter . --filter app..."),
         "{calls}"
     );
     assert!(calls.contains("yarn workspaces focus root app"), "{calls}");
     assert!(calls.contains("npm install"), "{calls}");
+    assert!(
+        calls.contains("npm ci --include-workspace-root --include=dev --workspace app"),
+        "{calls}"
+    );
 }

@@ -34,7 +34,7 @@ pub enum JobStatus {
     Skipped,
 }
 
-pub async fn execute(args: StatusArgs, _config: &crate::Config) -> Result<()> {
+pub async fn execute(args: StatusArgs) -> Result<()> {
     let job_names: Vec<String> = args.jobs.split(',').map(|s| s.trim().to_string()).collect();
 
     let mut results = Vec::new();

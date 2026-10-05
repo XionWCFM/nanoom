@@ -54,7 +54,7 @@ export GITHUB_EVENT_NAME=push WORKFLOW_REF="$workflow_ref" GITHUB_SHA="$head"
 export BASE="$base" HEAD="$head" EVENT=push EVENT_BASE="$base" EVENT_HEAD="$head" REF_NAME="$branch" HISTORY_REF="$branch"
 export SCHEDULER=artifact HISTORY_BACKEND=server HISTORY_SERVER_URL=http://127.0.0.1:1 HISTORY_SERVER_TOKEN="$token"
 export TIMING_RUNNER=yarn TIMING_ENVIRONMENT="$timing_environment" PACKAGE_MANAGER=yarn
-export CONFIG="$fixture/nanoom.config.json" RUN_ATTEMPT="$run_attempt" RUNNER_TEMP="$tmp/runner"
+export CONFIG=nanoom.config.json RUN_ATTEMPT="$run_attempt" RUNNER_TEMP="$tmp/runner"
 export GITHUB_RUN_ATTEMPT="$run_attempt" GITHUB_STEP_SUMMARY="$tmp/summary"
 
 run_affected() {
@@ -141,12 +141,13 @@ run_assignments() {
     mkdir -p "$(dirname "$cwd")"
     git clone -q --no-checkout "$fixture" "$cwd"
     git -C "$cwd" checkout -q "$head"
-    if ! (cd "$cwd" && node .yarn/releases/yarn-4.11.0.cjs install --immutable) >"$tmp/yarn-install-$id-$index.log" 2>&1; then
-      cat "$tmp/yarn-install-$id-$index.log" >&2
-      return 1
-    fi
-    export GITHUB_ACTION_PATH="$root/.github/actions/run" CWD="$cwd"
+    export GITHUB_ACTION_PATH="$root/.github/actions/install" CWD="$cwd" PM=auto
     export ASSIGNMENT_FILE="$selection/selected/assignment.json" NANOOM_YARN_PATH="$cwd/.yarn/releases/yarn-4.11.0.cjs"
+    export GITHUB_OUTPUT="$tmp/install-$id-$index.out" GITHUB_PATH="$tmp/install-$id-$index.path" GITHUB_STEP_SUMMARY="$tmp/install-$id-$index.summary"
+    if ! bash "$GITHUB_ACTION_PATH/run.sh" >"$tmp/install-$id-$index.log" 2>&1; then cat "$tmp/install-$id-$index.log" >&2; return 1; fi
+    export INSTALL_RESULT="$(sed -n 's/^result=//p' "$GITHUB_OUTPUT")"
+    export PATH="$(tail -n 1 "$GITHUB_PATH"):$PATH"
+    export GITHUB_ACTION_PATH="$root/.github/actions/run"
     export TOOL=auto PM=yarn GITHUB_OUTPUT="$tmp/run-$id-$index.out" GITHUB_STEP_SUMMARY="$tmp/run-$id-$index.summary"
     : > "$GITHUB_OUTPUT"
     if ! bash "$GITHUB_ACTION_PATH/run.sh" >"$tmp/run-$id-$index.log" 2>&1; then cat "$tmp/run-$id-$index.log" >&2; return 1; fi

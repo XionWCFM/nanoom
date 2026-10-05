@@ -12,6 +12,8 @@ if [[ -n ${ASSIGNMENT_FILE:-} ]]; then
   fi
   source "$GITHUB_ACTION_PATH/../_setup/assignment.sh"
   nanoom_validate_assignment_file "$ASSIGNMENT_FILE" "$CWD"
+  CWD=$(nanoom_assignment_cwd "$ASSIGNMENT_FILE" "$CWD")
+  ACTION_CWD=$CWD
   group=$(jq -er .group "$ASSIGNMENT_FILE")
   assignment_id=$(jq -er .assignmentId "$ASSIGNMENT_FILE")
   planned_count=$(jq -er '.items | select(type == "array" and length > 0) | length' "$ASSIGNMENT_FILE")
@@ -20,7 +22,8 @@ if [[ -n ${ASSIGNMENT_FILE:-} ]]; then
   name_count=$(jq -r length "$filter_file")
   ((name_count > 0)) || { echo 'static assignment install requires at least one workspace' >&2; false; }
   matrix_json=$(jq -cn --arg group "$group" --arg assignmentId "$assignment_id" --argjson itemCount "$planned_count" --argjson predictedDurationMs "$(jq -c '.predictedDurationMs // 0' "$ASSIGNMENT_FILE")" '{group:$group,assignmentId:$assignmentId,itemCount:$itemCount,predictedDurationMs:$predictedDurationMs}')
-  args=(-C "$CWD" install --package-manager "$PM" --filter-file "$filter_file" --json)
+  config_path=$(jq -r '.configPath // "nanoom.config.json"' "$ASSIGNMENT_FILE")
+  args=(-C "$CWD" install --package-manager "$PM" --filter-file "$filter_file" --json -c "$config_path")
 elif [[ -n ${MATRIX:-} ]]; then
   entry=$(jq -ce '(.include[0] // .)' <<<"$MATRIX")
   [[ $(jq -r '.mode // empty' <<<"$entry") == continuous ]] || {
@@ -35,7 +38,8 @@ else
   echo 'install requires assignmentFile; only scheduler=http continuous agents may use matrix' >&2
   false
 fi
-[[ "$PM" != npm || "$name_count" -eq 0 ]] || { echo 'npm cannot perform a focused workspace install; use Yarn Berry or pnpm' >&2; false; }
+ACTION_PHASE=package-manager-activation ACTION_COMMAND=activate-repository-package-manager
+source "$GITHUB_ACTION_PATH/activate.sh"
 printf -v ACTION_COMMAND '%q ' nanoom "${args[@]}"; ACTION_COMMAND=${ACTION_COMMAND% }
 printf '◆ nanoom install\n  Inputs\n    normalized assignment: %s\n    package manager: %s\n    cwd: %s\n  Command\n    %s\n' "$matrix_json" "$PM" "$CWD" "$ACTION_COMMAND"
 ACTION_PHASE=focused-install
