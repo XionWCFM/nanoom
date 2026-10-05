@@ -22,7 +22,7 @@ globset = "0.4"
 ignore = "0.4"
 thiserror = "1.0"
 tokio = { version = "1.38", features = ["full"] }
-gix = { version = "0.87", default-features = false, features = ["revision", "merge", "sha1"] }
+gix = { version = "0.88", default-features = false, features = ["revision", "merge", "sha1"] }
 schemars = { version = "0.8", features = ["derive"] }
 serde_yaml = "0.9"
 toml = "0.8"
