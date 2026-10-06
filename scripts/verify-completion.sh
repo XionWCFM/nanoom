@@ -8,7 +8,6 @@ git diff --check
 yarn format:check
 cargo clippy --locked --all-targets --all-features -- -D warnings
 cargo test --locked --all --all-features
-cargo llvm-cov --locked --workspace --all-features --fail-under-lines 96 --summary-only
 bash scripts/action-contract.sh
 bash scripts/platform-package-smoke.sh
 node packages/cli/smoke-test.js

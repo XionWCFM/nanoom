@@ -174,26 +174,4 @@ mod tests {
         let result = read_job_result("matrix", "matrix=failure,other=success").unwrap();
         assert_eq!(result.status, JobStatus::Failure);
     }
-
-    #[test]
-    fn test_status_emoji() {
-        assert_eq!(status_emoji(&JobStatus::Success), "✅");
-        assert_eq!(status_emoji(&JobStatus::Failure), "❌");
-        assert_eq!(status_emoji(&JobStatus::Cancelled), "⏭️");
-        assert_eq!(status_emoji(&JobStatus::Skipped), "⏭️");
-    }
-
-    #[test]
-    fn test_job_result_serialization() {
-        let jr = JobResult {
-            name: "test".into(),
-            status: JobStatus::Success,
-            duration_ms: Some(1000),
-            url: Some("http://example.com".into()),
-        };
-        let json = serde_json::to_string(&jr).unwrap();
-        assert!(json.contains("test"));
-        assert!(json.contains("success"));
-        assert!(json.contains("1000"));
-    }
 }

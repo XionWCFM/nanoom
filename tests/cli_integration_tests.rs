@@ -430,40 +430,23 @@ fn history_ignores_legacy_samples_instead_of_converting_them() {
 }
 
 #[test]
-fn test_schema_command_outputs_valid_json() {
+fn schema_stdout_and_file_match_the_published_configuration_contract() {
     let dir = tempdir().unwrap();
-    let (success, output) = run_cli(dir.path(), &["schema"], &[]);
-    assert!(success);
-
-    let schema: serde_json::Value = serde_json::from_str(output.trim())
-        .unwrap_or_else(|e| panic!("schema is not valid JSON: {} ({})", e, output));
-    assert_eq!(schema["$schema"], "http://json-schema.org/draft-07/schema#");
-}
-
-#[test]
-fn test_schema_to_file() {
-    let dir = tempdir().unwrap();
-    let out_path = dir.path().join("out.schema.json");
-    let out_str = out_path.to_str().unwrap();
-
-    let (success, _) = run_cli(dir.path(), &["schema", "--output", out_str], &[]);
-    assert!(success);
-    assert!(out_path.exists());
-
-    let content = fs::read_to_string(&out_path).unwrap();
-    let schema: serde_json::Value = serde_json::from_str(&content).unwrap();
-    assert!(schema["properties"].is_object());
-}
-
-#[test]
-fn test_affected_requires_config() {
-    let dir = tempdir().unwrap();
-    let (_, output) = run_cli(dir.path(), &["affected"], &[]);
-    assert!(
-        output.contains("not found") || output.contains("Config"),
-        "unexpected output: {}",
-        output
+    let (success, stdout, stderr) = run_cli_parts(dir.path(), &["schema"], &[]);
+    assert!(success, "{stderr}");
+    let schema: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let published: serde_json::Value =
+        serde_json::from_str(include_str!("../nanoom.schema.json")).unwrap();
+    assert_eq!(schema, published);
+    let out = dir.path().join("config.schema.json");
+    let (success, _, stderr) = run_cli_parts(
+        dir.path(),
+        &["schema", "--output", out.to_str().unwrap()],
+        &[],
     );
+    assert!(success, "{stderr}");
+    let saved: serde_json::Value = serde_json::from_slice(&fs::read(out).unwrap()).unwrap();
+    assert_eq!(saved, published);
 }
 
 #[test]

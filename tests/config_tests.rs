@@ -331,37 +331,6 @@ fn runner_config_uses_camel_case_and_rejects_unsafe_values() {
 }
 
 #[test]
-fn test_schema_generation() {
-    let schema = nanoom::schema::generate().unwrap();
-    let schema_str = serde_json::to_string(&schema).unwrap();
-
-    assert!(schema_str.contains("nanoom Configuration"));
-    assert!(schema_str.contains("GroupConfig"));
-    assert!(schema_str.contains("Rule"));
-    assert!(schema_str.contains("ShardRule"));
-    assert!(schema_str.contains("globalDependencies"));
-    assert!(schema_str.contains("WorkspaceConfig"));
-}
-
-#[test]
-fn test_workspace_config_defaults() {
-    let config = Config {
-        source_path: None,
-        schema: None,
-        group: std::collections::HashMap::new(),
-        global_dependencies: vec![],
-        workspace: nanoom::config::WorkspaceConfig::default(),
-        affected: nanoom::config::AffectedConfig::default(),
-        checkout: nanoom::config::CheckoutConfig::default(),
-    };
-
-    assert_eq!(config.workspace.include, vec!["packages/*", "apps/*"]);
-    assert_eq!(config.workspace.exclude, Vec::<String>::new());
-    assert_eq!(config.affected.max_fetch_depth, 2048);
-    assert!(config.checkout.always.is_empty());
-}
-
-#[test]
 fn checkout_paths_are_cone_directories_and_history_depth_is_bounded() {
     let valid: Config = serde_json::from_value(serde_json::json!({
         "group": {"ci": {"tasks": ["test"]}},

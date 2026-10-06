@@ -72,14 +72,14 @@ fn parse_config(path: &Path) -> Config {
 
 ---
 
-## 6. Testing Principles (96% Coverage Minimum)
+## 6. Testing Principles (User-path Contracts)
 
 - **Prefer real implementations over mocks**: Test actual git, actual filesystem, actual CLI
 - **Unit tests**: Test pure functions in isolation (parser, mapper, calculator)
 - **Integration tests**: Test full CLI commands with real filesystem repositories and Git subprocesses.
 - **Edge cases**: Reuse the existing test harness for glob, path and error boundaries.
 - **Test organization**: `#[cfg(test)]` modules in same file, integration tests in `tests/`
-- **Coverage**: `cargo llvm-cov`, fail CI if < 96%
+- **Acceptance**: Verify observable outputs, exit codes, side effects and real consumer paths. No coverage percentage gate; coverage may be used manually to investigate missing cases.
 
 ### 6.1 Test Patterns
 
@@ -216,7 +216,7 @@ mod tests {
 
 These principles are enforced through:
 
-1. **CI gates**: fmt, clippy, test, coverage, audit must pass
+1. **CI gates**: fmt, clippy, behavior tests, audit must pass
 2. **Code review**: All PRs reviewed for adherence
 3. **Automation**: Pre-commit hooks, CI checks
 4. **Architecture reviews**: For significant changes

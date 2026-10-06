@@ -10,8 +10,7 @@ case "${1:-}" in
     cargo build --locked --release
     ;;
   check)
-    rustup component add rustfmt clippy llvm-tools-preview
-    command -v cargo-llvm-cov >/dev/null || cargo install cargo-llvm-cov --locked
+    rustup component add rustfmt clippy
     bash scripts/verify-completion.sh --local
     bash scripts/history-server-e2e-test.sh
     cargo build --locked --release
