@@ -1,0 +1,45 @@
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -54,6 +54,11 @@
+         with:
+           node-version: '22'
+ 
++      - name: Set up Go for Nanoom development
++        uses: actions/setup-go@v7
++        with:
++          go-version-file: go.mod
++
+       - name: Focus install planned workspaces
+         id: install
+         uses: XionWCFM/nanoom/.github/actions/install@latest
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -14,6 +14,7 @@
+ - 대표 템플릿은 `affected → run → status`로 구성한다. 사용자는 checkout과 공개 Nanoom Action을 연결한다.
+ - `affected`, `install`, `run`, `status`는 별도 Action으로 제공한다. 기존 관심사 분리를 유지하며 하나의 Action과 `command` 입력으로 합치지 않는다.
+ - `run` 잡은 checkout → Node 환경 설정 → Nanoom focused install → Nanoom run의 네 단계를 명시한다. checkout과 Node 설정은 공식 Action을 사용한다. 환경 준비와 설치를 run Action 안에 숨기지 않는다.
++- Nanoom 자체 Go 구현의 개발 CI에는 Node 설정 다음에 공식 `actions/setup-go` 단계를 명시적으로 추가한다. 이는 Go 소스 빌드·검사용 예외이며, JavaScript/TypeScript 소비자의 대표 네 단계 템플릿과 nanoom-fixtures에는 적용하지 않는다.
+ - Nanoom은 assignment별 checkout 대상과 정확한 소스 SHA, focused install 대상과 dependency closure, 실행할 작업을 제공한다. 단계 연결은 Action의 입력·출력만으로 가능해야 한다. 사용자가 jq·shell로 이벤트 해석, Plan 선택, 설치 대상 계산, 요약, 집계를 보완해야 한다면 제품의 미완성으로 취급하고 Nanoom에서 해결한다.
+ - affected는 Plan에서 assignment별 `checkout.ref`와 `checkout.sparseCheckout`을 matrix에 제공한다. sparse 패턴은 실행 workspace·내부 dependency closure·루트 설정과 lockfile·설정된 추가 필수 경로를 포함하고 무관한 workspace 소스는 제외한다. run의 공식 checkout은 이 값을 그대로 사용하며 소비자에게 경로를 다시 계산하거나 나열하게 하지 않는다. install/run은 matrix를 권위 있는 Plan과 대조해 검증한다.
+ - 패키지 매니저와 Nx·Turbo 등 실행 도구는 저장소의 manifest·lockfile·설정에서 자동으로 알아낸다. 일반적인 저장소에서 이를 Action 입력으로 다시 가르치게 하지 않는다.
+--- a/docs/ci-philosophy.md
++++ b/docs/ci-philosophy.md
+@@ -9,6 +9,8 @@
+ 세 잡은 계획·실행·최종 상태라는 책임을 드러낸다. 실행 잡의 네 단계는 checkout → Node 환경 설정 → focused install → run이다. 공식 Action의 책임과 Nanoom의 책임을 구분하고, 환경 준비와 설치를 run Action 안에 숨기지 않는다. 관심사별 Nanoom Action을 하나의 command 기반 Action으로 합치지 않는다.
+ 
+ Nanoom은 무엇을 가져오고 설치하고 실행할지 계산한다. 사용자는 Action의 입력·출력을 연결한다. affected의 matrix는 사람이 읽을 이름과 정확한 소스 SHA, assignment별 sparse checkout 경로를 제공한다. 경로에는 실행 workspace·내부 dependency closure·루트 설정과 lockfile·추가 필수 경로를 포함하며 무관한 소스는 제외한다. Plan은 권위 있는 실행 계약으로 유지한다.
++
++Nanoom 자체 Go 구현을 검증하는 개발 CI는 공식 Node 설정 다음에 공식 `actions/setup-go`를 추가한다. Go compiler·gofmt·test runtime 준비를 작업 실행 안에 숨기지 않는다. 이 언어 도구 설정 예외는 JavaScript/TypeScript 소비자의 아래 대표 네 단계 템플릿과 nanoom-fixtures를 바꾸지 않는다.
+ 
+ ## 목표 템플릿
+ 
+--- a/docs/adr/0015-released-ci-and-template-first.md
++++ b/docs/adr/0015-released-ci-and-template-first.md
+@@ -51,3 +51,7 @@
+ 실행의 JSON 실패 보고는 중단 여부와 무관하게 `completed`, `failed`, `pending`, `executions`를 보존한다. `--continue-on-error`는 후속 workspace 실행 뒤에도 실패 exit code와 단일 JSON 결과를 유지한다. shard 환경변수는 해당 자식 작업에만 설정하여 같은 프로세스의 후속 실행에 전파하지 않는다.
+ 
+ status의 명시적 `results` 입력은 job별 결과를 하나만 허용한다. CLI의 comma-separated 결과와 Action의 line-separated 결과 모두 중복 job ID를 거부한다. 실패 결과를 먼저 또는 나중에 쓰더라도 성공으로 덮어쓸 수 없어야 한다. 정상 생략과 필수 실행 판단은 기존 계약을 유지한다.
++
++## Go 구현 개발 CI의 언어 도구 예외 (승인 대기)
++
++Nanoom 자체 Go 구현의 개발 CI에는 공식 Node 설정 다음에 공식 `actions/setup-go` 단계를 추가하는 안을 제안한다. hosted macOS에서 Go/gofmt가 PATH에 없어 실제 검사가 실패한 것이 근거다. compiler 준비를 run Action 또는 test script에 숨기지 않는다. JavaScript/TypeScript 소비자의 대표 네 단계와 nanoom-fixtures에는 예외를 적용하지 않는다. `@latest` 제품 소비·Plan/checkout/focused install/status 원칙은 유지한다.

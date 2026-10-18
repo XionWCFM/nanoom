@@ -10,6 +10,8 @@ CI는 항상 최신 공개 릴리즈 Nanoom을 사용한다. 기본 템플릿만
 
 Nanoom은 무엇을 가져오고 설치하고 실행할지 계산한다. 사용자는 Action의 입력·출력을 연결한다. affected의 matrix는 사람이 읽을 이름과 정확한 소스 SHA, assignment별 sparse checkout 경로를 제공한다. 경로에는 실행 workspace·내부 dependency closure·루트 설정과 lockfile·추가 필수 경로를 포함하며 무관한 소스는 제외한다. Plan은 권위 있는 실행 계약으로 유지한다.
 
+Nanoom 자체 Go 구현을 검증하는 개발 CI는 공식 Node 설정 다음에 공식 `actions/setup-go`를 추가한다. Go compiler·gofmt·test runtime 준비를 작업 실행 안에 숨기지 않는다. 이 언어 도구 설정 예외는 JavaScript/TypeScript 소비자의 아래 대표 네 단계 템플릿과 nanoom-fixtures를 바꾸지 않는다.
+
 ## 목표 템플릿
 
 matrix에는 Nanoom 설정의 모든 실행 그룹이 포함되고 Node 22는 이 예시의 프로젝트 선택이다. 버전 숫자나 모든 입력 이름을 영구 고정하는 것이 목적은 아니다. 핵심 책임과 사용자 경험을 바꾸려면 먼저 사용자 승인을 받는다.

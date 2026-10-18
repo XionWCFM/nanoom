@@ -14,6 +14,7 @@
 - 대표 템플릿은 `affected → run → status`로 구성한다. 사용자는 checkout과 공개 Nanoom Action을 연결한다.
 - `affected`, `install`, `run`, `status`는 별도 Action으로 제공한다. 기존 관심사 분리를 유지하며 하나의 Action과 `command` 입력으로 합치지 않는다.
 - `run` 잡은 checkout → Node 환경 설정 → Nanoom focused install → Nanoom run의 네 단계를 명시한다. checkout과 Node 설정은 공식 Action을 사용한다. 환경 준비와 설치를 run Action 안에 숨기지 않는다.
+- Nanoom 자체 Go 구현의 개발 CI에는 Node 설정 다음에 공식 `actions/setup-go` 단계를 명시적으로 추가한다. 이는 Go 소스 빌드·검사용 예외이며, JavaScript/TypeScript 소비자의 대표 네 단계 템플릿과 nanoom-fixtures에는 적용하지 않는다.
 - Nanoom은 assignment별 checkout 대상과 정확한 소스 SHA, focused install 대상과 dependency closure, 실행할 작업을 제공한다. 단계 연결은 Action의 입력·출력만으로 가능해야 한다. 사용자가 jq·shell로 이벤트 해석, Plan 선택, 설치 대상 계산, 요약, 집계를 보완해야 한다면 제품의 미완성으로 취급하고 Nanoom에서 해결한다.
 - affected는 Plan에서 assignment별 `checkout.ref`와 `checkout.sparseCheckout`을 matrix에 제공한다. sparse 패턴은 실행 workspace·내부 dependency closure·루트 설정과 lockfile·설정된 추가 필수 경로를 포함하고 무관한 workspace 소스는 제외한다. run의 공식 checkout은 이 값을 그대로 사용하며 소비자에게 경로를 다시 계산하거나 나열하게 하지 않는다. install/run은 matrix를 권위 있는 Plan과 대조해 검증한다.
 - 패키지 매니저와 Nx·Turbo 등 실행 도구는 저장소의 manifest·lockfile·설정에서 자동으로 알아낸다. 일반적인 저장소에서 이를 Action 입력으로 다시 가르치게 하지 않는다.
