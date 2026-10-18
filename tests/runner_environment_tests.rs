@@ -222,7 +222,10 @@ fn history_cli_publishes_environment_states_and_prediction_ranges() {
     let mut environments = [collect("one"), collect("two")];
     environments[1].profile.cpu_model.push_str("-other");
     environments[1].fingerprint = digest_value(&environments[1].profile).unwrap();
-    let mut command = Command::new(env!("CARGO_BIN_EXE_nanoom"));
+    let mut command = Command::new(
+        std::env::var_os("NANOOM_TEST_BINARY")
+            .unwrap_or_else(|| env!("CARGO_BIN_EXE_nanoom").into()),
+    );
     command.arg("history");
     for (index, environment) in environments.iter().enumerate() {
         let path = directory.path().join(format!("measurement-{index}.json"));

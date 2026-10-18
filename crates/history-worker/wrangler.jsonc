@@ -1,11 +1,9 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "nanoom-history",
-  "main": "build/worker/shim.mjs",
+  "main": "build-go/worker.mjs",
   "compatibility_date": "2026-09-24",
-  "build": {
-    "command": "worker-build --release",
-  },
+  "build": { "command": "bash \"$(git rev-parse --show-toplevel)/scripts/build-go-worker.sh\"" },
   "workers_dev": true,
   "d1_databases": [
     {

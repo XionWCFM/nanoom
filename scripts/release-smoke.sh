@@ -4,7 +4,7 @@ set -euo pipefail
 
 ARTIFACT_DIR="${1:?usage: release-smoke.sh <artifact-directory>}"
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="$(sed -n 's/^version = "\([^"]*\)"/\1/p' "$ROOT_DIR/Cargo.toml" | head -1)"
+VERSION="$(node -p "require('$ROOT_DIR/packages/cli/package.json').version")"
 
 expected=(
   "nanoom-linux-x64.tar.gz"

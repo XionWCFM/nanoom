@@ -1,0 +1,110 @@
+--- a/.github/workflows/release.yml
++++ b/.github/workflows/release.yml
+@@ -16,9 +16,6 @@
+   contents: write
+   id-token: write
+ 
+-env:
+-  CARGO_TERM_COLOR: always
+-
+ jobs:
+   create-release:
+     name: Create GitHub release
+@@ -59,19 +56,28 @@
+         include:
+           - os: ubuntu-latest
+             target: x86_64-unknown-linux-gnu
++            goos: linux
++            goarch: amd64
+             artifact: nanoom-linux-x64.tar.gz
+           - os: ubuntu-latest
+             target: aarch64-unknown-linux-gnu
++            goos: linux
++            goarch: arm64
+             artifact: nanoom-linux-arm64.tar.gz
+-            cross: true
+           - os: macos-latest
+             target: x86_64-apple-darwin
++            goos: darwin
++            goarch: amd64
+             artifact: nanoom-macos-x64.tar.gz
+           - os: macos-latest
+             target: aarch64-apple-darwin
++            goos: darwin
++            goarch: arm64
+             artifact: nanoom-macos-arm64.tar.gz
+           - os: windows-latest
+             target: x86_64-pc-windows-msvc
++            goos: windows
++            goarch: amd64
+             artifact: nanoom-windows-x64.zip
+ 
+     steps:
+@@ -80,30 +86,38 @@
+         with:
+           ref: ${{ inputs.version || github.ref }}
+ 
+-      - name: Install target for the pinned Rust toolchain
+-        run: rustup target add "${{ matrix.target }}"
+-
+-      - name: Restore Rust build cache
+-        uses: Swatinem/rust-cache@v2
+-        with:
+-          key: ${{ matrix.target }}
+-
+-      - name: Install cross-compilation tooling
+-        if: matrix.cross
+-        run: cargo install cross --locked
+-
+-      - name: Build (cross)
+-        if: matrix.cross
+-        run: cross build --locked --release --target ${{ matrix.target }}
+-
+-      - name: Build (native)
+-        if: '!matrix.cross'
+-        run: cargo build --locked --release --target ${{ matrix.target }}
++      - name: Set up Go
++        uses: actions/setup-go@v7
++        with:
++          go-version-file: go.mod
++
++      - name: Build Go binary
++        shell: bash
++        env:
++          GOOS: ${{ matrix.goos }}
++          GOARCH: ${{ matrix.goarch }}
++        run: |
++          output=dist/nanoom
++          if [[ "$GOOS" == windows ]]; then output=dist/nanoom.exe; fi
++          bash scripts/build-go-cli.sh "$output"
++
++      - name: Smoke test native Go binary
++        shell: bash
++        run: |
++          native_os=$(go env GOOS)
++          native_arch=$(go env GOARCH)
++          if [[ "$native_os" == '${{ matrix.goos }}' && "$native_arch" == '${{ matrix.goarch }}' ]]; then
++            binary=./dist/nanoom
++            if [[ "$native_os" == windows ]]; then binary=./dist/nanoom.exe; fi
++            expected=$(node -p 'require("./packages/cli/package.json").version')
++            "$binary" --version | grep -Fqx "nanoom $expected"
++            go test ./internal/cli/...
++          fi
+ 
+       - name: Package (unix tar.gz)
+         if: runner.os != 'Windows'
+         run: |
+-          cd "target/${{ matrix.target }}/release"
++          cd dist
+           tar czf "/tmp/${{ matrix.artifact }}" nanoom
+           (cd /tmp && shasum -a 256 "${{ matrix.artifact }}" > "${{ matrix.artifact }}.sha256")
+           cp /tmp/${{ matrix.artifact }}* "$GITHUB_WORKSPACE/"
+@@ -112,7 +126,7 @@
+         if: runner.os == 'Windows'
+         shell: pwsh
+         run: |
+-          Compress-Archive -Path "target/${{ matrix.target }}/release/nanoom.exe" -DestinationPath "${{ matrix.artifact }}"
++          Compress-Archive -Path "dist/nanoom.exe" -DestinationPath "${{ matrix.artifact }}"
+           $hash = (Get-FileHash "${{ matrix.artifact }}" -Algorithm SHA256).Hash.ToLower()
+           "$hash  ${{ matrix.artifact }}" | Out-File "${{ matrix.artifact }}.sha256" -Encoding ascii
+ 

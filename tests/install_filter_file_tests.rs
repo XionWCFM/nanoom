@@ -36,13 +36,16 @@ fn fake_manager(dir: &Path, name: &str) -> std::ffi::OsString {
 }
 
 fn run_cli(dir: &Path, args: &[&str], path: &std::ffi::OsStr, log: &Path) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_nanoom"))
-        .current_dir(dir)
-        .args(args)
-        .env("PATH", path)
-        .env("NANOOM_ARGS_LOG", log)
-        .output()
-        .unwrap()
+    Command::new(
+        std::env::var_os("NANOOM_TEST_BINARY")
+            .unwrap_or_else(|| env!("CARGO_BIN_EXE_nanoom").into()),
+    )
+    .current_dir(dir)
+    .args(args)
+    .env("PATH", path)
+    .env("NANOOM_ARGS_LOG", log)
+    .output()
+    .unwrap()
 }
 
 #[test]
@@ -124,17 +127,20 @@ fn install_filter_file_rejects_invalid_json_shapes_and_empty_filters_before_exec
 fn install_rejects_filter_and_filter_file_together() {
     let dir = fixture();
     fs::write(dir.path().join("filters.json"), r#"["pkg-a"]"#).unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_nanoom"))
-        .current_dir(dir.path())
-        .args([
-            "install",
-            "--filter",
-            "pkg-b",
-            "--filter-file",
-            "filters.json",
-        ])
-        .output()
-        .unwrap();
+    let output = Command::new(
+        std::env::var_os("NANOOM_TEST_BINARY")
+            .unwrap_or_else(|| env!("CARGO_BIN_EXE_nanoom").into()),
+    )
+    .current_dir(dir.path())
+    .args([
+        "install",
+        "--filter",
+        "pkg-b",
+        "--filter-file",
+        "filters.json",
+    ])
+    .output()
+    .unwrap();
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("cannot be used with"));
 }

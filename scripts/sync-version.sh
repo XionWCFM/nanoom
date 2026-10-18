@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Syncs the Cargo.toml version with packages/cli/package.json (source of truth).
+# Syncs Go and reference Cargo versions with packages/cli/package.json (source of truth).
 # Usage: scripts/sync-version.sh
 set -euo pipefail
 
@@ -32,4 +32,6 @@ node -e '
   fs.writeFileSync(file, `${JSON.stringify(pkg, null, 2)}\n`);
 ' "$ROOT/packages/cli/package.json" "$VERSION"
 
-echo "Cargo and npm package versions synced to ${VERSION}"
+sed -i.bak "s/^var Version = .*/var Version = \"${VERSION}\"/" "$ROOT/cmd/nanoom/main.go"
+rm -f "$ROOT/cmd/nanoom/main.go.bak"
+echo "Go, reference Cargo and npm package versions synced to ${VERSION}"

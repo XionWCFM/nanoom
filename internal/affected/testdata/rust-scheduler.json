@@ -1,0 +1,1154 @@
+[
+  {
+    "context": {
+      "ref": {
+        "kind": "push",
+        "ref": "refs/heads/main"
+      },
+      "repositoryKey": "github-12345",
+      "workflowPath": ".github/workflows/ci.yml"
+    },
+    "items": [
+      {
+        "checkoutPaths": ["packages/pkg-0", "packages/shared"],
+        "group": "ci",
+        "name": "pkg-0",
+        "path": "packages/pkg-0",
+        "task": "test"
+      },
+      {
+        "checkoutPaths": ["packages/pkg-1", "packages/shared"],
+        "group": "ci",
+        "name": "pkg-1",
+        "path": "packages/pkg-1",
+        "task": "test"
+      },
+      {
+        "checkoutPaths": ["packages/pkg-2", "packages/shared"],
+        "group": "ci",
+        "name": "pkg-2",
+        "path": "packages/pkg-2",
+        "task": "test"
+      },
+      {
+        "checkoutPaths": ["packages/pkg-3", "packages/shared"],
+        "group": "ci",
+        "name": "pkg-3",
+        "path": "packages/pkg-3",
+        "task": "test"
+      }
+    ],
+    "labels": null,
+    "matrix": {
+      "ci": {
+        "include": [
+          {
+            "assignmentId": "ci-1",
+            "checkout": {
+              "coneMode": true,
+              "sparseCheckout": "packages/pkg-0\npackages/shared"
+            },
+            "checkoutPathCount": 2,
+            "items": [
+              {
+                "group": "ci",
+                "name": "pkg-0",
+                "path": "packages/pkg-0",
+                "task": "test"
+              }
+            ],
+            "predictedDurationMs": 1,
+            "predictionSources": {
+              "cold": 1,
+              "exact": 0,
+              "group": 0,
+              "sampleCount": 0
+            },
+            "reason": "cold-cap: retained selected concurrency 4; task history is cold",
+            "schedulingMode": "cold-cap"
+          },
+          {
+            "assignmentId": "ci-2",
+            "checkout": {
+              "coneMode": true,
+              "sparseCheckout": "packages/pkg-1\npackages/shared"
+            },
+            "checkoutPathCount": 2,
+            "items": [
+              {
+                "group": "ci",
+                "name": "pkg-1",
+                "path": "packages/pkg-1",
+                "task": "test"
+              }
+            ],
+            "predictedDurationMs": 1,
+            "predictionSources": {
+              "cold": 1,
+              "exact": 0,
+              "group": 0,
+              "sampleCount": 0
+            },
+            "reason": "cold-cap: retained selected concurrency 4; task history is cold",
+            "schedulingMode": "cold-cap"
+          },
+          {
+            "assignmentId": "ci-3",
+            "checkout": {
+              "coneMode": true,
+              "sparseCheckout": "packages/pkg-2\npackages/shared"
+            },
+            "checkoutPathCount": 2,
+            "items": [
+              {
+                "group": "ci",
+                "name": "pkg-2",
+                "path": "packages/pkg-2",
+                "task": "test"
+              }
+            ],
+            "predictedDurationMs": 1,
+            "predictionSources": {
+              "cold": 1,
+              "exact": 0,
+              "group": 0,
+              "sampleCount": 0
+            },
+            "reason": "cold-cap: retained selected concurrency 4; task history is cold",
+            "schedulingMode": "cold-cap"
+          },
+          {
+            "assignmentId": "ci-4",
+            "checkout": {
+              "coneMode": true,
+              "sparseCheckout": "packages/pkg-3\npackages/shared"
+            },
+            "checkoutPathCount": 2,
+            "items": [
+              {
+                "group": "ci",
+                "name": "pkg-3",
+                "path": "packages/pkg-3",
+                "task": "test"
+              }
+            ],
+            "predictedDurationMs": 1,
+            "predictionSources": {
+              "cold": 1,
+              "exact": 0,
+              "group": 0,
+              "sampleCount": 0
+            },
+            "reason": "cold-cap: retained selected concurrency 4; task history is cold",
+            "schedulingMode": "cold-cap"
+          }
+        ]
+      }
+    },
+    "mode": "cold",
+    "now": 100001,
+    "preparation": {
+      "installMode": "focused",
+      "lockfileDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "packageManager": "npm",
+      "packageManagerVersion": "11.16.0"
+    },
+    "table": {
+      "modelUpdatedAtMs": 100000,
+      "rows": [],
+      "scope": {
+        "group": "ci",
+        "ref": {
+          "kind": "push",
+          "ref": "refs/heads/main"
+        },
+        "repositoryKey": "github-12345",
+        "taskRunner": "npm",
+        "timingEnvironment": "env",
+        "workflowPath": ".github/workflows/ci.yml"
+      },
+      "version": 3
+    }
+  },
+  {
+    "context": {
+      "ref": {
+        "kind": "push",
+        "ref": "refs/heads/main"
+      },
+      "repositoryKey": "github-12345",
+      "workflowPath": ".github/workflows/ci.yml"
+    },
+    "items": [
+      {
+        "checkoutPaths": ["packages/pkg-0", "packages/shared"],
+        "group": "ci",
+        "name": "pkg-0",
+        "path": "packages/pkg-0",
+        "task": "test"
+      },
+      {
+        "checkoutPaths": ["packages/pkg-1", "packages/shared"],
+        "group": "ci",
+        "name": "pkg-1",
+        "path": "packages/pkg-1",
+        "task": "test"
+      },
+      {
+        "checkoutPaths": ["packages/pkg-2", "packages/shared"],
+        "group": "ci",
+        "name": "pkg-2",
+        "path": "packages/pkg-2",
+        "task": "test"
+      },
+      {
+        "checkoutPaths": ["packages/pkg-3", "packages/shared"],
+        "group": "ci",
+        "name": "pkg-3",
+        "path": "packages/pkg-3",
+        "task": "test"
+      }
+    ],
+    "labels": null,
+    "matrix": {
+      "ci": {
+        "include": [
+          {
+            "assignmentId": "ci-1",
+            "checkout": {
+              "coneMode": true,
+              "sparseCheckout": "packages/pkg-0\npackages/shared"
+            },
+            "checkoutPathCount": 2,
+            "items": [
+              {
+                "group": "ci",
+                "name": "pkg-0",
+                "path": "packages/pkg-0",
+                "task": "test"
+              }
+            ],
+            "predictedDurationMs": 1000,
+            "predictionSources": {
+              "cold": 0,
+              "exact": 1,
+              "group": 0,
+              "sampleCount": 2
+            },
+            "reason": "cold-cap: retained selected concurrency 4; one or more candidate preparation estimates are unknown",
+            "schedulingMode": "cold-cap"
+          },
+          {
+            "assignmentId": "ci-2",
+            "checkout": {
+              "coneMode": true,
+              "sparseCheckout": "packages/pkg-1\npackages/pkg-2\npackages/pkg-3\npackages/shared"
+            },
+            "checkoutPathCount": 4,
+            "items": [
+              {
+                "group": "ci",
+                "name": "pkg-1",
+                "path": "packages/pkg-1",
+                "task": "test"
+              },
+              {
+                "group": "ci",
+                "name": "pkg-2",
+                "path": "packages/pkg-2",
+                "task": "test"
+              },
+              {
+                "group": "ci",
+                "name": "pkg-3",
+                "path": "packages/pkg-3",
+                "task": "test"
+              }
+            ],
+            "predictedDurationMs": 30,
+            "predictionSources": {
+              "cold": 0,
+              "exact": 3,
+              "group": 0,
+              "sampleCount": 6
+            },
+            "reason": "cold-cap: retained selected concurrency 4; one or more candidate preparation estimates are unknown",
+            "schedulingMode": "cold-cap"
+          }
+        ]
+      }
+    },
+    "mode": "warm",
+    "now": 100001,
+    "preparation": {
+      "installMode": "focused",
+      "lockfileDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "packageManager": "npm",
+      "packageManagerVersion": "11.16.0"
+    },
+    "table": {
+      "modelUpdatedAtMs": 100000,
+      "rows": [
+        ["1ea1705eca4b7b3d9ab1de629270841f6aa70d1154098d44c54cf24b547fe2fc", 10, 2, 100000, 200000],
+        [
+          "733c1397c7e39d3fee5d7b10ad238d639a08373eae45508653aebc44b8509e73",
+          1000,
+          2,
+          100000,
+          200000
+        ],
+        ["b5e847a85aed0f189f629aaa5968e7e53606947a1fd74fc0f0694ae401d72de0", 10, 2, 100000, 200000],
+        ["e6e6e6225be913ac7b812ca13a092c11e0bea00bf3995214a226a9c1667653b9", 10, 2, 100000, 200000],
+        ["e8d0b61d6fe1b11cb54fa447c846042e314c418d3f8d4002b4d9fe824d2fd876", 100, 3, 100000, 200000]
+      ],
+      "scope": {
+        "group": "ci",
+        "ref": {
+          "kind": "push",
+          "ref": "refs/heads/main"
+        },
+        "repositoryKey": "github-12345",
+        "taskRunner": "npm",
+        "timingEnvironment": "env",
+        "workflowPath": ".github/workflows/ci.yml"
+      },
+      "version": 3
+    }
+  },
+  {
+    "context": {
+      "ref": {
+        "kind": "push",
+        "ref": "refs/heads/main"
+      },
+      "repositoryKey": "github-12345",
+      "workflowPath": ".github/workflows/ci.yml"
+    },
+    "items": [
+      {
+        "checkoutPaths": ["packages/pkg-0", "packages/shared"],
+        "group": "ci",
+        "name": "pkg-0",
+        "path": "packages/pkg-0",
+        "task": "test"
+      },
+      {
+        "checkoutPaths": ["packages/pkg-1", "packages/shared"],
+        "group": "ci",
+        "name": "pkg-1",
+        "path": "packages/pkg-1",
+        "task": "test"
+      },
+      {
+        "checkoutPaths": ["packages/pkg-2", "packages/shared"],
+        "group": "ci",
+        "name": "pkg-2",
+        "path": "packages/pkg-2",
+        "task": "test"
+      },
+      {
+        "checkoutPaths": ["packages/pkg-3", "packages/shared"],
+        "group": "ci",
+        "name": "pkg-3",
+        "path": "packages/pkg-3",
+        "task": "test"
+      }
+    ],
+    "labels": null,
+    "matrix": {
+      "ci": {
+        "include": [
+          {
+            "assignmentId": "ci-1",
+            "checkout": {
+              "coneMode": true,
+              "sparseCheckout": "packages/pkg-0\npackages/shared"
+            },
+            "checkoutPathCount": 2,
+            "items": [
+              {
+                "group": "ci",
+                "name": "pkg-0",
+                "path": "packages/pkg-0",
+                "task": "test"
+              }
+            ],
+            "predictedDurationMs": 1000,
+            "predictedPreparationMs": 100,
+            "predictionSources": {
+              "cold": 0,
+              "exact": 1,
+              "group": 0,
+              "sampleCount": 2
+            },
+            "preparationPredictionSource": "group",
+            "preparationSampleCount": 4,
+            "reason": "automatic concurrency: selected 2 assignments by preparation + task makespan",
+            "schedulingMode": "automatic"
+          },
+          {
+            "assignmentId": "ci-2",
+            "checkout": {
+              "coneMode": true,
+              "sparseCheckout": "packages/pkg-1\npackages/pkg-2\npackages/pkg-3\npackages/shared"
+            },
+            "checkoutPathCount": 4,
+            "items": [
+              {
+                "group": "ci",
+                "name": "pkg-1",
+                "path": "packages/pkg-1",
+                "task": "test"
+              },
+              {
+                "group": "ci",
+                "name": "pkg-2",
+                "path": "packages/pkg-2",
+                "task": "test"
+              },
+              {
+                "group": "ci",
+                "name": "pkg-3",
+                "path": "packages/pkg-3",
+                "task": "test"
+              }
+            ],
+            "predictedDurationMs": 30,
+            "predictedPreparationMs": 100,
+            "predictionSources": {
+              "cold": 0,
+              "exact": 3,
+              "group": 0,
+              "sampleCount": 6
+            },
+            "preparationPredictionSource": "group",
+            "preparationSampleCount": 4,
+            "reason": "automatic concurrency: selected 2 assignments by preparation + task makespan",
+            "schedulingMode": "automatic"
+          }
+        ]
+      }
+    },
+    "mode": "preparation",
+    "now": 100001,
+    "preparation": {
+      "installMode": "focused",
+      "lockfileDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "packageManager": "npm",
+      "packageManagerVersion": "11.16.0"
+    },
+    "table": {
+      "modelUpdatedAtMs": 100000,
+      "rows": [
+        ["1ea1705eca4b7b3d9ab1de629270841f6aa70d1154098d44c54cf24b547fe2fc", 10, 2, 100000, 200000],
+        [
+          "6a072d6507b3accef2fcc4397f273c3df5a861e8e7de3b0eb341cf122ffcb91a",
+          100,
+          4,
+          100000,
+          200000
+        ],
+        [
+          "733c1397c7e39d3fee5d7b10ad238d639a08373eae45508653aebc44b8509e73",
+          1000,
+          2,
+          100000,
+          200000
+        ],
+        ["b5e847a85aed0f189f629aaa5968e7e53606947a1fd74fc0f0694ae401d72de0", 10, 2, 100000, 200000],
+        ["e6e6e6225be913ac7b812ca13a092c11e0bea00bf3995214a226a9c1667653b9", 10, 2, 100000, 200000],
+        ["e8d0b61d6fe1b11cb54fa447c846042e314c418d3f8d4002b4d9fe824d2fd876", 100, 3, 100000, 200000]
+      ],
+      "scope": {
+        "group": "ci",
+        "ref": {
+          "kind": "push",
+          "ref": "refs/heads/main"
+        },
+        "repositoryKey": "github-12345",
+        "taskRunner": "npm",
+        "timingEnvironment": "env",
+        "workflowPath": ".github/workflows/ci.yml"
+      },
+      "version": 3
+    }
+  },
+  {
+    "context": {
+      "ref": {
+        "kind": "push",
+        "ref": "refs/heads/main"
+      },
+      "repositoryKey": "github-12345",
+      "workflowPath": ".github/workflows/ci.yml"
+    },
+    "items": [
+      {
+        "checkoutPaths": ["packages/pkg-0", "packages/shared"],
+        "group": "ci",
+        "name": "pkg-0",
+        "path": "packages/pkg-0",
+        "task": "test"
+      },
+      {
+        "checkoutPaths": ["packages/pkg-1", "packages/shared"],
+        "group": "ci",
+        "name": "pkg-1",
+        "path": "packages/pkg-1",
+        "task": "test"
+      },
+      {
+        "checkoutPaths": ["packages/pkg-2", "packages/shared"],
+        "group": "ci",
+        "name": "pkg-2",
+        "path": "packages/pkg-2",
+        "task": "test"
+      },
+      {
+        "checkoutPaths": ["packages/pkg-3", "packages/shared"],
+        "group": "ci",
+        "name": "pkg-3",
+        "path": "packages/pkg-3",
+        "task": "test"
+      }
+    ],
+    "labels": null,
+    "matrix": {
+      "ci": {
+        "include": [
+          {
+            "assignmentId": "ci-1",
+            "checkout": {
+              "coneMode": true,
+              "sparseCheckout": "packages/pkg-0\npackages/shared"
+            },
+            "checkoutPathCount": 2,
+            "items": [
+              {
+                "group": "ci",
+                "name": "pkg-0",
+                "path": "packages/pkg-0",
+                "task": "test"
+              }
+            ],
+            "predictedDurationMs": 100,
+            "predictionSources": {
+              "cold": 0,
+              "exact": 0,
+              "group": 1,
+              "sampleCount": 3
+            },
+            "reason": "cold-cap: retained selected concurrency 4; one or more candidate preparation estimates are unknown",
+            "schedulingMode": "cold-cap"
+          },
+          {
+            "assignmentId": "ci-2",
+            "checkout": {
+              "coneMode": true,
+              "sparseCheckout": "packages/pkg-1\npackages/shared"
+            },
+            "checkoutPathCount": 2,
+            "items": [
+              {
+                "group": "ci",
+                "name": "pkg-1",
+                "path": "packages/pkg-1",
+                "task": "test"
+              }
+            ],
+            "predictedDurationMs": 100,
+            "predictionSources": {
+              "cold": 0,
+              "exact": 0,
+              "group": 1,
+              "sampleCount": 3
+            },
+            "reason": "cold-cap: retained selected concurrency 4; one or more candidate preparation estimates are unknown",
+            "schedulingMode": "cold-cap"
+          },
+          {
+            "assignmentId": "ci-3",
+            "checkout": {
+              "coneMode": true,
+              "sparseCheckout": "packages/pkg-2\npackages/shared"
+            },
+            "checkoutPathCount": 2,
+            "items": [
+              {
+                "group": "ci",
+                "name": "pkg-2",
+                "path": "packages/pkg-2",
+                "task": "test"
+              }
+            ],
+            "predictedDurationMs": 100,
+            "predictionSources": {
+              "cold": 0,
+              "exact": 0,
+              "group": 1,
+              "sampleCount": 3
+            },
+            "reason": "cold-cap: retained selected concurrency 4; one or more candidate preparation estimates are unknown",
+            "schedulingMode": "cold-cap"
+          },
+          {
+            "assignmentId": "ci-4",
+            "checkout": {
+              "coneMode": true,
+              "sparseCheckout": "packages/pkg-3\npackages/shared"
+            },
+            "checkoutPathCount": 2,
+            "items": [
+              {
+                "group": "ci",
+                "name": "pkg-3",
+                "path": "packages/pkg-3",
+                "task": "test"
+              }
+            ],
+            "predictedDurationMs": 100,
+            "predictionSources": {
+              "cold": 0,
+              "exact": 0,
+              "group": 1,
+              "sampleCount": 3
+            },
+            "reason": "cold-cap: retained selected concurrency 4; one or more candidate preparation estimates are unknown",
+            "schedulingMode": "cold-cap"
+          }
+        ]
+      }
+    },
+    "mode": "fallback",
+    "now": 100001,
+    "preparation": {
+      "installMode": "focused",
+      "lockfileDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "packageManager": "npm",
+      "packageManagerVersion": "11.16.0"
+    },
+    "table": {
+      "modelUpdatedAtMs": 100000,
+      "rows": [
+        ["e8d0b61d6fe1b11cb54fa447c846042e314c418d3f8d4002b4d9fe824d2fd876", 100, 3, 100000, 200000]
+      ],
+      "scope": {
+        "group": "ci",
+        "ref": {
+          "kind": "push",
+          "ref": "refs/heads/main"
+        },
+        "repositoryKey": "github-12345",
+        "taskRunner": "npm",
+        "timingEnvironment": "env",
+        "workflowPath": ".github/workflows/ci.yml"
+      },
+      "version": 3
+    }
+  },
+  {
+    "context": {
+      "ref": {
+        "kind": "push",
+        "ref": "refs/heads/main"
+      },
+      "repositoryKey": "github-12345",
+      "workflowPath": ".github/workflows/ci.yml"
+    },
+    "items": [
+      {
+        "checkoutPaths": ["packages/pkg-0", "packages/shared"],
+        "group": "ci",
+        "name": "pkg-0",
+        "path": "packages/pkg-0",
+        "shard": 1,
+        "task": "test",
+        "totalShards": 2
+      },
+      {
+        "checkoutPaths": ["packages/pkg-1", "packages/shared"],
+        "group": "ci",
+        "name": "pkg-1",
+        "path": "packages/pkg-1",
+        "shard": 1,
+        "task": "test",
+        "totalShards": 2
+      },
+      {
+        "checkoutPaths": ["packages/pkg-2", "packages/shared"],
+        "group": "ci",
+        "name": "pkg-2",
+        "path": "packages/pkg-2",
+        "shard": 1,
+        "task": "test",
+        "totalShards": 2
+      },
+      {
+        "checkoutPaths": ["packages/pkg-3", "packages/shared"],
+        "group": "ci",
+        "name": "pkg-3",
+        "path": "packages/pkg-3",
+        "shard": 1,
+        "task": "test",
+        "totalShards": 2
+      }
+    ],
+    "labels": null,
+    "matrix": {
+      "ci": {
+        "include": [
+          {
+            "assignmentId": "ci-1",
+            "checkout": {
+              "coneMode": true,
+              "sparseCheckout": "packages/pkg-0\npackages/shared"
+            },
+            "checkoutPathCount": 2,
+            "items": [
+              {
+                "group": "ci",
+                "name": "pkg-0",
+                "path": "packages/pkg-0",
+                "shard": 1,
+                "task": "test",
+                "totalShards": 2
+              }
+            ],
+            "predictedDurationMs": 1000,
+            "predictionSources": {
+              "cold": 0,
+              "exact": 1,
+              "group": 0,
+              "sampleCount": 2
+            },
+            "reason": "cold-cap: retained selected concurrency 4; one or more candidate preparation estimates are unknown",
+            "schedulingMode": "cold-cap"
+          },
+          {
+            "assignmentId": "ci-2",
+            "checkout": {
+              "coneMode": true,
+              "sparseCheckout": "packages/pkg-1\npackages/pkg-2\npackages/pkg-3\npackages/shared"
+            },
+            "checkoutPathCount": 4,
+            "items": [
+              {
+                "group": "ci",
+                "name": "pkg-1",
+                "path": "packages/pkg-1",
+                "shard": 1,
+                "task": "test",
+                "totalShards": 2
+              },
+              {
+                "group": "ci",
+                "name": "pkg-2",
+                "path": "packages/pkg-2",
+                "shard": 1,
+                "task": "test",
+                "totalShards": 2
+              },
+              {
+                "group": "ci",
+                "name": "pkg-3",
+                "path": "packages/pkg-3",
+                "shard": 1,
+                "task": "test",
+                "totalShards": 2
+              }
+            ],
+            "predictedDurationMs": 30,
+            "predictionSources": {
+              "cold": 0,
+              "exact": 3,
+              "group": 0,
+              "sampleCount": 6
+            },
+            "reason": "cold-cap: retained selected concurrency 4; one or more candidate preparation estimates are unknown",
+            "schedulingMode": "cold-cap"
+          }
+        ]
+      }
+    },
+    "mode": "shards",
+    "now": 100001,
+    "preparation": {
+      "installMode": "focused",
+      "lockfileDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "packageManager": "npm",
+      "packageManagerVersion": "11.16.0"
+    },
+    "table": {
+      "modelUpdatedAtMs": 100000,
+      "rows": [
+        [
+          "52c887ac92b2dbf28cb8df420a3a036d9081cefeb07685808576408edb1fa5c7",
+          1000,
+          2,
+          100000,
+          200000
+        ],
+        ["dd0834004fc8c910b45120ff4b1acfdb2eba0c122f85709a5fcdc5f93b9afaec", 10, 2, 100000, 200000],
+        [
+          "e8d0b61d6fe1b11cb54fa447c846042e314c418d3f8d4002b4d9fe824d2fd876",
+          100,
+          3,
+          100000,
+          200000
+        ],
+        ["f6b2d791c9d8f4fa3dd74d0dacf6dc2ef06a1537dd909e45d3ffb1c7cfd57912", 10, 2, 100000, 200000],
+        ["f7984c29d50eab88fa2f166b3e8737e4153323528571367e36783b82898a5a42", 10, 2, 100000, 200000]
+      ],
+      "scope": {
+        "group": "ci",
+        "ref": {
+          "kind": "push",
+          "ref": "refs/heads/main"
+        },
+        "repositoryKey": "github-12345",
+        "taskRunner": "npm",
+        "timingEnvironment": "env",
+        "workflowPath": ".github/workflows/ci.yml"
+      },
+      "version": 3
+    }
+  },
+  {
+    "context": {
+      "ref": {
+        "kind": "push",
+        "ref": "refs/heads/main"
+      },
+      "repositoryKey": "github-12345",
+      "workflowPath": ".github/workflows/ci.yml"
+    },
+    "items": [
+      {
+        "checkoutPaths": ["packages/pkg-0", "packages/shared"],
+        "group": "ci",
+        "name": "pkg-0",
+        "path": "packages/pkg-0",
+        "task": "test"
+      },
+      {
+        "checkoutPaths": ["packages/pkg-1", "packages/shared"],
+        "group": "ci",
+        "name": "pkg-1",
+        "path": "packages/pkg-1",
+        "task": "test"
+      },
+      {
+        "checkoutPaths": ["packages/pkg-2", "packages/shared"],
+        "group": "ci",
+        "name": "pkg-2",
+        "path": "packages/pkg-2",
+        "task": "test"
+      },
+      {
+        "checkoutPaths": ["packages/pkg-3", "packages/shared"],
+        "group": "ci",
+        "name": "pkg-3",
+        "path": "packages/pkg-3",
+        "task": "test"
+      }
+    ],
+    "labels": ["ubuntu-latest"],
+    "matrix": {
+      "ci": {
+        "include": [
+          {
+            "assignmentId": "ci-1",
+            "checkout": {
+              "coneMode": true,
+              "sparseCheckout": "packages/pkg-0\npackages/shared"
+            },
+            "checkoutPathCount": 2,
+            "items": [
+              {
+                "group": "ci",
+                "name": "pkg-0",
+                "path": "packages/pkg-0",
+                "task": "test"
+              }
+            ],
+            "predictedDurationMs": 1000,
+            "predictionSources": {
+              "cold": 0,
+              "exact": 1,
+              "group": 0,
+              "sampleCount": 2
+            },
+            "reason": "cold-cap: retained selected concurrency 4; one or more candidate preparation estimates are unknown",
+            "runnerLabels": ["ubuntu-latest"],
+            "schedulingMode": "cold-cap",
+            "timingEnvironment": "runner-labels:[\"ubuntu-latest\"]"
+          },
+          {
+            "assignmentId": "ci-2",
+            "checkout": {
+              "coneMode": true,
+              "sparseCheckout": "packages/pkg-1\npackages/pkg-2\npackages/pkg-3\npackages/shared"
+            },
+            "checkoutPathCount": 4,
+            "items": [
+              {
+                "group": "ci",
+                "name": "pkg-1",
+                "path": "packages/pkg-1",
+                "task": "test"
+              },
+              {
+                "group": "ci",
+                "name": "pkg-2",
+                "path": "packages/pkg-2",
+                "task": "test"
+              },
+              {
+                "group": "ci",
+                "name": "pkg-3",
+                "path": "packages/pkg-3",
+                "task": "test"
+              }
+            ],
+            "predictedDurationMs": 30,
+            "predictionSources": {
+              "cold": 0,
+              "exact": 3,
+              "group": 0,
+              "sampleCount": 6
+            },
+            "reason": "cold-cap: retained selected concurrency 4; one or more candidate preparation estimates are unknown",
+            "runnerLabels": ["ubuntu-latest"],
+            "schedulingMode": "cold-cap",
+            "timingEnvironment": "runner-labels:[\"ubuntu-latest\"]"
+          }
+        ]
+      }
+    },
+    "mode": "labels",
+    "now": 100001,
+    "preparation": {
+      "installMode": "focused",
+      "lockfileDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "packageManager": "npm",
+      "packageManagerVersion": "11.16.0"
+    },
+    "table": {
+      "modelUpdatedAtMs": 100000,
+      "rows": [
+        ["054a2b53f606ee9d5be60f586f4e0883e3f09934abc4b207f0ebb769b42d3bd6", 10, 2, 100000, 200000],
+        [
+          "658592b439ca08a84dd813238476c9f9b198cf2fa601433ad6242bca8e16642e",
+          100,
+          3,
+          100000,
+          200000
+        ],
+        ["cfd048bb72d05e7bd9f90c86f24115f5a2b702b9330cb6e7d6d6bf884a30f263", 10, 2, 100000, 200000],
+        [
+          "d342740a15712ec4cb2ab48452715d0b4393016a1271fba64a828aa2b0f11ce2",
+          1000,
+          2,
+          100000,
+          200000
+        ],
+        ["d3742653413c6f05cdd0706a5c2d3c9f6998423fc7d88bc52801320713035d73", 10, 2, 100000, 200000]
+      ],
+      "scope": {
+        "group": "ci",
+        "ref": {
+          "kind": "push",
+          "ref": "refs/heads/main"
+        },
+        "repositoryKey": "github-12345",
+        "taskRunner": "npm",
+        "timingEnvironment": "runner-labels:[\"ubuntu-latest\"]",
+        "workflowPath": ".github/workflows/ci.yml"
+      },
+      "version": 3
+    }
+  },
+  {
+    "context": {
+      "ref": {
+        "kind": "push",
+        "ref": "refs/heads/main"
+      },
+      "repositoryKey": "github-12345",
+      "workflowPath": ".github/workflows/ci.yml"
+    },
+    "items": [
+      {
+        "checkoutPaths": ["packages/pkg-0", "packages/shared"],
+        "group": "ci",
+        "name": "pkg-0",
+        "path": "packages/pkg-0",
+        "task": "test"
+      },
+      {
+        "checkoutPaths": ["packages/pkg-1", "packages/shared"],
+        "group": "ci",
+        "name": "pkg-1",
+        "path": "packages/pkg-1",
+        "task": "test"
+      },
+      {
+        "checkoutPaths": ["packages/pkg-2", "packages/shared"],
+        "group": "ci",
+        "name": "pkg-2",
+        "path": "packages/pkg-2",
+        "task": "test"
+      },
+      {
+        "checkoutPaths": ["packages/pkg-3", "packages/shared"],
+        "group": "ci",
+        "name": "pkg-3",
+        "path": "packages/pkg-3",
+        "task": "test"
+      }
+    ],
+    "labels": null,
+    "matrix": {
+      "ci": {
+        "include": [
+          {
+            "assignmentId": "ci-1",
+            "checkout": {
+              "coneMode": true,
+              "sparseCheckout": "packages/pkg-0\npackages/shared"
+            },
+            "checkoutPathCount": 2,
+            "items": [
+              {
+                "group": "ci",
+                "name": "pkg-0",
+                "path": "packages/pkg-0",
+                "task": "test"
+              }
+            ],
+            "predictedDurationMs": 1,
+            "predictionSources": {
+              "cold": 1,
+              "exact": 0,
+              "group": 0,
+              "sampleCount": 0
+            },
+            "reason": "cold-cap: retained selected concurrency 4; task history is cold",
+            "schedulingMode": "cold-cap"
+          },
+          {
+            "assignmentId": "ci-2",
+            "checkout": {
+              "coneMode": true,
+              "sparseCheckout": "packages/pkg-1\npackages/shared"
+            },
+            "checkoutPathCount": 2,
+            "items": [
+              {
+                "group": "ci",
+                "name": "pkg-1",
+                "path": "packages/pkg-1",
+                "task": "test"
+              }
+            ],
+            "predictedDurationMs": 1,
+            "predictionSources": {
+              "cold": 1,
+              "exact": 0,
+              "group": 0,
+              "sampleCount": 0
+            },
+            "reason": "cold-cap: retained selected concurrency 4; task history is cold",
+            "schedulingMode": "cold-cap"
+          },
+          {
+            "assignmentId": "ci-3",
+            "checkout": {
+              "coneMode": true,
+              "sparseCheckout": "packages/pkg-2\npackages/shared"
+            },
+            "checkoutPathCount": 2,
+            "items": [
+              {
+                "group": "ci",
+                "name": "pkg-2",
+                "path": "packages/pkg-2",
+                "task": "test"
+              }
+            ],
+            "predictedDurationMs": 1,
+            "predictionSources": {
+              "cold": 1,
+              "exact": 0,
+              "group": 0,
+              "sampleCount": 0
+            },
+            "reason": "cold-cap: retained selected concurrency 4; task history is cold",
+            "schedulingMode": "cold-cap"
+          },
+          {
+            "assignmentId": "ci-4",
+            "checkout": {
+              "coneMode": true,
+              "sparseCheckout": "packages/pkg-3\npackages/shared"
+            },
+            "checkoutPathCount": 2,
+            "items": [
+              {
+                "group": "ci",
+                "name": "pkg-3",
+                "path": "packages/pkg-3",
+                "task": "test"
+              }
+            ],
+            "predictedDurationMs": 1,
+            "predictionSources": {
+              "cold": 1,
+              "exact": 0,
+              "group": 0,
+              "sampleCount": 0
+            },
+            "reason": "cold-cap: retained selected concurrency 4; task history is cold",
+            "schedulingMode": "cold-cap"
+          }
+        ]
+      }
+    },
+    "mode": "expired",
+    "now": 200000,
+    "preparation": {
+      "installMode": "focused",
+      "lockfileDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "packageManager": "npm",
+      "packageManagerVersion": "11.16.0"
+    },
+    "table": {
+      "modelUpdatedAtMs": 100000,
+      "rows": [
+        ["1ea1705eca4b7b3d9ab1de629270841f6aa70d1154098d44c54cf24b547fe2fc", 10, 2, 100000, 100001],
+        [
+          "733c1397c7e39d3fee5d7b10ad238d639a08373eae45508653aebc44b8509e73",
+          1000,
+          2,
+          100000,
+          100001
+        ],
+        ["b5e847a85aed0f189f629aaa5968e7e53606947a1fd74fc0f0694ae401d72de0", 10, 2, 100000, 100001],
+        ["e6e6e6225be913ac7b812ca13a092c11e0bea00bf3995214a226a9c1667653b9", 10, 2, 100000, 100001],
+        ["e8d0b61d6fe1b11cb54fa447c846042e314c418d3f8d4002b4d9fe824d2fd876", 100, 3, 100000, 200000]
+      ],
+      "scope": {
+        "group": "ci",
+        "ref": {
+          "kind": "push",
+          "ref": "refs/heads/main"
+        },
+        "repositoryKey": "github-12345",
+        "taskRunner": "npm",
+        "timingEnvironment": "env",
+        "workflowPath": ".github/workflows/ci.yml"
+      },
+      "version": 3
+    }
+  }
+]

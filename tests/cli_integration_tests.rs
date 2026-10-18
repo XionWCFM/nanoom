@@ -68,6 +68,9 @@ fn setup_monorepo(dir: &Path) {
 }
 
 fn binary_path() -> std::path::PathBuf {
+    if let Some(path) = std::env::var_os("NANOOM_TEST_BINARY") {
+        return path.into();
+    }
     let mut path = std::env::current_exe().unwrap();
     path.pop(); // deps/
     if path.ends_with("deps") {

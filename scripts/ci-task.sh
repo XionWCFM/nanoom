@@ -1,19 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-export CARGO_TERM_COLOR=always RUSTFLAGS='-D warnings'
 case "${1:-}" in
   test)
     yarn format:check
-    cargo test --locked --all --all-features
+    go vet ./...
+    go test -race ./...
+    bash scripts/build-go-cli.sh
+    export NANOOM_TEST_BINARY=$(node -p 'require("path").resolve("dist", process.platform === "win32" ? "nanoom.exe" : "nanoom")')
     node packages/cli/smoke-test.js
-    cargo build --locked --release
     ;;
   check)
-    rustup component add rustfmt clippy
     bash scripts/verify-completion.sh --local
-    bash scripts/history-server-e2e-test.sh
-    cargo build --locked --release
+    NANOOM_TEST_BINARY="$PWD/dist/nanoom" HISTORY_E2E_WORKER_LANGUAGE=go bash scripts/history-server-e2e-test.sh
     ;;
   *) echo 'expected check or test' >&2; exit 2 ;;
 esac

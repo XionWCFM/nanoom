@@ -5,6 +5,8 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 expected=${1:-}
 package_version=$(node -p "require('$root/packages/cli/package.json').version")
 cargo_version=$(sed -n 's/^version = "\([^"]*\)"/\1/p' "$root/Cargo.toml" | head -1)
+go_version=$(sed -n 's/^var Version = "\([^"]*\)"/\1/p' "$root/cmd/nanoom/main.go")
+[[ "$package_version" == "$go_version" ]]
 [[ "$package_version" == "$cargo_version" ]]
 [[ -z "$expected" || "$expected" == "v$package_version" ]]
 bash "$root/scripts/platform-package-smoke.sh"

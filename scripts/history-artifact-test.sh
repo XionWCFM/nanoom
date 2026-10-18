@@ -43,7 +43,7 @@ case "$url" in
 esac
 SH
 chmod +x "$tmp/bin/curl"
-export PATH="$tmp/bin:$root/target/debug:$PATH" API=https://api.example REPOSITORY=owner/repo TOKEN=test-token RUNNER_TEMP="$tmp/runner"
+export PATH="$tmp/bin:$root/dist:$PATH" API=https://api.example REPOSITORY=owner/repo TOKEN=test-token RUNNER_TEMP="$tmp/runner"
 export FAKE_REQUESTS="$tmp/requests" FAKE_ARTIFACTS="$tmp/artifacts.json"
 export FAKE_PREDICTION_ZIP="$tmp/prediction.zip" FAKE_MODEL_ZIP="$tmp/model.zip"
 source "$root/.github/actions/_setup/artifacts.sh"
@@ -163,7 +163,7 @@ fi
 exec "$REAL_NANOOM" "${args[@]}"
 SH
 chmod +x "$tmp/bin/nanoom"
-export REAL_NANOOM="$root/target/debug/nanoom"
+export REAL_NANOOM="${NANOOM_TEST_BINARY:-$root/dist/nanoom}"
 printf '%s\n' '{"globalDependencies":["nanoom.config.json"],"group":{"ci":{"tasks":["test","build"],"distribution":{"small":{"maxAffectedPercent":25,"concurrency":2},"medium":{"maxAffectedPercent":60,"concurrency":2},"full":{"maxAffectedPercent":100,"concurrency":2}}}}}' > "$CWD/nanoom.config.json"
 git -C "$CWD" add .
 git -C "$CWD" -c user.name=fixture -c user.email=fixture@example.invalid commit -qm changed --no-gpg-sign

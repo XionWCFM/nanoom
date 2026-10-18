@@ -25,3 +25,5 @@ docs/node_modules/
 .turbo/
 **/.turbo/
 **/tsconfig.tsbuildinfo
+/dist/
+/.wrangler/

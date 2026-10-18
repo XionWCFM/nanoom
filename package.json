@@ -6,10 +6,10 @@
     "tools/*"
   ],
   "scripts": {
-    "check": "yarn format:check && cargo clippy --locked --all-targets --all-features -- -D warnings && cargo test --locked --all --all-features",
+    "check": "yarn format:check && go vet ./... && go test -race ./...",
     "prepare": "lefthook install",
-    "format": "cargo fmt --all && oxfmt --write .",
-    "format:check": "cargo fmt --all --check && oxfmt --check ."
+    "format": "gofmt -w cmd internal schema.go && oxfmt --write .",
+    "format:check": "bash scripts/go-format-check.sh && oxfmt --check ."
   },
   "devDependencies": {
     "@changesets/changelog-github": "^1.0.0",

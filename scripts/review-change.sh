@@ -27,7 +27,7 @@ fail=0
 dependency_only=1
 for file in "${files[@]}"; do
   case "$file" in
-    Cargo.toml|Cargo.lock|package.json|yarn.lock|pnpm-lock.yaml|packages/*/package.json) ;;
+    go.mod|go.sum|Cargo.toml|Cargo.lock|package.json|yarn.lock|pnpm-lock.yaml|packages/*/package.json) ;;
     .github/workflows/*.yml|.github/workflows/*.yaml)
       if git diff --unified=0 "$base_ref...HEAD" -- "$file" |
         grep -E '^[+-][^+-]' |
@@ -44,7 +44,7 @@ if ((dependency_only)); then
   echo 'review-change: dependency-only update; existing regression and release-contract gates are authoritative'
 fi
 
-if ((!dependency_only)) && any '^(src/|packages/cli/)' && ! any '(^|/)(tests?|__tests__|.*test.*|.*smoke\.sh)'; then
+if ((!dependency_only)) && any '^(src/|cmd/|internal/|schema\.go$|packages/cli/)'  && ! any '(^|/)(tests?|__tests__|.*test.*|.*smoke\.sh)'; then
   echo 'BLOCKED: CLI/source change has no changed regression test.'; fail=1
 fi
 if ((!dependency_only)) && any '^\.github/actions/' && ! has 'scripts/action-contract.sh'; then
@@ -53,10 +53,10 @@ fi
 if ((!dependency_only)) && any '^\.github/(actions|workflows)/' && ! any '^docs/(content|adr)/'; then
   echo 'BLOCKED: public Action/workflow change has no docs or ADR change.'; fail=1
 fi
-if ((!dependency_only)) && any '(package\.json|yarn\.lock|Cargo\.toml|Cargo\.lock|install|dependency)' && ! any '(^|/)(test|tests|fixtures|scripts)/|smoke-test\.js|verify-install'; then
+if ((!dependency_only)) && any '(package\.json|yarn\.lock|Cargo\.toml|Cargo\.lock|go\.mod|go\.sum|install|dependency)' && ! any '(^|/)(test|tests|fixtures|scripts)/|smoke-test\.js|verify-install'; then
   echo 'BLOCKED: dependency/install change has no focused-install or dependency regression evidence.'; fail=1
 fi
-if ((!dependency_only)) && any '(^|/)(Cargo\.toml|package\.json|src/|\.github/actions/)' && ! any '^docs/(content|adr)/'; then
+if ((!dependency_only)) && any '(^|/)(Cargo\.toml|go\.mod|package\.json|src/|cmd/|internal/|schema\.go|\.github/actions/)' && ! any '^docs/(content|adr)/'; then
   echo 'BLOCKED: public implementation change has no documentation update.'; fail=1
 fi
 
