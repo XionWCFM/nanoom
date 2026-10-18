@@ -31,11 +31,7 @@ func toolCommand(program string, args []string) (*exec.Cmd, error) {
 		return nil, fmt.Errorf("SystemRoot is required to execute a Windows batch file")
 	}
 	interpreter := filepath.Join(root, "System32", "cmd.exe")
-	quoted, err := batchArgument(script)
-	if err != nil {
-		return nil, err
-	}
-	line := `cmd.exe /e:ON /v:OFF /d /c "` + quoted
+	line := `cmd.exe /e:ON /v:OFF /d /s /c "` + batchCommand(script)
 	for _, arg := range args {
 		quoted, err := batchArgument(arg)
 		if err != nil {

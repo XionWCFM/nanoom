@@ -3,7 +3,7 @@ package cli
 import "testing"
 
 func TestBatchArgumentPreservesMetacharacters(t *testing.T) {
-	for _, c := range []struct{ input, want string }{{"", `""`}, {"name & other", `"name & other"`}, {`%PATH%!`, `"%%cd:~,%PATH%%cd:~,%!"`}, {`a"b`, `"a""b"`}, {`C:\tail\`, `"C:\tail\\"`}} {
+	for _, c := range []struct{ input, want string }{{"", `^"^"`}, {"name & other", `^"name^ ^&^ other^"`}, {`%PATH%!`, `^"^%PATH^%^!^"`}, {`a"b`, `^"a\^"b^"`}, {`C:\tail\`, `^"C:\tail\\^"`}} {
 		got, err := batchArgument(c.input)
 		if err != nil || got != c.want {
 			t.Fatalf("%q: %q != %q (%v)", c.input, got, c.want, err)
