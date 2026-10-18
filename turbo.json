@@ -7,5 +7,16 @@
     "test": {
       "cache": false
     }
-  }
+  },
+  "globalPassThroughEnv": [
+    "GOCACHE",
+    "GOMODCACHE",
+    "GOROOT",
+    "GOPATH",
+    "GOTOOLCHAIN",
+    "LOCALAPPDATA",
+    "LocalAppData",
+    "CGO_ENABLED",
+    "CC"
+  ]
 }
