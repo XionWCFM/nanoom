@@ -30,6 +30,20 @@ func parse(args []string) (arguments, error) {
 			a.positionals = append(a.positionals, item)
 			continue
 		}
+		if strings.HasPrefix(item, "-") && !strings.HasPrefix(item, "--") && strings.Trim(item[1:], "v") == "" {
+			for range item[1:] {
+				a.options["verbose"] = append(a.options["verbose"], "true")
+			}
+			continue
+		}
+		if len(item) > 2 && (strings.HasPrefix(item, "-C") || strings.HasPrefix(item, "-c")) {
+			name := "config"
+			if item[1] == 'C' {
+				name = "cwd"
+			}
+			a.options[name] = append(a.options[name], strings.TrimPrefix(item[2:], "="))
+			continue
+		}
 		name := strings.TrimPrefix(item, "--")
 		if item == "-C" {
 			name = "cwd"
@@ -99,9 +113,22 @@ var reportedFailure = errors.New("one or more jobs did not succeed")
 
 func Main(args []string, stdout, stderr io.Writer, version string) int {
 	a, err := parse(args)
-	if err == nil && a.has("help") {
-		fmt.Fprintln(stdout, "nanoom <affected|run|install|history|plan|status|schema|cache-key|version> [options]")
-		return 0
+	helpPositionals := a.positionals
+	explicitHelp := false
+	if len(helpPositionals) > 0 && helpPositionals[0] == "help" {
+		explicitHelp = true
+		helpPositionals = helpPositionals[1:]
+	}
+	if len(helpPositionals) > 1 && helpPositionals[0] == "plan" && helpPositionals[1] == "help" {
+		explicitHelp = true
+		helpPositionals = append([]string{"plan"}, helpPositionals[2:]...)
+	}
+	if err == nil && (a.has("help") || explicitHelp) {
+		if helpErr := printHelp(helpPositionals, version, stdout); helpErr == nil {
+			return 0
+		} else {
+			err = helpErr
+		}
 	}
 	if err == nil && a.has("version") {
 		fmt.Fprintln(stdout, "nanoom", version)

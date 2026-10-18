@@ -1,0 +1,22 @@
+Run tasks on affected projects
+
+Usage: nanoom run [OPTIONS] <GROUP> <TASK>
+
+Arguments:
+  <GROUP>  Group name to run tasks for
+  <TASK>   Task name to run
+
+Options:
+      --runner <RUNNER>              Runner: pnpm, yarn, turbo, or nx (default: auto)
+      --filter <FILTER>              Run only for specific workspace
+      --shard <SHARD>                Shard index (1-based)
+      --total-shards <TOTAL_SHARDS>  Total number of shards
+      --all                          Run on all projects, not just affected
+      --base <BASE>                  Base revision for affected workspace selection
+      --head <HEAD>                  Head revision for affected selection (defaults to HEAD)
+      --continue-on-error            Continue on error
+      --json                         Output a JSON result
+  -c, --config <CONFIG>              Path to nanoom.config.json config file
+  -C, --cwd <CWD>                    Working directory
+  -v, --verbose...                   Increase verbosity
+  -h, --help                         Print help

@@ -1,0 +1,14 @@
+Aggregate job status
+
+Usage: nanoom status [OPTIONS] --results <RESULTS> <JOBS>
+
+Arguments:
+  <JOBS>  Comma-separated list of job names to check
+
+Options:
+      --results <RESULTS>  Comma-separated job=status values, for example build=success,test=failure
+      --json               Output a JSON result
+  -c, --config <CONFIG>    Path to nanoom.config.json config file
+  -C, --cwd <CWD>          Working directory
+  -v, --verbose...         Increase verbosity
+  -h, --help               Print help

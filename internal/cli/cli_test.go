@@ -185,3 +185,33 @@ func TestHistoryCLIProducesRustCompatibleArtifactsAndReplay(t *testing.T) {
 		}
 	}
 }
+
+func TestHelpExplainsPublicInputs(t *testing.T) {
+	for _, c := range []struct{ command, required string }{{"affected", "--base"}, {"run", "--continue-on-error"}, {"install", "--filter-file"}, {"history", "--previous-model"}, {"plan", "select"}, {"status", "--results"}, {"schema", "--output"}, {"cache-key", "--runner"}, {"version", "--json"}} {
+		code, out, stderr := run(t, c.command, "--help")
+		if code != 0 || stderr != "" || !strings.Contains(out, c.required) {
+			t.Fatalf("%s help: %d %s %s", c.command, code, out, stderr)
+		}
+	}
+	code, out, stderr := run(t, "plan", "select", "--help")
+	if code != 0 || stderr != "" || !strings.Contains(out, "--reference") {
+		t.Fatalf("plan select help: %d %s %s", code, out, stderr)
+	}
+	if code, _, _ := run(t, "missing", "--help"); code == 0 {
+		t.Fatal("unknown command accepted")
+	}
+}
+
+func TestHelpSubcommandAndShortGlobalOptions(t *testing.T) {
+	for _, args := range [][]string{{"help", "affected"}, {"help", "plan", "select"}, {"plan", "help", "select"}} {
+		code, out, stderr := run(t, args...)
+		if code != 0 || stderr != "" || !strings.Contains(out, "Usage:") {
+			t.Fatalf("%v: %d %s %s", args, code, out, stderr)
+		}
+	}
+	root := t.TempDir()
+	code, out, stderr := run(t, "-vv", "-C"+root, "-c=custom.json", "version", "--json")
+	if code != 0 || !strings.Contains(out, `"version":"0.9.0"`) || !strings.Contains(stderr, "custom.json") {
+		t.Fatalf("short globals: %d %s %s", code, out, stderr)
+	}
+}

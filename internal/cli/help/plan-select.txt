@@ -1,0 +1,14 @@
+Validate a Plan v1 file and select one assignment
+
+Usage: nanoom plan select [OPTIONS] --input <INPUT> --reference <REFERENCE> --group <GROUP> --assignment <ASSIGNMENT> --output-dir <OUTPUT_DIR>
+
+Options:
+      --input <INPUT>            Plan v1 JSON file
+      --reference <REFERENCE>    Plan reference JSON file from the current run
+      --group <GROUP>            Group name
+      --assignment <ASSIGNMENT>  Assignment ID
+      --output-dir <OUTPUT_DIR>  Directory for assignment.json and paths.txt
+  -c, --config <CONFIG>          Path to nanoom.config.json config file
+  -C, --cwd <CWD>                Working directory
+  -v, --verbose...               Increase verbosity
+  -h, --help                     Print help

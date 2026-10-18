@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -52,4 +53,31 @@ func TestWindowsBatchToolPreservesArguments(t *testing.T) {
 	if !reflect.DeepEqual(actual, arguments) {
 		t.Fatalf("arguments changed: got %#v want %#v", actual, arguments)
 	}
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Fatal("Node is required for the native Windows tool boundary")
+	}
+	helper := filepath.Join(directory, "argv.cjs")
+	if err := os.WriteFile(helper, []byte(`process.stdout.write(JSON.stringify(process.argv.slice(2)))`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	body = "@echo off\r\n\"" + node + "\" \"" + helper + "\" %*\r\n"
+	if err := os.WriteFile(script, []byte(body), 0644); err != nil {
+		t.Fatal(err)
+	}
+	command, err = toolCommand(script, arguments)
+	if err != nil {
+		t.Fatal(err)
+	}
+	output, err = command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("Node batch failed: %v %s", err, output)
+	}
+	if err := json.Unmarshal(output, &actual); err != nil {
+		t.Fatalf("invalid Node child output: %v %s", err, output)
+	}
+	if !reflect.DeepEqual(actual, arguments) {
+		t.Fatalf("Node arguments changed: got %#v want %#v", actual, arguments)
+	}
+
 }

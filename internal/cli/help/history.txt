@@ -1,0 +1,33 @@
+Merge successful task timing samples
+
+Usage: nanoom history [OPTIONS] --model-output <MODEL_OUTPUT> --prediction-output <PREDICTION_OUTPUT> --model-artifact-name <MODEL_ARTIFACT_NAME> --run-id <RUN_ID> --run-attempt <RUN_ATTEMPT>
+
+Options:
+      --input <INPUTS>
+          Successful MeasurementArtifact v3 JSON (repeatable)
+      --previous-model <PREVIOUS_MODEL>
+          Previous ModelStateBundle v3 JSON
+      --previous-prediction <PREVIOUS_PREDICTION>
+          Previous PredictionArtifact v3 JSON that publishes the model
+      --previous-model-name <PREVIOUS_MODEL_NAME>
+          Previous model artifact name used by the prior prediction marker
+      --model-output <MODEL_OUTPUT>
+          New ModelStateBundle v3 output path
+      --prediction-output <PREDICTION_OUTPUT>
+          New PredictionArtifact v3 publish-marker output path
+      --model-artifact-name <MODEL_ARTIFACT_NAME>
+          Name used when uploading the model artifact
+      --run-id <RUN_ID>
+          Current GitHub Actions run ID
+      --run-attempt <RUN_ATTEMPT>
+          Current GitHub Actions run attempt
+      --batch-output-dir <BATCH_OUTPUT_DIR>
+          Optional directory for canonical ObservationBatch v3 files
+  -c, --config <CONFIG>
+          Path to nanoom.config.json config file
+  -C, --cwd <CWD>
+          Working directory
+  -v, --verbose...
+          Increase verbosity
+  -h, --help
+          Print help

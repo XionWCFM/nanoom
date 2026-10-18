@@ -69,7 +69,7 @@ npx --yes wrangler@4.138.0 deploy --dry-run \
 - Rust oracle의 12개 시간순/지연 도착/profile 시나리오에서 canonical batch digest·모델·예측·pruning 수가 일치했다. 모델 입력을 변경하지 않고 새 state를 반환하며 duplicate는 무변경, body conflict는 거부했다. corpus 생성 소스는 `examples/go_prediction_oracle.rs`, 고정 결과는 `internal/prediction/testdata/rust-v3.json`이다.
 - `go-cli-contract-test.sh`는 실제 Rust/Go binary의 version·네 status 결과·아홉 cache input·history 파일 바이트·잘못된 measurement의 degraded 카운터를 비교한다. Rust가 만든 Plan을 양쪽 binary로 선택한 assignment JSON과 paths.txt도 일치했다. 실제 npm focused install에서 app/shared/root tools가 설치되고 unrelated workspace가 제외됐다.
 - 기존 `history-server-e2e-test.sh`를 Go Worker 모드로 실행했다. HTTP 오류 14개, cold fallback → 실제 assignment 2개 실행 → D1 merge → duplicate no-op → warm sample 8개 재사용과 warm run, 1,900,000-byte row 경계, checksum/schema/scope 손상 거부와 복구, 12개 동시 batch와 duplicate retry의 정확히 한 번 적용, 46일 row 삭제와 44일 row 보존이 통과했다. `NANOOM_TEST_BINARY`로 Go CLI를 지정한 전체 Go CLI/Worker E2E도 통과했다. 공개 릴리즈 소비 증거는 아니다.
-- Go CLI는 Linux amd64/arm64, macOS amd64/arm64, Windows amd64의 CGO 없는 교차 빌드가 통과했다. 실행 검증은 macOS arm64이며 다른 OS의 runtime 검증을 대신하지 않는다.
+- 후보 버전은 0.10.0이며 Go build, npm manifests, Yarn lockfile과 reference Cargo version을 동기화했다. Go CLI는 Linux amd64/arm64, macOS amd64/arm64, Windows amd64의 CGO 없는 교차 빌드가 통과했다. 실행 검증은 macOS arm64이며 다른 OS의 runtime 검증을 대신하지 않는다.
 - Wrangler dry-run은 gzip 2,248.97 KiB를 보고했다. 크기 검사는 CPU·메모리·공개 배포 성공을 증명하지 않는다.
 
 - 실제 Rust/Go `affected`의 양성/변경 없음 JSON, compact matrix, authoritative Plan 내용과 reference digest가 일치했다. scheduler의 cold/warm/preparation/fallback/shards/labels/expired 7개 고정 시나리오도 일치했다.
@@ -85,3 +85,16 @@ npx --yes wrangler@4.138.0 deploy --dry-run \
 4. 공개 Go 경로 검증 후 기존 Rust 운영 구현·toolchain·비교 전용 harness 제거를 마무리한다. 현재 Rust reference 소스가 남아 있으므로 전체 기술 전환 완료를 선언하지 않는다.
 
 현재 검토는 **BLOCKED**다. 위 공개 실행 gate와 native 플랫폼 검증이 남아 있다.
+
+## Hosted 검증 및 남은 배포 판단
+
+- 독립 branch `codex/go-runtime-migration`, [PR #131](https://github.com/XionWCFM/nanoom/pull/131)에서 검증한다. 원래 checkout의 별도 테스트 품질 변경은 포함하지 않았다. E2E의 HTTP·merge·storage·contention 검사는 Go 이식 검증에 필요한 계약으로 함께 가져왔다.
+- `scripts/review-change.sh origin/main`이 실제 commit diff를 검토하고 PASS했다. 전체 수용 검토의 완료 판정과 구분한다.
+- [producer CI 39123629507](https://github.com/XionWCFM/nanoom/actions/runs/39123629507), source `02b99963f3c6a3aabd0bb1613e4a45d3eac38aec`: Linux·macOS·Windows와 aggregate status 모두 성공. 운영 Action/binary는 최신 공개 v0.9.0을 사용하고 Go 소스가 검증 대상이다.
+- macOS의 Go 미설치를 공식 setup-go로 해결했다. 사용자가 CI diff와 Nanoom 자체 Go 개발 CI의 언어 도구 예외를 명시적으로 승인했다. Windows에서는 Turbo의 Go cache 환경 보존과 실제 quote/percent/metacharacter 인수 전달을 수정·검증했다.
+- CLI의 명령별 help, `help plan select`, verbose 반복과 붙여 쓴 짧은 cwd/config option도 유지한다. help 텍스트는 기존 공개 CLI 출력에서 고정하고 Go binary에 embed한다.
+- 공개 임시 Worker + 별도 임시 D1에서 실제 Go CLI가 만든 batch 1,073 bytes/aggregate 4개를 검사했다. 최초 merge 적용, duplicate no-op, warm snapshot, ETag 304, 잘못된 digest 409 및 모델 무변경이 통과했다. [비밀값을 제거한 HTTP/CPU 기록](evidence/remote-go-worker.json)에 요청 헤더와 token은 저장하지 않는다.
+- 표준 Go/Wasm의 작은 요청 CPU는 10~157ms로 관측됐다. [Cloudflare 공식 한도](https://developers.cloudflare.com/workers/platform/limits/)의 Free 10ms를 보장하지 못한다. 현재 OAuth의 subscription API가 403이어서 요금제는 확인되지 않았다. 요금제 변경은 하지 않았고 운영 전환 전에 사용자 확인이 필요하다. TinyGo 0.43.0 실험은 압축 763.74KiB까지 줄었지만 초기화 panic으로 HTTP가 실패하여 채택하지 않았다.
+- 운영 D1을 읽기만 하여 현재 모델 1개(최대 3,218 bytes)의 strict schema, scope storage key, checksum, Go canonical bytes의 완전 일치, prediction projection을 검증했다. 운영 데이터에 쓴 row는 0개다. 기존 Rust 모델 corpus도 별도로 검증한다.
+
+공개 Go 릴리즈·최신 공개 Go 제품의 nanoom-fixtures matrix/aggregate, 운영 Worker 전환과 최종 Rust 제거는 아직 완료되지 않았다.

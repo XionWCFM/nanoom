@@ -1,0 +1,10 @@
+Generate JSON schema for configuration
+
+Usage: nanoom schema [OPTIONS]
+
+Options:
+      --output <OUTPUT>  Write schema to file instead of stdout
+  -c, --config <CONFIG>  Path to nanoom.config.json config file
+  -C, --cwd <CWD>        Working directory
+  -v, --verbose...       Increase verbosity
+  -h, --help             Print help

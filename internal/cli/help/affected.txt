@@ -1,0 +1,35 @@
+Calculate affected projects and generate matrix
+
+Usage: nanoom affected [OPTIONS]
+
+Options:
+      --base <BASE>
+          Base reference (branch/tag/commit)
+      --head <HEAD>
+          Head reference (defaults to HEAD)
+      --json
+          Output the canonical affected report as JSON
+      --prediction <FILE>
+          PredictionArtifact v3 JSON used for runner assignments
+      --prediction-table <FILE>
+          Compact PredictionTable v3 JSON from a History Server (repeatable)
+      --prediction-context <PREDICTION_CONTEXT>
+          Prediction scope context JSON
+      --preparation-context <PREPARATION_CONTEXT>
+          PreparationContext JSON containing package-manager identity and lockfile digest
+  -c, --config <CONFIG>
+          Path to nanoom.config.json config file
+      --timing-runner <TIMING_RUNNER>
+          Runner identity used for timing lookup [default: auto]
+  -C, --cwd <CWD>
+          Working directory
+      --timing-environment <TIMING_ENVIRONMENT>
+          Hardware/environment identity used for timing lookup [default: default]
+      --plan-output <PLAN_OUTPUT>
+          Write the complete Plan v1 JSON to this file
+  -v, --verbose...
+          Increase verbosity
+      --plan-context <PLAN_CONTEXT>
+          Plan provenance JSON file
+  -h, --help
+          Print help
