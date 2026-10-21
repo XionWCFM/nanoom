@@ -54,6 +54,11 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Set up Go for Nanoom development
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
       - name: Focus install planned workspaces
         id: install
         uses: XionWCFM/nanoom/.github/actions/install@latest

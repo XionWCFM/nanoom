@@ -8,3 +8,6 @@ pre-commit:
     rust-format:
       glob: "*.rs"
       run: mise exec -- cargo fmt --all --check
+    go-format:
+      glob: "*.go"
+      run: bash scripts/go-format-check.sh

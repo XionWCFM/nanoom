@@ -18,7 +18,7 @@ mv app.json packages/app/package.json
 jq '.dependencies={"tool-shared":"workspace:*"}' packages/tool/package.json > tool.json
 mv tool.json packages/tool/package.json
 pnpm install --lockfile-only > "$tmp/lock.log" 2>&1
-NODE_ENV=production "$root/target/debug/nanoom" install --filter app --json > "$tmp/install.json"
+NODE_ENV=production "${NANOOM_TEST_BINARY:-$root/dist/nanoom}" install --filter app --json > "$tmp/install.json"
 jq -e '.scope.devDependencies == true and .scope.dependencyClosure == true' "$tmp/install.json" >/dev/null
 # Root tooling and both dependency closures are usable from the selected app.
 node - <<'JS'
@@ -30,7 +30,7 @@ assert.equal(require('./packages/app/node_modules/shared/package.json').name, 's
 assert.equal(fs.existsSync('./node_modules/unrelated'), false);
 assert.equal(fs.existsSync('./packages/unrelated/node_modules'), false);
 JS
-"$root/target/debug/nanoom" run ci test --all --filter app --json > "$tmp/run.json"
+"${NANOOM_TEST_BINARY:-$root/dist/nanoom}" run ci test --all --filter app --json > "$tmp/run.json"
 test -f packages/app/executed
 test ! -f packages/unrelated/executed
 printf '%s\n' 'native pnpm focused install preserves development tooling and both internal closures'
@@ -59,7 +59,7 @@ test "$("$npm_shim/npm" --version)" = 11.16.0
 original_path=$PATH
 export PATH="$npm_shim:$PATH"
 npm install --package-lock-only --ignore-scripts --no-audit --no-fund > "$tmp/npm-lock.log" 2>&1
-NODE_ENV=production "$root/target/debug/nanoom" install --filter app --json > "$tmp/npm-install.json"
+NODE_ENV=production "${NANOOM_TEST_BINARY:-$root/dist/nanoom}" install --filter app --json > "$tmp/npm-install.json"
 jq -e '.packageManager == "npm" and .scope.devDependencies == true' "$tmp/npm-install.json" >/dev/null
 node - <<'JS'
 const assert = require('node:assert/strict');
@@ -69,10 +69,10 @@ for (const name of ['app','shared','tool','tool-shared']) {
 }
 assert.equal(fs.existsSync('./node_modules/unrelated'), false);
 JS
-if "$root/target/debug/nanoom" install --filter absent --json > "$tmp/unknown.json" 2>/dev/null; then exit 1; fi
+if "${NANOOM_TEST_BINARY:-$root/dist/nanoom}" install --filter absent --json > "$tmp/unknown.json" 2>/dev/null; then exit 1; fi
 jq -e '.status == "failure"' "$tmp/unknown.json" >/dev/null
 rm package-lock.json
-if "$root/target/debug/nanoom" install --filter app --json > "$tmp/no-lock.json" 2>/dev/null; then exit 1; fi
+if "${NANOOM_TEST_BINARY:-$root/dist/nanoom}" install --filter app --json > "$tmp/no-lock.json" 2>/dev/null; then exit 1; fi
 jq -e '.status == "failure"' "$tmp/no-lock.json" >/dev/null
 printf '%s\n' 'native npm focused install includes both closures and rejects unknown workspaces or missing lockfiles'
 export PATH=$original_path
@@ -99,7 +99,7 @@ YARN_ENABLE_IMMUTABLE_INSTALLS=false yarn install > "$tmp/yarn-lock.log" 2>&1 ||
 }
 cp yarn.lock "$tmp/original-yarn.lock"
 rm -rf node_modules packages/*/node_modules .yarn/install-state.gz packages/unrelated
-YARN_ENABLE_IMMUTABLE_INSTALLS=true NODE_ENV=production "$root/target/debug/nanoom" install --filter app --json > "$tmp/yarn-install.json"
+YARN_ENABLE_IMMUTABLE_INSTALLS=true NODE_ENV=production "${NANOOM_TEST_BINARY:-$root/dist/nanoom}" install --filter app --json > "$tmp/yarn-install.json"
 jq -e '.packageManager == "yarn" and .scope.devDependencies == true' "$tmp/yarn-install.json" >/dev/null
 cmp yarn.lock "$tmp/original-yarn.lock"
 node - <<'JS'

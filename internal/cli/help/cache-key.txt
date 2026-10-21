@@ -1,0 +1,13 @@
+Generate a deterministic cache key
+
+Usage: nanoom cache-key [OPTIONS] --runner <RUNNER> --task <TASK>
+
+Options:
+      --runner <RUNNER>  Runner name (turbo, nx, pnpm, yarn, or npm)
+      --task <TASK>      Task name
+      --filter <FILTER>  Workspace filter [default: ""]
+      --json             Output a JSON result
+  -c, --config <CONFIG>  Path to nanoom.config.json config file
+  -C, --cwd <CWD>        Working directory
+  -v, --verbose...       Increase verbosity
+  -h, --help             Print help

@@ -1,0 +1,22 @@
+Monorepo task runner with affected project detection
+
+Usage: nanoom [OPTIONS] <COMMAND>
+
+Commands:
+  affected   Calculate affected projects and generate matrix
+  run        Run tasks on affected projects
+  install    Install dependencies
+  history    Merge successful task timing samples
+  plan       Validate and select a Plan v1 assignment
+  status     Aggregate job status
+  schema     Generate JSON schema for configuration
+  cache-key  Generate a deterministic cache key
+  version    Print the nanoom version
+  help       Print this message or the help of the given subcommand(s)
+
+Options:
+  -c, --config <CONFIG>  Path to nanoom.config.json config file
+  -C, --cwd <CWD>        Working directory
+  -v, --verbose...       Increase verbosity
+  -h, --help             Print help
+  -V, --version          Print version

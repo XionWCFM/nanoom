@@ -7,9 +7,11 @@
     "always": [
       ".github",
       ".yarn/releases",
+      "cmd",
       "crates",
       "docs",
       "examples",
+      "internal",
       "packages",
       "scripts",
       "src",

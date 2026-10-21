@@ -1,6 +1,6 @@
 # nanoom
 
-`nanoom`은 변경된 JavaScript/TypeScript workspace와 transitive dependent를 찾고, 실행시간 이력을 이용해 GitHub Actions assignment를 만드는 CLI입니다. Nx/Turbo/Yarn/pnpm의 로그 형식을 해석하지 않고 실제 subprocess wall time을 공통 Rust 경계에서 측정합니다.
+`nanoom`은 변경된 JavaScript/TypeScript workspace와 transitive dependent를 찾고, 실행시간 이력을 이용해 GitHub Actions assignment를 만드는 CLI입니다. Nx/Turbo/Yarn/pnpm의 로그 형식을 해석하지 않고 실제 subprocess wall time을 공통 subprocess 경계에서 측정합니다.
 
 ## 설치와 설정
 
@@ -347,6 +347,8 @@ MIT
 명시적 `affected --base` / `--head`에 annotated tag를 사용할 수 있습니다. 비교 diagnostics의 `baseCommit`과 `headCommit`은 tag object가 아닌 실제 commit SHA입니다. tree/blob revision은 commit 입력으로 사용할 수 없습니다.
 
 개발 환경 설치와 로컬 검증은 [기여 가이드](CONTRIBUTING.md)를 참고하세요.
+
+Go 전환 후보의 구현 범위, Cloudflare Workers + D1 유지 조건, Rust와의 호환성 검증 및 남은 전환 작업은 [Go 마이그레이션](docs/migrations/go.md)에 기록합니다. 현재 공개 운영 경로의 Go 전환이 완료됐다는 의미는 아닙니다.
 
 `status`와 `cache-key`는 저장소 설정을 파싱하지 않는 독립 명령입니다.
 `cache-key`는 runner/task/filter와 선택한 설정 파일, root manifest,

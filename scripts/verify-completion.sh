@@ -6,8 +6,10 @@ cd "$root"
 
 git diff --check
 yarn format:check
-cargo clippy --locked --all-targets --all-features -- -D warnings
-cargo test --locked --all --all-features
+go vet ./...
+go test -race ./...
+bash scripts/build-go-cli.sh
+export NANOOM_TEST_BINARY=$(node -p 'require("path").resolve("dist", process.platform === "win32" ? "nanoom.exe" : "nanoom")')
 bash scripts/action-contract.sh
 bash scripts/platform-package-smoke.sh
 node packages/cli/smoke-test.js

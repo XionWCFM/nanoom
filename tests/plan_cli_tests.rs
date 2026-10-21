@@ -41,11 +41,14 @@ fn init_repo(dir: &Path) {
 }
 
 fn run_cli(dir: &Path, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_nanoom"))
-        .current_dir(dir)
-        .args(args)
-        .output()
-        .unwrap()
+    Command::new(
+        std::env::var_os("NANOOM_TEST_BINARY")
+            .unwrap_or_else(|| env!("CARGO_BIN_EXE_nanoom").into()),
+    )
+    .current_dir(dir)
+    .args(args)
+    .output()
+    .unwrap()
 }
 
 struct Fixture {

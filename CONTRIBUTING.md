@@ -35,13 +35,21 @@ PR에는 사용자에게 달라지는 동작과 실행한 검증을 기록합니
 
 워크플로 변경은 AGENTS.md의 diff 승인 절차를 따릅니다.
 
-## Rust와 공개 패키지
+## Go와 공개 패키지
 
-`rust-toolchain.toml`과 `mise.toml`은 같은 Rust 버전을 사용합니다.
-전체 수용 검증은 `bash scripts/verify-completion.sh --local`이며
-`cargo-llvm-cov`와 `llvm-tools-preview`가 필요합니다. macOS와 Windows의
-기본 검사도 `yarn check`로 수행할 수 있습니다. 공개 npm wrapper 검증은
-`cargo build` 후 `node packages/cli/smoke-test.js`로 실행합니다.
+Go 버전은 `go.mod`와 `mise.toml`을 기준으로 선택합니다. 기본 `yarn check`는
+Go formatter, vet, race test를 실행합니다. CLI 빌드는 `bash scripts/build-go-cli.sh`이며
+`dist/nanoom`을 만듭니다. npm wrapper는 다음 명령으로 검증합니다.
 
-포맷 명령의 대상은 Rust와 유지하는 Node 코드·설정입니다. 기존 문서,
+```sh
+NANOOM_TEST_BINARY="$PWD/dist/nanoom" node packages/cli/smoke-test.js
+bash scripts/verify-completion.sh --local
+NANOOM_TEST_BINARY="$PWD/dist/nanoom" HISTORY_E2E_WORKER_LANGUAGE=go bash scripts/history-server-e2e-test.sh
+```
+
+전체 전환 상태와 공개 검증은 [Go 마이그레이션](docs/migrations/go.md)에 기록합니다.
+Rust 소스와 도구는 전환 중 differential oracle과 기존 regression harness를 재실행하기 위해
+남아 있습니다. `bash scripts/go-cli-contract-test.sh`는 실제 Rust/Go binary를 비교합니다.
+
+포맷 명령의 대상은 Go와 유지하는 Node 코드·설정입니다. Rust 비교 소스를 수정하면 `cargo fmt --all`도 실행합니다. 기존 문서,
 예제와 Action 자산은 해당 계약 검증으로 따로 검토하고 대량 재포맷하지 않습니다.

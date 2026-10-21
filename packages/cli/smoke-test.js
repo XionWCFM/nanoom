@@ -16,7 +16,7 @@ const packageRoot = path.join(root, "node_modules", packageName);
 fs.mkdirSync(packageRoot, { recursive: true });
 fs.writeFileSync(path.join(packageRoot, "package.json"), JSON.stringify({ name: packageName }));
 fs.copyFileSync(
-  path.join(__dirname, "../../target/debug", executableName),
+  process.env.NANOOM_TEST_BINARY || path.join(__dirname, "../../dist", executableName),
   path.join(packageRoot, executableName),
 );
 if (process.platform !== "win32") fs.chmodSync(path.join(packageRoot, executableName), 0o644);

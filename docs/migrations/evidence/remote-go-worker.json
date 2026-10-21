@@ -1,0 +1,502 @@
+{
+  "date": "2026-10-18",
+  "worker": "nanoom-history-go-validation",
+  "database": "nanoom-go-validation-20261018",
+  "runtime": "Go 1.27.1 js/wasm, workers-go v0.36.0",
+  "batchBytes": 1073,
+  "aggregates": 4,
+  "httpChecks": [
+    {
+      "method": "GET",
+      "path": "/health",
+      "status": 200,
+      "body": {
+        "status": "ok"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/ready",
+      "status": 200,
+      "body": {
+        "status": "ready"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/v1/repositories/github-12345/scopes/03e113c9f15c4c9a77fe798ee8d118dcaa2a1e5a335519e3e7aab483bb4df066/snapshot",
+      "status": 401,
+      "body": {
+        "code": "unauthenticated",
+        "detail": "A valid bearer credential is required.",
+        "requestId": "a4c730826c0b3b32",
+        "status": 401,
+        "title": "Unauthorized",
+        "type": "about:blank"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/v1/repositories/github-12345/scopes/03e113c9f15c4c9a77fe798ee8d118dcaa2a1e5a335519e3e7aab483bb4df066/snapshot",
+      "status": 404,
+      "body": {
+        "code": "history_not_found",
+        "detail": "No currently usable history exists for this scope.",
+        "requestId": "a4c730855dde2f7c",
+        "status": 404,
+        "title": "Not Found",
+        "type": "about:blank"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/v1/repositories/github-12345/scopes/03e113c9f15c4c9a77fe798ee8d118dcaa2a1e5a335519e3e7aab483bb4df066/observations:merge",
+      "status": 200,
+      "body": {
+        "applied": true,
+        "modelUpdatedAtMs": 1792322802021,
+        "modelVersion": 3,
+        "outcome": "created",
+        "prunedBucketCount": 0,
+        "receiptCount": 1,
+        "receivedAggregateCount": 4,
+        "retainedKeyCount": 4,
+        "scopeId": "03e113c9f15c4c9a77fe798ee8d118dcaa2a1e5a335519e3e7aab483bb4df066"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/v1/repositories/github-12345/scopes/03e113c9f15c4c9a77fe798ee8d118dcaa2a1e5a335519e3e7aab483bb4df066/observations:merge",
+      "status": 200,
+      "body": {
+        "applied": false,
+        "modelUpdatedAtMs": 1792322802021,
+        "modelVersion": 3,
+        "outcome": "unchanged",
+        "prunedBucketCount": 0,
+        "receiptCount": 1,
+        "receivedAggregateCount": 4,
+        "retainedKeyCount": 4,
+        "scopeId": "03e113c9f15c4c9a77fe798ee8d118dcaa2a1e5a335519e3e7aab483bb4df066"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/v1/repositories/github-12345/scopes/03e113c9f15c4c9a77fe798ee8d118dcaa2a1e5a335519e3e7aab483bb4df066/snapshot",
+      "status": 200,
+      "body": {
+        "modelUpdatedAtMs": 1792322802021,
+        "rows": [
+          [
+            "33b32e3cced63c6a6145a6cf8b555960a5ff113a9f9bed03a27222ed2f79e609",
+            0,
+            1,
+            1792322514338,
+            1794873600000
+          ],
+          [
+            "752cb84cd99f4670014a68b5b3c61cc5e700ba86e8ff564a6191605ed44f6b7e",
+            0,
+            1,
+            1792322514338,
+            1794873600000
+          ],
+          [
+            "8e3a060d9912f5f4230ab9f0a25df7fe50c4d9814cca14ec6f20f795a7e0fcda",
+            125,
+            1,
+            1792322514338,
+            1794873600000
+          ],
+          [
+            "e1eef917a740bcbfbe379144dfaa6628e71715ee6ea6658176c58cfa3858846b",
+            125,
+            1,
+            1792322514338,
+            1794873600000
+          ]
+        ],
+        "scope": {
+          "group": "ci",
+          "ref": {
+            "kind": "push",
+            "ref": "refs/heads/main"
+          },
+          "repositoryKey": "github-12345",
+          "taskRunner": "yarn",
+          "timingEnvironment": "linux-x64-node24",
+          "workflowPath": ".github/workflows/go-remote-validation.yml"
+        },
+        "version": 3
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/v1/repositories/github-12345/scopes/03e113c9f15c4c9a77fe798ee8d118dcaa2a1e5a335519e3e7aab483bb4df066/snapshot",
+      "status": 304,
+      "body": null
+    },
+    {
+      "method": "POST",
+      "path": "/v1/repositories/github-12345/scopes/03e113c9f15c4c9a77fe798ee8d118dcaa2a1e5a335519e3e7aab483bb4df066/observations:merge",
+      "status": 409,
+      "body": {
+        "code": "idempotency_key_mismatch",
+        "detail": "Idempotency-Key must equal the canonical batch digest.",
+        "requestId": "a4c730920d382f7c",
+        "status": 409,
+        "title": "Conflict",
+        "type": "about:blank"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/v1/repositories/github-12345/scopes/03e113c9f15c4c9a77fe798ee8d118dcaa2a1e5a335519e3e7aab483bb4df066/snapshot",
+      "status": 200,
+      "body": {
+        "modelUpdatedAtMs": 1792322802021,
+        "rows": [
+          [
+            "33b32e3cced63c6a6145a6cf8b555960a5ff113a9f9bed03a27222ed2f79e609",
+            0,
+            1,
+            1792322514338,
+            1794873600000
+          ],
+          [
+            "752cb84cd99f4670014a68b5b3c61cc5e700ba86e8ff564a6191605ed44f6b7e",
+            0,
+            1,
+            1792322514338,
+            1794873600000
+          ],
+          [
+            "8e3a060d9912f5f4230ab9f0a25df7fe50c4d9814cca14ec6f20f795a7e0fcda",
+            125,
+            1,
+            1792322514338,
+            1794873600000
+          ],
+          [
+            "e1eef917a740bcbfbe379144dfaa6628e71715ee6ea6658176c58cfa3858846b",
+            125,
+            1,
+            1792322514338,
+            1794873600000
+          ]
+        ],
+        "scope": {
+          "group": "ci",
+          "ref": {
+            "kind": "push",
+            "ref": "refs/heads/main"
+          },
+          "repositoryKey": "github-12345",
+          "taskRunner": "yarn",
+          "timingEnvironment": "linux-x64-node24",
+          "workflowPath": ".github/workflows/go-remote-validation.yml"
+        },
+        "version": 3
+      }
+    }
+  ],
+  "traces": [
+    {
+      "path": "/v1/repositories/github-12345/scopes/REDACTED/snapshot",
+      "status": 401,
+      "outcome": "ok",
+      "cpuMs": 15,
+      "wallMs": 16,
+      "exceptionCount": 0
+    },
+    {
+      "path": "/ready",
+      "status": 200,
+      "outcome": "ok",
+      "cpuMs": 18,
+      "wallMs": 232,
+      "exceptionCount": 0
+    },
+    {
+      "path": "/v1/repositories/github-12345/scopes/REDACTED/snapshot",
+      "status": 404,
+      "outcome": "ok",
+      "cpuMs": 137,
+      "wallMs": 293,
+      "exceptionCount": 0
+    },
+    {
+      "path": "/v1/repositories/github-12345/scopes/REDACTED/observations:merge",
+      "status": 200,
+      "outcome": "ok",
+      "cpuMs": 28,
+      "wallMs": 414,
+      "exceptionCount": 0
+    },
+    {
+      "path": "/v1/repositories/github-12345/scopes/REDACTED/observations:merge",
+      "status": 200,
+      "outcome": "ok",
+      "cpuMs": 32,
+      "wallMs": 202,
+      "exceptionCount": 0
+    },
+    {
+      "path": "/v1/repositories/github-12345/scopes/REDACTED/snapshot",
+      "status": 200,
+      "outcome": "ok",
+      "cpuMs": 16,
+      "wallMs": 186,
+      "exceptionCount": 0
+    },
+    {
+      "path": "/v1/repositories/github-12345/scopes/REDACTED/snapshot",
+      "status": 304,
+      "outcome": "ok",
+      "cpuMs": 16,
+      "wallMs": 186,
+      "exceptionCount": 0
+    },
+    {
+      "path": "/v1/repositories/github-12345/scopes/REDACTED/observations:merge",
+      "status": 422,
+      "outcome": "ok",
+      "cpuMs": 40,
+      "wallMs": 44,
+      "exceptionCount": 0
+    },
+    {
+      "path": "/health",
+      "status": 200,
+      "outcome": "ok",
+      "cpuMs": 23,
+      "wallMs": 24,
+      "exceptionCount": 0
+    },
+    {
+      "path": "/ready",
+      "status": 200,
+      "outcome": "ok",
+      "cpuMs": 27,
+      "wallMs": 184,
+      "exceptionCount": 0
+    },
+    {
+      "path": "/v1/repositories/github-12345/scopes/REDACTED/snapshot",
+      "status": 401,
+      "outcome": "ok",
+      "cpuMs": 25,
+      "wallMs": 26,
+      "exceptionCount": 0
+    },
+    {
+      "path": "/v1/repositories/github-12345/scopes/REDACTED/snapshot",
+      "status": 404,
+      "outcome": "ok",
+      "cpuMs": 76,
+      "wallMs": 226,
+      "exceptionCount": 0
+    },
+    {
+      "path": "/v1/repositories/github-12345/scopes/REDACTED/observations:merge",
+      "status": 200,
+      "outcome": "ok",
+      "cpuMs": 32,
+      "wallMs": 369,
+      "exceptionCount": 0
+    },
+    {
+      "path": "/v1/repositories/github-12345/scopes/REDACTED/observations:merge",
+      "status": 200,
+      "outcome": "ok",
+      "cpuMs": 35,
+      "wallMs": 187,
+      "exceptionCount": 0
+    },
+    {
+      "path": "/v1/repositories/github-12345/scopes/REDACTED/snapshot",
+      "status": 200,
+      "outcome": "ok",
+      "cpuMs": 30,
+      "wallMs": 188,
+      "exceptionCount": 0
+    },
+    {
+      "path": "/v1/repositories/github-12345/scopes/REDACTED/snapshot",
+      "status": 304,
+      "outcome": "ok",
+      "cpuMs": 35,
+      "wallMs": 196,
+      "exceptionCount": 0
+    },
+    {
+      "path": "/v1/repositories/github-12345/scopes/REDACTED/observations:merge",
+      "status": 200,
+      "outcome": "ok",
+      "cpuMs": 40,
+      "wallMs": 195,
+      "exceptionCount": 0
+    },
+    {
+      "path": "/health",
+      "status": 200,
+      "outcome": "ok",
+      "cpuMs": 66,
+      "wallMs": 66,
+      "exceptionCount": 0
+    },
+    {
+      "path": "/ready",
+      "status": 200,
+      "outcome": "ok",
+      "cpuMs": 18,
+      "wallMs": 188,
+      "exceptionCount": 0
+    },
+    {
+      "path": "/v1/repositories/github-12345/scopes/REDACTED/snapshot",
+      "status": 401,
+      "outcome": "ok",
+      "cpuMs": 17,
+      "wallMs": 18,
+      "exceptionCount": 0
+    },
+    {
+      "path": "/v1/repositories/github-12345/scopes/REDACTED/snapshot",
+      "status": 404,
+      "outcome": "ok",
+      "cpuMs": 86,
+      "wallMs": 258,
+      "exceptionCount": 0
+    },
+    {
+      "path": "/v1/repositories/github-12345/scopes/REDACTED/observations:merge",
+      "status": 200,
+      "outcome": "ok",
+      "cpuMs": 38,
+      "wallMs": 418,
+      "exceptionCount": 0
+    },
+    {
+      "path": "/v1/repositories/github-12345/scopes/REDACTED/observations:merge",
+      "status": 200,
+      "outcome": "ok",
+      "cpuMs": 22,
+      "wallMs": 198,
+      "exceptionCount": 0
+    },
+    {
+      "path": "/v1/repositories/github-12345/scopes/REDACTED/snapshot",
+      "status": 200,
+      "outcome": "ok",
+      "cpuMs": 20,
+      "wallMs": 196,
+      "exceptionCount": 0
+    },
+    {
+      "path": "/v1/repositories/github-12345/scopes/REDACTED/snapshot",
+      "status": 304,
+      "outcome": "ok",
+      "cpuMs": 16,
+      "wallMs": 189,
+      "exceptionCount": 0
+    },
+    {
+      "path": "/v1/repositories/github-12345/scopes/REDACTED/observations:merge",
+      "status": 409,
+      "outcome": "ok",
+      "cpuMs": 26,
+      "wallMs": 28,
+      "exceptionCount": 0
+    },
+    {
+      "path": "/health",
+      "status": 200,
+      "outcome": "ok",
+      "cpuMs": 11,
+      "wallMs": 11,
+      "exceptionCount": 0
+    },
+    {
+      "path": "/ready",
+      "status": 200,
+      "outcome": "ok",
+      "cpuMs": 10,
+      "wallMs": 157,
+      "exceptionCount": 0
+    },
+    {
+      "path": "/v1/repositories/github-12345/scopes/REDACTED/snapshot",
+      "status": 401,
+      "outcome": "ok",
+      "cpuMs": 13,
+      "wallMs": 13,
+      "exceptionCount": 0
+    },
+    {
+      "path": "/v1/repositories/github-12345/scopes/REDACTED/snapshot",
+      "status": 404,
+      "outcome": "ok",
+      "cpuMs": 157,
+      "wallMs": 329,
+      "exceptionCount": 0
+    },
+    {
+      "path": "/v1/repositories/github-12345/scopes/REDACTED/observations:merge",
+      "status": 200,
+      "outcome": "ok",
+      "cpuMs": 17,
+      "wallMs": 353,
+      "exceptionCount": 0
+    },
+    {
+      "path": "/v1/repositories/github-12345/scopes/REDACTED/observations:merge",
+      "status": 200,
+      "outcome": "ok",
+      "cpuMs": 20,
+      "wallMs": 176,
+      "exceptionCount": 0
+    },
+    {
+      "path": "/v1/repositories/github-12345/scopes/REDACTED/snapshot",
+      "status": 200,
+      "outcome": "ok",
+      "cpuMs": 15,
+      "wallMs": 171,
+      "exceptionCount": 0
+    },
+    {
+      "path": "/v1/repositories/github-12345/scopes/REDACTED/snapshot",
+      "status": 304,
+      "outcome": "ok",
+      "cpuMs": 17,
+      "wallMs": 169,
+      "exceptionCount": 0
+    },
+    {
+      "path": "/v1/repositories/github-12345/scopes/REDACTED/observations:merge",
+      "status": 409,
+      "outcome": "ok",
+      "cpuMs": 35,
+      "wallMs": 38,
+      "exceptionCount": 0
+    },
+    {
+      "path": "/v1/repositories/github-12345/scopes/REDACTED/snapshot",
+      "status": 200,
+      "outcome": "ok",
+      "cpuMs": 16,
+      "wallMs": 166,
+      "exceptionCount": 0
+    },
+    {
+      "path": "/",
+      "status": 404,
+      "outcome": "ok",
+      "cpuMs": 143,
+      "wallMs": 144,
+      "exceptionCount": 0
+    }
+  ],
+  "limits": "Small synthetic payload only. No peak memory measurement or Free-plan acceptance. Production traffic and data unchanged."
+}

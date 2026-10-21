@@ -51,7 +51,7 @@ cat > "$tmp/bin/corepack" <<'SH'
 printf '%s\n' "$*" > "$RUNNER_TEMP/corepack-call"
 SH
 chmod +x "$tmp/bin/corepack"
-ln -s "$root/target/debug/nanoom" "$tmp/bin/nanoom"
+ln -s "${NANOOM_TEST_BINARY:-$root/dist/nanoom}" "$tmp/bin/nanoom"
 export PATH="$tmp/bin:$PATH" FAKE_PNPM_CALLS="$tmp/pnpm-calls" GITHUB_PATH="$tmp/package-manager-path"
 export RUNNER_TEMP="$tmp/runner-temp" GITHUB_WORKSPACE="$consumer" GITHUB_STEP_SUMMARY="$tmp/summary"
 export GITHUB_OUTPUT="$tmp/affected-output" GITHUB_ACTION_PATH="$root/.github/actions/affected"

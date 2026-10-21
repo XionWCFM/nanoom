@@ -2,23 +2,35 @@
 set -Eeuo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
+worker_root=${HISTORY_E2E_WORKER_DIR:-$root/crates/history-worker}
+worker_language=${HISTORY_E2E_WORKER_LANGUAGE:-go}
 tmp=$(mktemp -d)
 worker_pid=''
 cleanup() {
   local status=$?
-  if [[ -n "$worker_pid" ]]; then kill "$worker_pid" 2>/dev/null || true; wait "$worker_pid" 2>/dev/null || true; fi
+  if [[ -n "$worker_pid" ]]; then kill -- "-$worker_pid" 2>/dev/null || true; wait "$worker_pid" 2>/dev/null || true; fi
   rm -f "$tmp/worker/.dev.vars"
   if (( status == 0 )); then rm -rf "$tmp"; else echo "E2E diagnostics retained at $tmp" >&2; fi
 }
 trap cleanup EXIT
 
-for tool in cargo curl git jq node npx shasum uuidgen; do command -v "$tool" >/dev/null || { echo "missing required tool: $tool" >&2; exit 1; }; done
-wrangler() { npm_config_cache="$tmp/npm-cache" npx --yes wrangler@4.138.0 "$@"; }
-cargo build --locked --bin nanoom >/dev/null
-cargo install --locked worker-build --version 0.8.5
-(cd "$root/crates/history-worker" && worker-build --release)
+for tool in curl git jq node npx shasum uuidgen; do command -v "$tool" >/dev/null || { echo "missing required tool: $tool" >&2; exit 1; }; done
+# Reuse the package-manager tool cache; every D1 database and Worker session stays isolated.
+wrangler() { npx --yes wrangler@4.138.0 "$@"; }
+if [[ -z "${NANOOM_TEST_BINARY:-}" ]]; then
+  bash "$root/scripts/build-go-cli.sh" >/dev/null
+fi
+case "$worker_language" in
+  rust)
+    cargo install --locked worker-build --version 0.8.5
+    (cd "$worker_root" && worker-build --release)
+    ;;
+  go) bash "$root/scripts/build-go-worker.sh" "$tmp/worker/build" ;;
+  *) echo "unsupported Worker language: $worker_language" >&2; exit 1 ;;
+esac
 mkdir -p "$tmp/bin"
-export PATH="$root/target/debug:$tmp/bin:$PATH" NO_PROXY=127.0.0.1,localhost no_proxy=127.0.0.1,localhost
+ln -s "${NANOOM_TEST_BINARY:-$root/dist/nanoom}" "$tmp/bin/nanoom"
+export PATH="$tmp/bin:$root/dist:$PATH" NO_PROXY=127.0.0.1,localhost no_proxy=127.0.0.1,localhost
 cat > "$tmp/bin/yarn" <<'SH'
 #!/usr/bin/env bash
 exec node "${NANOOM_YARN_PATH:?NANOOM_YARN_PATH is required}" "$@"
@@ -83,8 +95,8 @@ permissions=$(jq -c --arg key "$repository_key" '[.[] | select(.repositoryKey ==
 auth_json=$(jq -cn --arg key "$repository_key" --arg digest "$token_digest" --argjson permissions "$permissions" \
   '{repositories:[{repositoryKey:$key,apiOrigin:"https://github.com",repositoryId:"12345"}],principals:[{id:"local-e2e",tokenSha256:$digest,read:$permissions,write:$permissions}]}')
 
-ln -s "$root/crates/history-worker/build" "$tmp/worker/build"
-ln -s "$root/crates/history-worker/migrations" "$tmp/worker/migrations"
+if [[ "$worker_language" == rust ]]; then ln -s "$worker_root/build" "$tmp/worker/build"; fi
+ln -s "$worker_root/migrations" "$tmp/worker/migrations"
 cat > "$tmp/worker/wrangler.jsonc" <<'JSON'
 {
   "name": "nanoom-history-e2e",
@@ -98,14 +110,27 @@ cat > "$tmp/worker/wrangler.jsonc" <<'JSON'
   }]
 }
 JSON
+if [[ "$worker_language" == go ]]; then
+  node - "$tmp/worker/wrangler.jsonc" <<'JS'
+const fs = require('node:fs');
+const path = process.argv[2];
+const config = JSON.parse(fs.readFileSync(path, 'utf8'));
+config.main = 'build/worker.mjs';
+fs.writeFileSync(path, JSON.stringify(config));
+JS
+fi
 printf "NANOOM_AUTH_JSON='%s'\n" "$auth_json" > "$tmp/worker/.dev.vars"
 if ! printf 'y\n' | wrangler d1 migrations apply nanoom-history-e2e --local --persist-to "$tmp/d1" --config "$tmp/worker/wrangler.jsonc" >"$tmp/wrangler-migrate.log" 2>&1; then
   cat "$tmp/wrangler-migrate.log" >&2
   exit 1
 fi
 port=${server##*:}
-wrangler dev --config "$tmp/worker/wrangler.jsonc" --ip 127.0.0.1 --port "$port" --persist-to "$tmp/d1" --log-level debug >"$tmp/wrangler-dev.log" 2>&1 &
+# Give this local server its own process group so cleanup also stops npx/Workerd children.
+set -m
+wrangler dev --test-scheduled --config "$tmp/worker/wrangler.jsonc" --ip 127.0.0.1 --port "$port" --persist-to "$tmp/d1" --log-level debug >"$tmp/wrangler-dev.log" 2>&1 &
 worker_pid=$!
+set +m
+printf 'History Server E2E process group: %s\n' "$worker_pid"
 ready=false
 for _ in $(seq 1 40); do
   if [[ "$(curl --silent --max-time 1 -o "$tmp/ready.json" -w '%{http_code}' "$server/ready" || true)" == 200 ]] && jq -e '.status == "ready"' "$tmp/ready.json" >/dev/null; then ready=true; break; fi
@@ -113,6 +138,7 @@ for _ in $(seq 1 40); do
   sleep 0.5
 done
 if [[ "$ready" != true ]]; then cat "$tmp/wrangler-dev.log" >&2; echo 'local History Worker did not become ready' >&2; exit 1; fi
+node "$root/scripts/history-http-contract.cjs" "$server" "$token" "$repository_key" "$(jq -r '.[0].scopeId' <<<"$scopes")"
 
 export HISTORY_SERVER_URL="$server"
 run_affected "$run_id" "$server"
@@ -173,6 +199,25 @@ run_assignments "$cold_entries" "$cold_assignment_count" "$run_id"
 cold_run_assignment_count=$RUN_ASSIGNMENT_COUNT
 test "$(find "$tmp/measurements" -type f -name '*.json' | wc -l | tr -d ' ')" -eq "$RUN_ASSIGNMENT_COUNT"
 
+compile_legacy_batch() {
+  local sample=$1 destination=$2 foreign=${3:-false} id
+  mkdir -p "$destination"
+  jq --argjson foreign "$foreign" 'del(.runnerEnvironment) | if $foreign then .scope.ref.ref = "refs/heads/foreign-scope" else . end' "$sample" > "$destination/measurement.json"
+  id=$(jq -er .runId "$destination/measurement.json")
+  nanoom history --input "$destination/measurement.json" --run-id "$id" --run-attempt 1 \
+    --model-output "$destination/model.json" --prediction-output "$destination/prediction.json" \
+    --model-artifact-name local-contract --batch-output-dir "$destination/batches" > "$destination/result.json"
+  LEGACY_BATCH=$(find "$destination/batches" -name '*.json' -type f | head -n 1)
+  test -s "$LEGACY_BATCH"
+}
+first_sample=$(find "$tmp/measurements" -name '*.json' -type f | head -n 1)
+compile_legacy_batch "$first_sample" "$tmp/legacy-cold"
+cold_legacy_batch=$LEGACY_BATCH
+compile_legacy_batch "$first_sample" "$tmp/legacy-foreign" true
+foreign_batch=$LEGACY_BATCH
+scope_id=$(basename "$cold_legacy_batch" .json)
+node "$root/scripts/history-merge-contract.cjs" empty "$server" "$token" "$repository_key" "$scope_id" "$cold_legacy_batch" "$foreign_batch"
+
 run_history() {
   local id=$1 out="$tmp/history-$1.out" log="$tmp/history-$1.log"
   export RUN_ID="$id" GITHUB_RUN_ID="$id" GITHUB_JOB=history
@@ -213,6 +258,7 @@ jq -e '.status == "success" and .serverMerge.status == "merged" and .serverMerge
   exit 1
 }
 assert_snapshots "$tmp/snapshots-before"
+node "$root/scripts/history-merge-contract.cjs" responses "$RUNNER_TEMP/nanoom-v3-history-$run_id-$run_attempt"
 run_history "$run_id"
 jq -e '.status == "success" and .serverMerge.appliedBatchCount == 0 and .serverMerge.duplicateBatchCount > 0' <<<"$HISTORY_RESULT" >/dev/null || {
   cat "$tmp/history-$run_id.log" >&2
@@ -232,6 +278,58 @@ jq -e '.scheduling.historyStatus == "loaded"' <<<"$AFFECTED_RESULT" >/dev/null &
 }
 warm_entries=$(jq -c '[.ci.include[]? | select((.predictionSources.sampleCount // 0) > 0)] | .[:1][]' <<<"$AFFECTED_GROUPS")
 run_assignments "$warm_entries" 1 "$warm_run_id"
+warm_sample=$(sed -n 's/^sample-path=//p' "$tmp/run-$warm_run_id-0.out")
+compile_legacy_batch "$warm_sample" "$tmp/legacy-warm"
+node "$root/scripts/history-merge-contract.cjs" retry "$server" "$token" "$repository_key" "$(basename "$LEGACY_BATCH" .json)" "$LEGACY_BATCH"
+
+# The API must reject corrupt or cross-scope storage even when its JSON/digest is valid.
+storage_contract="$tmp/storage-contract"
+mkdir -p "$storage_contract"
+cp "$LEGACY_BATCH.response.json" "$storage_contract/response.json"
+wrangler d1 execute nanoom-history-e2e --local --persist-to "$tmp/d1" --config "$tmp/worker/wrangler.jsonc" \
+  --command 'SELECT storage_key, model_json, model_sha256 FROM prediction_state' --json > "$storage_contract/rows.json"
+scope_id=$(basename "$LEGACY_BATCH" .json)
+node "$root/scripts/history-storage-contract.cjs" prepare "$storage_contract" "$server" "$token" "$repository_key" "$scope_id"
+wrangler d1 execute nanoom-history-e2e --local --persist-to "$tmp/d1" --config "$tmp/worker/wrangler.jsonc" \
+  --file "$storage_contract/boundary.sql" > "$storage_contract/boundary.log" 2>&1
+wrangler d1 execute nanoom-history-e2e --local --persist-to "$tmp/d1" --config "$tmp/worker/wrangler.jsonc" \
+  --command 'SELECT storage_key, length(CAST(model_json AS BLOB)) AS bytes FROM prediction_state' --json > "$storage_contract/boundary-size.json"
+node "$root/scripts/history-storage-contract.cjs" boundary "$storage_contract" "$server" "$token" "$repository_key" "$scope_id"
+assert_snapshots "$tmp/snapshots-at-storage-boundary"
+wrangler d1 execute nanoom-history-e2e --local --persist-to "$tmp/d1" --config "$tmp/worker/wrangler.jsonc" \
+  --file "$storage_contract/restore.sql" > "$storage_contract/boundary-restore.log" 2>&1
+for corruption in checksum schema scope; do
+  wrangler d1 execute nanoom-history-e2e --local --persist-to "$tmp/d1" --config "$tmp/worker/wrangler.jsonc" \
+    --file "$storage_contract/$corruption.sql" > "$storage_contract/$corruption.log" 2>&1
+  node "$root/scripts/history-storage-contract.cjs" reject "$storage_contract" "$server" "$token" "$repository_key" "$scope_id"
+done
+wrangler d1 execute nanoom-history-e2e --local --persist-to "$tmp/d1" --config "$tmp/worker/wrangler.jsonc" \
+  --file "$storage_contract/restore.sql" > "$storage_contract/restore.log" 2>&1
+assert_snapshots "$tmp/snapshots-after-storage-recovery"
+echo 'Storage integrity passed: exact merge counters, checksum/schema/scope rejection, and recovery'
+
+node "$root/scripts/history-contention-contract.cjs" "$server" "$token" "$repository_key" "$scope_id" "$LEGACY_BATCH" "$storage_contract"
+wrangler d1 execute nanoom-history-e2e --local --persist-to "$tmp/d1" --config "$tmp/worker/wrangler.jsonc" \
+  --command 'SELECT storage_key, model_json FROM prediction_state' --json > "$storage_contract/after-contention.json"
+node "$root/scripts/history-contention-contract.cjs" verify "$storage_contract"
+
+# Scheduled retention must delete stale rows without deleting younger history.
+now=$(node -e 'process.stdout.write(String(Date.now()))')
+stale=$((now - 46 * 24 * 60 * 60 * 1000))
+retained=$((now - 44 * 24 * 60 * 60 * 1000))
+zero_digest=$(printf '%064d' 0)
+wrangler d1 execute nanoom-history-e2e --local --persist-to "$tmp/d1" --config "$tmp/worker/wrangler.jsonc" \
+  --command "INSERT INTO prediction_state VALUES ('scheduled-stale', '{}', '$zero_digest', $stale), ('scheduled-retained', '{}', '$zero_digest', $retained)" >"$tmp/cron-seed.log" 2>&1
+curl --silent --show-error --fail --max-time 5 "$server/__scheduled?cron=0+4+*+*+*" >"$tmp/cron-trigger.log"
+wrangler d1 execute nanoom-history-e2e --local --persist-to "$tmp/d1" --config "$tmp/worker/wrangler.jsonc" \
+  --command "SELECT storage_key FROM prediction_state WHERE storage_key LIKE 'scheduled-%' ORDER BY storage_key" --json >"$tmp/cron-rows.json"
+if ! jq -e '[.[].results[].storage_key] == ["scheduled-retained"]' "$tmp/cron-rows.json" >/dev/null; then
+  cat "$tmp/cron-rows.json" >&2
+  echo 'scheduled cleanup did not remove only stale history' >&2
+  exit 1
+fi
+assert_snapshots "$tmp/snapshots-after-cleanup"
+echo 'Scheduled retention passed: stale 46-day row removed, 44-day row and live predictions retained'
 
 printf 'History Server E2E passed: cold fallback, %s actual run assignments, applied D1 merge, duplicate no-op, %s warm samples, and warm run.\n' \
   "$cold_run_assignment_count" "$(jq '[.rows[] | .[2]] | add // 0' "$tmp"/snapshots-before/*.json | jq -s 'add')"

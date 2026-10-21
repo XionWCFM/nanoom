@@ -54,7 +54,10 @@ fn installed_windows_turbo_and_nx_execute_without_global_shims() {
             &format!("node_modules/.bin/{runner}.cmd"),
             "@echo off\r\necho %* >> \"%NANOOM_ARGS_LOG%\"\r\nexit /b 0\r\n",
         );
-        let mut command = Command::new(env!("CARGO_BIN_EXE_nanoom"));
+        let mut command = Command::new(
+            std::env::var_os("NANOOM_TEST_BINARY")
+                .unwrap_or_else(|| env!("CARGO_BIN_EXE_nanoom").into()),
+        );
         command
             .arg("-C")
             .arg(root)
@@ -94,7 +97,10 @@ fn windows_package_managers_execute_focused_and_full_installs() {
             ),
         );
         for focused in [false, true] {
-            let mut command = Command::new(env!("CARGO_BIN_EXE_nanoom"));
+            let mut command = Command::new(
+                std::env::var_os("NANOOM_TEST_BINARY")
+                    .unwrap_or_else(|| env!("CARGO_BIN_EXE_nanoom").into()),
+            );
             command
                 .arg("-C")
                 .arg(root)

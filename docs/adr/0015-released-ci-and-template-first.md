@@ -51,3 +51,7 @@ Windows에서는 Node 도구의 .cmd shim을 실제 호출한다. run·focused i
 실행의 JSON 실패 보고는 중단 여부와 무관하게 `completed`, `failed`, `pending`, `executions`를 보존한다. `--continue-on-error`는 후속 workspace 실행 뒤에도 실패 exit code와 단일 JSON 결과를 유지한다. shard 환경변수는 해당 자식 작업에만 설정하여 같은 프로세스의 후속 실행에 전파하지 않는다.
 
 status의 명시적 `results` 입력은 job별 결과를 하나만 허용한다. CLI의 comma-separated 결과와 Action의 line-separated 결과 모두 중복 job ID를 거부한다. 실패 결과를 먼저 또는 나중에 쓰더라도 성공으로 덮어쓸 수 없어야 한다. 정상 생략과 필수 실행 판단은 기존 계약을 유지한다.
+
+## Go 구현 개발 CI의 언어 도구 예외 (2026-10-18 승인)
+
+Nanoom 자체 Go 구현의 개발 CI에는 공식 Node 설정 다음에 공식 `actions/setup-go` 단계를 추가한다. 사용자가 전체 diff와 해당 예외를 승인했다. hosted macOS에서 Go/gofmt가 PATH에 없어 실제 검사가 실패한 것이 근거다. compiler 준비를 run Action 또는 test script에 숨기지 않는다. JavaScript/TypeScript 소비자의 대표 네 단계와 nanoom-fixtures에는 예외를 적용하지 않는다. `@latest` 제품 소비·Plan/checkout/focused install/status 원칙은 유지한다.
